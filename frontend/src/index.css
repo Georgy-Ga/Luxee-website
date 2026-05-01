@@ -1,0 +1,59 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  body {
+    @apply transition-colors duration-200;
+  }
+}
+
+@layer components {
+  /* Кнопки */
+  .btn-primary {
+    @apply px-4 py-2 rounded-lg font-medium transition-colors duration-200;
+    @apply bg-purple text-accent-light hover:bg-purple-hover;
+    @apply dark:bg-accent dark:text-white dark:hover:bg-accent-hover;
+  }
+
+  .btn-secondary {
+    @apply px-4 py-2 rounded-lg font-medium transition-colors duration-200;
+    @apply bg-light-surface text-purple border border-light-border;
+    @apply hover:bg-light-hover;
+    @apply dark:bg-dark-surface dark:text-accent-light dark:border-dark-border;
+    @apply dark:hover:bg-dark-hover;
+  }
+
+  /* Инпуты */
+  .input-field {
+    @apply w-full px-4 py-2 rounded-lg border transition-colors duration-200;
+    @apply bg-light-bg border-light-border text-gray-900;
+    @apply focus:outline-none focus:ring-2 focus:ring-purple;
+    @apply dark:bg-dark-surface dark:border-dark-border dark:text-white;
+    @apply dark:focus:ring-accent;
+  }
+
+  /* Карточки */
+  .card {
+    @apply rounded-lg border transition-colors duration-200;
+    @apply bg-light-surface border-light-border;
+    @apply dark:bg-dark-surface dark:border-dark-border;
+  }
+
+  /* Скроллбар */
+  .custom-scrollbar::-webkit-scrollbar {
+    @apply w-2;
+  }
+
+  .custom-scrollbar::-webkit-scrollbar-track {
+    @apply bg-light-surface dark:bg-dark-surface;
+  }
+
+  .custom-scrollbar::-webkit-scrollbar-thumb {
+    @apply bg-purple dark:bg-accent rounded-full;
+  }
+
+  .custom-scrollbar::-webkit-scrollbar-thumb:hover {
+    @apply bg-purple-hover dark:bg-accent-hover;
+  }
+}

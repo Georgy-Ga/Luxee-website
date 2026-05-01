@@ -1,0 +1,112 @@
+import { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
+import { authApi } from '../api/authApi';
+import useAuthStore from '../stores/authStore';
+import useThemeStore from '../stores/themeStore';
+
+const Login = () => {
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
+  const [error, setError] = useState('');
+  const [isLoading, setIsLoading] = useState(false);
+
+  const navigate = useNavigate();
+  const setUser = useAuthStore((state) => state.setUser);
+  const { isDark, toggleTheme } = useThemeStore();
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    setError('');
+    setIsLoading(true);
+
+    try {
+      const { user } = await authApi.login(email, password);
+      setUser(user);
+      navigate('/dashboard');
+    } catch (err) {
+      setError(err.response?.data?.message || 'Ошибка входа');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  return (
+    <div className="min-h-screen flex items-center justify-center bg-light-bg dark:bg-dark-bg transition-colors duration-200">
+      {/* Кнопка смены темы */}
+      <button
+        onClick={toggleTheme}
+        className="absolute top-4 right-4 p-3 rounded-lg btn-secondary"
+        aria-label="Toggle theme"
+      >
+        {isDark ? '☀️' : '🌙'}
+      </button>
+
+      <div className="w-full max-w-md p-8 card">
+        <h1 className="text-3xl font-bold text-center mb-8 text-gray-900 dark:text-white">
+          Вход в систему
+        </h1>
+
+        <form onSubmit={handleSubmit} className="space-y-6">
+          <div>
+            <label htmlFor="email" className="block text-sm font-medium mb-2 text-gray-700 dark:text-gray-300">
+              Email
+            </label>
+            <input
+              id="email"
+              type="text"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              className="input-field"
+              placeholder="your@email.com"
+              required
+              disabled={isLoading}
+            />
+          </div>
+
+          <div>
+            <label htmlFor="password" className="block text-sm font-medium mb-2 text-gray-700 dark:text-gray-300">
+              Пароль
+            </label>
+            <div className="relative">
+              <input
+                id="password"
+                type={showPassword ? 'text' : 'password'}
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                className="input-field pr-12"
+                placeholder="••••••••"
+                required
+                disabled={isLoading}
+              />
+              <button
+                type="button"
+                onClick={() => setShowPassword(!showPassword)}
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 transition-colors"
+                disabled={isLoading}
+              >
+                {showPassword ? '🙈' : '👁️'}
+              </button>
+            </div>
+          </div>
+
+          {error && (
+            <div className="p-3 rounded-lg bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-300 text-sm">
+              {error}
+            </div>
+          )}
+
+          <button
+            type="submit"
+            className="w-full btn-primary"
+            disabled={isLoading}
+          >
+            {isLoading ? 'Вход...' : 'Войти'}
+          </button>
+        </form>
+      </div>
+    </div>
+  );
+};
+
+export default Login;

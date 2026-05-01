@@ -28,5 +28,12 @@ router.post('/luxee/login', authMiddleware, LuxeeController.login);
 router.get('/luxee/accounts', authMiddleware, LuxeeController.getAccounts);
 router.delete('/luxee/accounts/:accountId', authMiddleware, LuxeeController.deleteAccount);
 router.post('/luxee/accounts/:accountId/restore', authMiddleware, LuxeeController.restoreSession);
+router.get('/luxee/profiles', authMiddleware, LuxeeController.getProfiles);
+router.get('/luxee/page-content', authMiddleware, LuxeeController.getPageContent);
+
+// Message checking routes
+router.get('/luxee/check-messages', authMiddleware, LuxeeController.checkAllMessages);
+router.get('/luxee/check-messages/account', authMiddleware, LuxeeController.checkAccountMessages);
+router.get('/luxee/check-messages/unread', authMiddleware, LuxeeController.checkUnreadMessages);
 
 export default router;

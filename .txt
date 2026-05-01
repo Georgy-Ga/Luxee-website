@@ -1,9 +1,0 @@
-{
-  "accessToken": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6IjY5ZTFjZDBhYTMwMjY1ZmFjODM5MjIyOSIsImVtYWlsIjoiYWRtaW5AZXhhbXBsZS5jb20iLCJyb2xlIjoiYWRtaW4iLCJpYXQiOjE3NzY0MTYwOTksImV4cCI6MTc3NjQxNzg5OX0.ozB3i752_G4lItvhyV2SMMjwnnc8BM0G06JBzeuAaIE",
-  "refreshToken": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6IjY5ZTFjZDBhYTMwMjY1ZmFjODM5MjIyOSIsImVtYWlsIjoiYWRtaW5AZXhhbXBsZS5jb20iLCJyb2xlIjoiYWRtaW4iLCJpYXQiOjE3NzY0MTYwOTksImV4cCI6MTc3OTAwODA5OX0.40LJj3X0ZygeYdiS4igrIsThtjGWqle6xJQh1EoU-EA",
-  "user": {
-    "id": "69e1cd0aa30265fac8392229",
-    "email": "admin@example.com",
-    "role": "admin"
-  }
-}
