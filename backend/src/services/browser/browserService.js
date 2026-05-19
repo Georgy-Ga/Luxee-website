@@ -85,6 +85,11 @@ const browserService = {
 		return contexts.get(accountId);
 	},
 
+	// Получить все контексты
+	getAllContexts: () => {
+		return contexts;
+	},
+
 	// Обновить ключ контекста (при изменении accountId)
 	updateContextKey: (oldAccountId, newAccountId) => {
 		const context = contexts.get(oldAccountId);

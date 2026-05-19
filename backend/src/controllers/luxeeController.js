@@ -1,6 +1,9 @@
-import luxeeAuthService from '../services/luxeeApi/luxeeAuthService.js';
+import luxeeAuthService from '../services/luxeeApi/luxeeAuthService/index.js';
 import luxeeScraperService from '../services/luxeeApi/luxeeScraperService.js';
-import messageCheckService from '../services/luxeeApi/messageCheckService.js';
+import messageCheckService from '../services/luxeeApi/messageCheckService/index.js';
+import messageSendService from '../services/luxeeApi/messageSendService.js';
+import profileChatsLoadService from '../services/luxeeApi/profileChatsLoadService.js';
+import chatOpenService from '../services/luxeeApi/chatOpenService.js';
 import ApiError from '../exceptions/apiError.js';
 
 const LuxeeController = {
@@ -33,7 +36,13 @@ const LuxeeController = {
 			console.log(`[Luxee Controller] Get accounts request from user ${userId}`);
 			const accounts = await luxeeAuthService.getLuxeeAccounts({ userId });
 			
-			return res.json(accounts);
+			// Добавляем поле user в каждый аккаунт для группировки на фронтенде
+			const accountsWithUser = accounts.map(account => ({
+				...account,
+				user: account.user || userId // Используем существующее поле user или userId
+			}));
+			
+			return res.json(accountsWithUser);
 		} catch (error) {
 			next(error);
 		}
@@ -160,13 +169,70 @@ const LuxeeController = {
 		}
 	},
 
-	// Получить только непрочитанные сообщения
-	checkUnreadMessages: async (req, res, next) => {
+	// Отправить сообщение в чат
+	sendMessage: async (req, res, next) => {
 		try {
 			const userId = req.user.id;
+			const { accountId, profileUid, memberUid, text, chatIdentity } = req.body;
 
-			console.log(`[Luxee Controller] Check unread messages request from user ${userId}`);
-			const result = await messageCheckService.checkUnreadMessages({ userId });
+			if (!accountId || !profileUid || !memberUid || !text) {
+				return next(ApiError.BadRequest('ID аккаунта, UID профиля, UID получателя и текст сообщения обязательны'));
+			}
+
+			console.log(`[Luxee Controller] Send message request from user ${userId}`);
+			const result = await messageSendService.sendMessage({ 
+				userId, 
+				accountId,
+				profileUid,
+				memberUid,
+				text,
+				chatIdentity,
+			});
+			
+			return res.json(result);
+		} catch (error) {
+			next(error);
+		}
+	},
+
+	// Загрузить чаты профиля (при клике на профиль)
+	loadProfileChats: async (req, res, next) => {
+		try {
+			const userId = req.user.id;
+			const { accountId, profileUid } = req.query;
+
+			if (!accountId || !profileUid) {
+				return next(ApiError.BadRequest('ID аккаунта и UID профиля обязательны'));
+			}
+
+			console.log(`[Luxee Controller] Load profile chats request from user ${userId} for profile ${profileUid}`);
+			const result = await profileChatsLoadService.loadProfileChats({ 
+				accountId,
+				profileUid: parseInt(profileUid),
+			});
+			
+			return res.json(result);
+		} catch (error) {
+			next(error);
+		}
+	},
+
+	// Открыть чат и получить последнее сообщение
+	openChat: async (req, res, next) => {
+		try {
+			const userId = req.user.id;
+			const { accountId, profileUid, chatId } = req.query;
+
+			if (!accountId || !profileUid || !chatId) {
+				return next(ApiError.BadRequest('ID аккаунта, UID профиля и ID чата обязательны'));
+			}
+
+			console.log(`[Luxee Controller] Open chat request from user ${userId} for chat ${chatId}`);
+			const result = await chatOpenService.openChat({ 
+				accountId,
+				profileUid: parseInt(profileUid),
+				chatId,
+			});
 			
 			return res.json(result);
 		} catch (error) {

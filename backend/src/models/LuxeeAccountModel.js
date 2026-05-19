@@ -9,6 +9,8 @@ const LuxeeAccountSchema = new Schema({
 	isActive: { type: Boolean, default: false },
 	lastActivity: { type: Date, default: Date.now },
 	createdAt: { type: Date, default: Date.now },
+	aiEnabled: { type: Boolean, default: false }, // AI для этого аккаунта (по умолчанию выключен)
+	aiContext: { type: String }, // ID отдельного браузерного контекста для AI (для параллельной работы)
 });
 
 export default model('LuxeeAccount', LuxeeAccountSchema);

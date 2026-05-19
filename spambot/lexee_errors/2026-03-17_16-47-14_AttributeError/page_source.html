@@ -1,0 +1,911 @@
+<html lang="en-US"><head>
+    <meta charset="UTF-8">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+    <meta name="csrf-param" content="_csrf-frontend">
+<meta name="csrf-token" content="sUwrJ_Za7pZf4fYW4HnQI7wRWdXkF626sYKmgHbHmxfjGEpmoxfc_DKolCGBIIRr8Gs4mrcgmO_U4ZHOAbftRg==">
+    <title>Profiles</title>
+    <link href="/assets-landing/images/apple-touch-icon-57x57.png" rel="icon" type="image/png">
+    <link href="/assets-landing/images/apple-touch-icon-57x57.png" rel="apple-touch-icon" sizes="57x57">
+    <link href="/assets-landing/images/apple-touch-icon-60x60.png" rel="apple-touch-icon" sizes="60x60">
+    <link href="/assets-landing/images/apple-touch-icon-72x72.png" rel="apple-touch-icon" sizes="72x72">
+    <link href="/assets-landing/images/apple-touch-icon-114x114.png" rel="apple-touch-icon" sizes="114x114">
+    <link href="/assets-landing/images/apple-touch-icon-120x120.png" rel="apple-touch-icon" sizes="120x120">
+    <link href="/assets-landing/images/apple-touch-icon-144x144.png" rel="apple-touch-icon" sizes="144x144">
+    <link href="/assets-landing/images/apple-touch-icon-152x152.png" rel="apple-touch-icon" sizes="152x152">
+    <link href="/assets-landing/images/apple-touch-icon-180x180.png" rel="apple-touch-icon" sizes="180x180">
+    <link href="/assets/cc1ed25b/css/bootstrap.css?v=1741080951" rel="stylesheet">
+<link href="/assets/19e566b8/css/font-awesome.min.css?v=1741080951" rel="stylesheet">
+<link href="/assets/231f1c61/custom.css?v=1741080951" rel="stylesheet">
+<link href="/css/lightbox.css?v=1727102994" rel="stylesheet">
+<link href="/css/site.css?v=1771247435" rel="stylesheet">
+<link href="/css/emoji/emojionearea.css?v=1727102994" rel="stylesheet">
+<link href="/css/chat/chat.css?v=1727102994" rel="stylesheet">
+<link href="/js/toaster/jquery.toast.css?v=1727102994" rel="stylesheet">
+<link href="/css/stream.css?v=1727102994" rel="stylesheet">
+<link href="/css/activity.css?v=1727102994" rel="stylesheet">
+<script>function makeOnline(select) {
+    var actionType = select.value;
+    var inputs = $('[name="FakeProfileModel[uids][]"]:checked').not('.hidden');
+    var loader = $('#profileWraps').parent().find('.pjax-custom-loader');
+    var isOnline = [1,4].indexOf(parseInt(actionType)) < 0;
+    var isSpecialTime = ([4,3].indexOf(parseInt(actionType)) >= 0);
+    var status = ({"2":10,"3":10,"1":1,"4":1})[actionType];
+    
+    if (isSpecialTime) {
+        inputs = $('[name="FakeProfileModel[uids][]"]').not('.hidden');
+    }
+    
+    $('#change-profile-status-error').remove();
+    
+    if (inputs.length <= 0) {
+        addError($('#profileWraps'), 'Please select profiles', 'change-profile-status-error');
+        select.value = '';
+        return;
+    }
+    
+    if (isSpecialTime) {
+        inputs.prop('checked', true);
+    }
+    var profiles = [];
+    
+    inputs.each(function() {
+        profiles.push($(this).val());
+    });
+
+    loader.addClass('active');
+
+    chnageOnlineStatus(
+        profiles,
+        status,
+        function (response) {
+            select.value = '';
+            $('.select-on-check-all').prop('checked', false);
+            inputs.prop('checked', false);
+            loader.removeClass('active');
+            
+            var content = '';
+            var onlineStatuses = {};
+            Object.keys(response).forEach(function (uid) {
+                content += (
+                    response[uid] ?
+                        'Online status for profile with id: ' + uid + ' changed successfully.' :
+                        'Profile with id: ' + uid + ' set offline successfully.'
+                    ) + "<br>";
+                onlineStatuses[uid] = isOnline;
+            });
+                   
+            addSuccess($('#profile-success-wrap'), content);
+                   
+            setProfileStatus(Object.keys(response), onlineStatuses);
+        },
+        function (errors) {
+            select.value = '';
+            inputs.prop('checked', false);
+            $('.select-on-check-all').prop('checked', false);
+            loader.removeClass('active');
+
+            addError($('#profileWraps'), errors.join('<br>'), "online-element-error");
+        }
+    );
+}
+
+function addError(wrap, content, id) {
+  if (wrap.length > 0) {
+      var template = '<div id="' + (id ? id : 'crop-element-error') + '">' +
+       '<div class="alert alert-danger alert-dismissible fade in" role="alert">' +
+        '<button type="button" class="close" data-dismiss="alert" aria-label="Close"><span aria-hidden="true">×</span></button>' +
+         content +
+          '</div>' +
+          '</div>';
+      wrap.prepend(template);
+      
+      setTimeout(function () {
+          wrap.find('#' + (id ? id : 'crop-element-error')).remove();
+      }, 20000);
+  } 
+}
+
+function addSuccess(wrap, content) {
+  if (wrap.length > 0) {
+      var template = '<div id="crop-element-success">' +
+       '<div class="alert alert-success alert-dismissible fade in" role="alert">' +
+        '<button type="button" class="close" data-dismiss="alert" aria-label="Close"><span aria-hidden="true">×</span></button>' +
+         content +
+          '</div>' +
+          '</div>';
+      wrap.prepend(template);
+      setTimeout(function () {
+          wrap.find('#crop-element-success').remove();
+      }, 3000);
+  } 
+}
+
+function setProfileStatus(profiles, result) {
+    for (var i = 0; i < profiles.length;i++) {
+        if (profiles[i]) {
+            var profile = $('.profile-online-wrap[data-id="' + profiles[i] + '"]');
+                
+            if (profile && profile.length > 0) {
+                if (result && result[profiles[i]]) {
+                    profile.text('Online');
+                    profile.parent().attr('class', 'online-status label label-profile-tile label-success'); 
+                } else {
+                    profile.text('Offline');
+                    profile.parent().attr('class', 'online-status label label-profile-tile label-default'); 
+                }
+            }
+        }
+    } 
+}
+
+function chnageOnlineStatus(uids, online, cbSuccess, cbFailed) {
+    var errors = ['Can\'t update profile online status. Please try again later.'];
+    $.post('/profile/toggle-online/', { profiles: uids, online: online })
+        .done(function(data) {
+            if (data.errors && data.errors.length > 0) {
+                errors = data.errors.map(function (error) {
+                    return error.message ? error.message : '';
+                });
+                    
+                cbFailed(errors);
+                return;
+            }
+
+            if (data.data && Object.keys(data.data).length > 0) {
+                cbSuccess(data.data);
+            }
+        })
+        .fail(function() {
+            cbFailed(errors);
+        });
+}
+
+function toggleOnline(id, online) {
+    var prfWrap = $('.profile-online-wrap[data-id="' + id + '"]'),
+        prevStatus = prfWrap.text() === 'Online';
+    
+    if (prfWrap && prfWrap.length > 0) {
+        prfWrap.find('.label').attr('class', 'label label-default');
+        prfWrap.find('.label').text('Loading...');
+    }
+
+    $('#change-profile-status-error').remove();
+
+    chnageOnlineStatus(
+        [id],
+        online,
+        function (response) {
+            setProfileStatus([id], response);
+        },
+        function (errors) {
+            addError($('#profileWraps'), errors.join(' '), "change-profile-status-error");
+            setProfileStatus([id], {[id]: prevStatus});
+        }
+    );
+}
+
+function makeStreameInviteLink(profileUid) {
+    var modal = $('#generate-invite-link');
+    modal.find('.custom-preloader').addClass('active');
+    modal.find('.linnk-contetnt').remove();
+    modal.find('#invite-error').remove();
+    modal.find('.link-wrap').remove();
+    modal.find('small').remove();
+    modal.modal('show');
+    
+    $.get('/profile/invite-link/?uid=' + profileUid)
+        .done(function (response) {
+            $('#generate-invite-link')
+                .find('.modal-body')
+                .append(
+                    '<div class="link-wrap"><div class="response">' + response + '</div>' +
+                    '<button class="btn btn-sm btn-info fa fa-files-o copy-link"></button></div>' +
+                    '<small>Please copy and send this invitation link to the woman which should enable the stream. Be warned that the link is active for up to 20 minutes. After the first 20 minutes, the link will be expired.</small>'
+                    )
+        })
+        .fail(function (error) {
+            addError($('#generate-invite-link').find('.modal-body'), 'Can\'t generate invite link.', 'invite-error');
+        })
+        .always(function () {
+            modal.find('.custom-preloader').removeClass('active');
+        })
+}
+
+function changeGender(select) {
+    var selectElement = $(select),
+        query = window.location.search,
+        appQuery = 'FakeSearch[gender]=' + ($(selectElement).val());
+    
+    try {
+        query = decodeURI(window.location.search);
+    } catch (e){}
+    
+    const params = new URLSearchParams(query);
+    const hasGenderParam = params.has('FakeSearch[gender]');
+    let url = '';
+
+    if (hasGenderParam) {
+        query = query.replace(/FakeSearch\[gender\]=[0-9]*/ig, appQuery);
+        url = query;
+    } else {
+        url = (query + ((query.length > 0) ? '&' + appQuery : '?' + appQuery));
+    }
+    
+    $('#profileWraps').parent().find('.pjax-custom-loader').addClass('active');
+    setTimeout(function () {
+      $.pjax.reload('#profileWraps', {url: url, async:false});  
+    }, 100);
+}
+var timeMute = null;
+
+function updateTimeMute() {
+    var date = new Date();
+    timeMute = date.getTime();
+}
+function initPing() {
+    updateTimeMute();
+    document.addEventListener('keypress', updateTimeMute);
+    document.addEventListener('mousemove', updateTimeMute);
+    document.addEventListener('click', updateTimeMute);
+    document.addEventListener('touchstart', updateTimeMute);
+ }
+
+function pingActivity() {
+    var stopPing = 5 * 60 * 1000,
+        date = new Date();
+    
+    if ((parseInt(timeMute) + stopPing) < date.getTime())
+        return;
+    
+    var xmlhttp = new XMLHttpRequest();
+    xmlhttp.onreadystatechange = function() {
+        if (xmlhttp.readyState == XMLHttpRequest.DONE) { 
+           if (xmlhttp.status == 200) {
+               console.log('Ping success');
+           } else {
+               console.error('Ping error');
+           }
+        }
+    };
+    xmlhttp.open('POST', '/profile/track/', true);
+    xmlhttp.setRequestHeader('X-CSRF-Token', 'sUwrJ_Za7pZf4fYW4HnQI7wRWdXkF626sYKmgHbHmxfjGEpmoxfc_DKolCGBIIRr8Gs4mrcgmO_U4ZHOAbftRg==');
+    xmlhttp.send();
+}
+
+setInterval(pingActivity, 30000);
+initPing();
+</script>            <!-- Hotjar Tracking Code for Luxee -->
+        <script> (function (h, o, t, j, a, r) {
+                h.hj = h.hj || function () {
+                    (h.hj.q = h.hj.q || []).push(arguments)
+                };
+                h._hjSettings = {hjid: 3404932, hjsv: 6};
+                a = o.getElementsByTagName('head')[0];
+                r = o.createElement('script');
+                r.async = 1;
+                r.src = t + h._hjSettings.hjid + j + h._hjSettings.hjsv;
+                a.appendChild(r);
+            })(window, document, 'https://static.hotjar.com/c/hotjar-', '.js?sv=');
+        </script><script async="" src="https://static.hotjar.com/c/hotjar-3404932.js?sv=6"></script>
+    </head>
+<body class="nav-md">
+<script>function deleteProfile(el, uid) {
+        let msg = $(el).attr('confirm'); // Get the confirm message
+        if(confirm(msg)) {
+            $('.pjax-custom-loader').toggle();
+            
+            $.ajax({
+                type: 'POST',
+                url: '/profile/delete/',
+                data: {uid: uid}
+            }).done(function(data) {
+                $.pjax.reload({container: '#profileWraps', async: false});
+            }).always(function () {
+                $('.pjax-custom-loader').toggle();
+            });
+        }
+    }</script>
+<div class="container body">
+
+    <div class="main_container">
+
+        <div class="col-md-3 left_col">
+            <div class="left_col scroll-view">
+
+                <div class="navbar nav_title" style="border: 0;">
+                    <a href="/" class="site_title"><i class="fa fa-paw"></i> <span> Models admin</span></a>
+                </div>
+                <div class="clearfix"></div>
+
+                <!-- menu prile quick info -->
+                <div class="profile">
+                    <div class="profile_pic">
+                        <img src="/images/placeholder.png" alt="..." class="img-circle profile_img">
+                    </div>
+                    <div class="profile_info">
+                        <span>Welcome,</span>
+                        <h2>Translator40</h2>
+                    </div>
+                </div>
+                <!-- /menu prile quick info -->
+
+                <br>
+
+                <!-- sidebar menu -->
+                <div id="sidebar-menu" class="main_menu_side hidden-print main_menu">
+
+    <div class="menu_section active">
+        <h3>General</h3>
+        <ul class="nav side-menu"><li><a href="#"><i class="fa fa-question-circle"></i><span>Support <span id="counter_tickets-new"></span></span><span class="fa fa-chevron-down"></span></a>
+<ul class="nav child_menu">
+<li><a href="/support/list/"><span>Question list <span id="counter_tickets-new"></span></span></a></li>
+<li><a href="/support/new/"><span>New question</span></a></li>
+</ul>
+</li>
+<li class="active current-page"><a href="/profile/"><i class="fa fa-female"></i><span>Profiles</span></a></li>
+<li><a href="/icebreaker/"><i class="fa fa-bullhorn"></i><span>Icebreakers</span></a></li>
+<li><a href="#"><i class="fa fa-comments"></i><span>Campaigns</span><span class="fa fa-chevron-down"></span></a>
+<ul class="nav child_menu">
+<li><a href="/campaign/list/"><i class="fa fa-comments"></i><span>Once</span></a></li>
+<li><a href="/campaign-registration/"><i class="fa fa-comments"></i><span>Post registration</span></a></li>
+</ul>
+</li>
+<li><a href="#"><i class="fa fa-commenting"></i><span>Communication <span class="label label-danger sidebar-chat-message communication-total hidden">0</span></span><span class="fa fa-chevron-down"></span></a>
+<ul class="nav child_menu">
+<li><a href="/communication/mail/"><span>Mail <span class="counter-new-mail"></span></span></a></li>
+<li><a href="/chats/"><span>Chat <span class="label label-danger sidebar-chat-message counter-new-chats hidden">0</span></span></a></li>
+</ul>
+</li>
+<li><a href="#"><i class="fa fa-users"></i><span>Clients</span><span class="fa fa-chevron-down"></span></a>
+<ul class="nav child_menu">
+<li><a href="/clients/list/"><i class="fa fa-users"></i><span>Clients</span></a></li>
+<li><a href="/muted-clients/"><i class="fa fa-users"></i><span>Muted Clients' ID</span></a></li>
+</ul>
+</li>
+<li><a href="/news/"><i class="fa fa-rss"></i><span>News feed <span class="counter_likes-new label label-danger">+10</span></span></a></li>
+<li><a href="/gifts/"><i class="fa fa-gift"></i><span>Gifts <span id="counter_gifts-new"></span></span></a></li>
+<li><a href="/contact-requests/"><i class="fa fa-phone"></i><span>Request Contacts <span id="counter_requests-new"></span></span></a></li>
+<li><a href="/statistic/"><i class="fa fa-area-chart"></i><span>Statistic</span></a></li></ul>    </div>
+
+</div>
+                <!-- /sidebar menu -->
+            </div>
+        </div>
+
+        <!-- top navigation -->
+        <div class="top_nav">
+
+            <div class="nav_menu">
+                <nav class="" role="navigation">
+                    <div class="nav toggle">
+                        <a id="menu_toggle"><i class="fa fa-bars"></i></a>
+                    </div>
+
+                    <ul class="nav navbar-nav navbar-right">
+                        <li class="">
+                            <a href="javascript:;" class="user-profile dropdown-toggle" data-toggle="dropdown" aria-expanded="false">
+                                Translator40                                <span class=" fa fa-angle-down"></span>
+                            </a>
+                            <ul class="dropdown-menu dropdown-usermenu pull-right">
+                                <li>
+                                    <a class="text-danger" href="/site/logout/" data-method="post" data-confirm="Are you sure?"><i class="fa fa-sign-out pull-right"></i> Log Out</a>                                </li>
+                            </ul>
+                        </li>
+                            <script type="text/template" id="template_activity-loader">
+        <div class="activity-center-load">
+            <div class="custom-preloader">
+                <div class="overlay"></div>
+                <div class="cssload-loader">
+                    <div class="cssload-inner cssload-one"></div>
+                    <div class="cssload-inner cssload-two"></div>
+                    <div class="cssload-inner cssload-three"></div>
+                </div>
+            </div>
+        </div>
+    </script>
+    <script type="text/template" id="template_activity-empty">
+        <div class="activity-center-empty">
+            <img src="/images/ic_bell_z.svg" alt="Activity Empty">
+            <div class="activity-center-empty-title">No activity yet</div>
+            <div class="activity-center-empty-dsc">
+                Go to Campaigns or to a Clients page to start communication
+            </div>
+            <div class="activity-center-empty-footer">
+                <a href="/campaign/list/" class="btn btn-success">Campaigns</a>
+                <a href="/clients/list/" class="btn btn-default">Clients</a>
+            </div>
+        </div>
+    </script>
+    <script type="text/template" id="template_activity-list">
+        <div class="activity-center-data <%= loadMore %> <%= loadNewbie %>">
+            <ul>
+                <%= list %>
+            </ul>
+        </div>
+    </script>
+    <script type="text/template" id="template_activity-list-item">
+        <li
+                class="activity-center-link <%= newClass %> <%= onlineClass %> <%= typeClass %>"
+                data-uid="<%= uid %>"
+                data-user-uid="<%= userUid %>"
+                data-profile-uid="<%= profileUid %>"
+                data-import-uid="<%= importUid %>"
+        >
+            <div
+                    class="activity-center-data-avatar"
+                    style="background-image: url('<%= avatarUrl %>')">
+                <span class="activity-center-data-online"></span>
+            </div>
+            <div class="activity-center-data-main">
+                <div class="activity-center-data-title">
+                    <strong><%= username %></strong> <%= typeName %> <strong><%= profileUsername %></strong>
+                </div>
+                <div class="activity-center-data-time"><%= timeString %></div>
+            </div>
+        </li>
+    </script>
+
+    <script type="text/template" id="template_activity-loader-more">
+        <li class="activity-load-more-wrap">
+            <section>
+                <div class="sk-wave">
+                    <div class="sk-rect sk-rect-1"></div>
+                    <div class="sk-rect sk-rect-2"></div>
+                    <div class="sk-rect sk-rect-3"></div>
+                    <div class="sk-rect sk-rect-4"></div>
+                    <div class="sk-rect sk-rect-5"></div>
+                </div>
+            </section>
+        </li>
+    </script>
+    <script type="text/template" id="template_activity-loader-newbie">
+        <li class="activity-load-newbie-wrap">
+            <section>
+                <div class="sk-wave">
+                    <div class="sk-rect sk-rect-1"></div>
+                    <div class="sk-rect sk-rect-2"></div>
+                    <div class="sk-rect sk-rect-3"></div>
+                    <div class="sk-rect sk-rect-4"></div>
+                    <div class="sk-rect sk-rect-5"></div>
+                </div>
+            </section>
+        </li>
+    </script>
+    <li class="activity-center-nav">
+        <div class="activity-center-wrap">
+            <a href="javascript:;" id="activity-center-btn" class="user-activity has-new">
+                <img src="/images/ic_bell.svg" alt="Activity">
+            </a>
+
+            <div class="activity-center-list">
+                <div class="activity-center-header">
+                    <div>Activity</div>
+                    <span class="activity-center-read-all btn btn-default show">Read all</span>
+                    <span class="activity-center-close"></span>
+                </div>
+            </div>
+        </div>
+    </li>
+                        </ul>
+
+                                            <ol class="breadcrumb lh30 fs16"><li><a class="crumb-icon" href="/"><span class="glyphicon glyphicon-home"></span></a></li>
+<li class="crumb-active">Profiles</li>
+</ol>                                    </nav>
+            </div>
+
+        </div>
+        <!-- /top navigation -->
+
+        <!-- page content -->
+        <div class="right_col" role="main" style="min-height: 805px;">
+            <div class="clearfix"></div>
+                        <div class="row main-row">
+                <div class="col-md-12 col-sm-12 col-xs-12 main-col">
+                    <div class="x_panel main-panel">
+                        <div class="x_title main-title">
+                            <h2>Profiles</h2>
+                            <div class="clearfix"></div>
+                        </div>
+                        <div class="x_content main-content">
+                            <div id="profile-success-wrap"></div>    <div class="custom-preloader pjax-custom-loader">
+        <div class="overlay"></div>
+        <div class="cssload-loader">
+            <div class="cssload-inner cssload-one"></div>
+            <div class="cssload-inner cssload-two"></div>
+            <div class="cssload-inner cssload-three"></div>
+        </div>
+    </div>
+<div id="profileWraps" data-pjax-container="" data-pjax-push-state="" data-pjax-timeout="1000"><div class="table-grid-filter"><label>Action:</label><select class="form-control profile-make-online" name="onlineChange" onchange="makeOnline(this)">
+<option value=""></option>
+<option value="2">Set online</option>
+<option value="1">Set offline</option>
+<option value="3">Set online (All profiles)</option>
+<option value="4">Set offline (All profiles)</option>
+</select><div style="clear:both"></div></div><div class="table-grid-filter"><label>Gender:</label><select class="form-control" name="gender" style="max-width: 150px" onchange="changeGender(this)">
+<option value="">All</option>
+<option value="2">Female</option>
+<option value="1">Male</option>
+</select><div style="clear:both"></div></div><div class="clearfix"></div>    <div class="row">
+        <div class="col-md-12 col-sm-12 col-xs-12">
+            <div class="summary text-right">
+                Showing <strong>1-2</strong> of <strong>2</strong> items.            </div>
+        </div>
+    </div>
+    <div class="profiles-responsive-wrap">
+        <div class="profile-tile-wrap-outside">
+    <div class="profile-tile-wrap">
+        <a class="profile-tile-wrap__img" href="/profile/update/611510/" data-pjax="0" style="background-image: url(&quot;https://img.luxee.date/thumb/1727100858_26p1r5-P4Em2MeBIuHFpdKC.jpg&quot;)">        <div class="profile-tile-wrap__info">
+            <div class="left-wrap text-left pull-left">
+                <div class="count-img">
+                    <img src="/images/ic_count_img.svg" alt="">
+                    <span class="count">100</span>
+                                    </div>
+                <div class="username">Oksana</div>
+                <div class="location">
+                    United States                </div>
+            </div>
+            <div class="right-wrap text-right pull-right">
+                <div class="age">
+                    47 yrs                </div>
+                <div class="uid">Uid: 611510</div>
+            </div>
+        </div>
+        </a>        <div class="profile-tile-wrap__action text-center">
+            <div class="checkbox-action pull-left"><input type="checkbox" name="FakeProfileModel[uids][]" value="611510"></div><div class="btn-group profile-setting-group pull-right"><button type="button" class="btn btn-default btn-sm dropdown-toggle" data-toggle="dropdown" aria-haspopup="true" aria-expanded="false"><span class="profile-conf-button"><img src="/images/ic_conf.svg"></span></button><ul class="dropdown-menu dropdown-menu-left"><li><a class="toggle-profile-online" href="#" data-uid="611510" data-online="10" data-pjax="0"><span class="fa fa-check"></span> Set online</a></li><li><a class="toggle-profile-online" href="#" data-uid="611510" data-online="1" data-pjax="0"><span class="fa fa-power-off"></span> Set offline</a></li><li><a class="make-stream-link" href="#" data-uid="611510" data-pjax="0"><span class="fa fa-external-link"></span> Generate invite link</a></li><li><a href="/profile/update/611510/" data-pjax="0"><span class="fa fa-pencil"></span> Edit</a></li></ul></div>            <div class="online-status label label-profile-tile label-success">
+                <div class="profile-online-wrap" data-id="611510">Online</div>            </div>
+                        </div>
+        <div class="profile-tile-wrap__footer">
+            <span class="profile-status label label-profile-tile  label-success">Active</span><span class="profile-sync label label-profile-tile label-success">Synchronized</span>            <div class="clearfix"></div>
+            <div class="profile-time-wrap text-center">
+                <div class="time">
+                    Created 12.02.2024 20:29                </div>
+                <div class="time">
+                    Updated 09.02.2026 17:16                </div>
+            </div>
+        </div>
+    </div>
+</div>
+<div class="profile-tile-wrap-outside">
+    <div class="profile-tile-wrap">
+        <a class="profile-tile-wrap__img" href="/profile/update/609542/" data-pjax="0" style="background-image: url(&quot;https://img.luxee.date/thumb/1728581439_HntA_bh-tr2VJ6FgFlSQEsN.jpg&quot;)">        <div class="profile-tile-wrap__info">
+            <div class="left-wrap text-left pull-left">
+                <div class="count-img">
+                    <img src="/images/ic_count_img.svg" alt="">
+                    <span class="count">159</span>
+                                    </div>
+                <div class="username">Yanina</div>
+                <div class="location">
+                    Ukraine                </div>
+            </div>
+            <div class="right-wrap text-right pull-right">
+                <div class="age">
+                    42 yrs                </div>
+                <div class="uid">Uid: 609542</div>
+            </div>
+        </div>
+        </a>        <div class="profile-tile-wrap__action text-center">
+            <div class="checkbox-action pull-left"><input type="checkbox" name="FakeProfileModel[uids][]" value="609542"></div><div class="btn-group profile-setting-group pull-right"><button type="button" class="btn btn-default btn-sm dropdown-toggle" data-toggle="dropdown" aria-haspopup="true" aria-expanded="false"><span class="profile-conf-button"><img src="/images/ic_conf.svg"></span></button><ul class="dropdown-menu dropdown-menu-left"><li><a class="toggle-profile-online" href="#" data-uid="609542" data-online="10" data-pjax="0"><span class="fa fa-check"></span> Set online</a></li><li><a class="toggle-profile-online" href="#" data-uid="609542" data-online="1" data-pjax="0"><span class="fa fa-power-off"></span> Set offline</a></li><li><a class="make-stream-link" href="#" data-uid="609542" data-pjax="0"><span class="fa fa-external-link"></span> Generate invite link</a></li><li><a href="/profile/update/609542/" data-pjax="0"><span class="fa fa-pencil"></span> Edit</a></li></ul></div>            <div class="online-status label label-profile-tile label-default">
+                <div class="profile-online-wrap" data-id="609542">Offline</div>            </div>
+                        </div>
+        <div class="profile-tile-wrap__footer">
+            <span class="profile-status label label-profile-tile  label-success">Active</span><span class="profile-sync label label-profile-tile label-success">Synchronized</span>            <div class="clearfix"></div>
+            <div class="profile-time-wrap text-center">
+                <div class="time">
+                    Created 07.08.2023 22:05                </div>
+                <div class="time">
+                    Updated 09.02.2026 12:26                </div>
+            </div>
+        </div>
+    </div>
+</div>
+    </div>
+    <div class="row">
+        <div class="col-md-12 col-sm-12 col-xs-12">
+                    </div>
+    </div>
+    
+<div id="generate-invite-link" class="fade modal" role="dialog" tabindex="-1">
+<div class="modal-dialog ">
+<div class="modal-content">
+<div class="modal-header">
+<button type="button" class="close" data-dismiss="modal" aria-hidden="true">×</button>
+<h2>Invite Link</h2>
+</div>
+<div class="modal-body">
+<div class="custom-preloader">
+        <div class="overlay"></div>
+        <div class="cssload-loader">
+            <div class="cssload-inner cssload-one"></div>
+            <div class="cssload-inner cssload-two"></div>
+            <div class="cssload-inner cssload-three"></div>
+        </div>
+    </div>
+</div>
+
+</div>
+</div>
+</div></div>                        </div>
+                    </div>
+                </div>
+            </div>
+
+        </div>
+        <!-- /page content -->
+        <!-- footer content -->
+<!--        <footer>-->
+<!--            <div class="clearfix"></div>-->
+<!--        </footer>-->
+        <!-- /footer content -->
+    </div>
+    <div class="custom-preloader">
+        <div class="overlay"></div>
+        <div class="cssload-loader">
+            <div class="cssload-inner cssload-one"></div>
+            <div class="cssload-inner cssload-two"></div>
+            <div class="cssload-inner cssload-three"></div>
+        </div>
+    </div>
+</div>
+
+
+<div id="error-modal" class="fade modal" role="dialog" tabindex="-1">
+<div class="modal-dialog ">
+<div class="modal-content">
+<div class="modal-header">
+<button type="button" class="close" data-dismiss="modal" aria-hidden="true">×</button>
+<h2>Error occured</h2>
+</div>
+<div class="modal-body">
+<div class="custom-error-modal-wrap alert alert-danger alert-dismissible fade in">
+</div>
+
+</div>
+
+</div>
+</div>
+</div>
+<script src="/assets/ed650886/jquery.js?v=1741080951"></script>
+<script src="/assets/cc1ed25b/js/bootstrap.js?v=1741080951"></script>
+<script src="/assets/b3d46497/yii.js?v=1741080951"></script>
+<script src="/assets/1eacf529/jquery.pjax.js?v=1741080953"></script>
+<script src="/assets/3f0c46f2/bootstrap-progressbar.min.js?v=1741080951"></script>
+<script src="/assets/b7215a16/helpers/smartresize.js?v=1741080951"></script>
+<script src="/assets/b7215a16/custom.js?v=1741080951"></script>
+<script src="/assets/60f56a9c/js/extension.js?v=1741080951"></script>
+<script src="/js/underscore-min.js?v=1727102994"></script>
+<script src="/js/lightbox.js?v=1727102994"></script>
+<script src="/js/site.js?v=1727102994"></script>
+<script src="/js/mail-simple.js?v=1770632878"></script>
+<script src="/js/emojione.js?v=1727102994"></script>
+<script src="/js/emoji/emojionearea.js?v=1727102994"></script>
+<script src="/js/chat/socket.io.slim.js?v=1727102994"></script>
+<script src="/js/toaster/jquery.toast.js?v=1727102994"></script>
+<script src="/js/chat/chat.api.js?v=1766661040"></script>
+<script src="/js/chat/underscore-min.js?v=1727102994"></script>
+<script src="/js/chat/chat-simple.js?v=1763461531"></script>
+<script src="/js/socket.io.2.4.min.js?v=1727102994"></script>
+<script src="/js/AgoraRTC_N-4.7.2.js?v=1727102994"></script>
+<script src="/js/stream.js?v=1761645089"></script>
+<script src="/js/activity.js?v=1727102994"></script>
+<script src="/js/notify.js?v=1763461531"></script>
+<script>    if (typeof ChatSimple) {
+        var ChatSimpleInstance = new ChatSimple(
+            {"611510":{"outer":{},"lastActivity":0,"newMessages":0,"inner":{"uid":611510,"username":"Oksana","gender":2,"avatar":{"src":"https://img.luxee.date/src/1727100858_26p1r5-P4Em2MeBIuHFpdKC.jpg","preview":"https://img.luxee.date/preview/1727100858_26p1r5-P4Em2MeBIuHFpdKC.jpg","thumbnail":"https://img.luxee.date/thumb/1727100858_26p1r5-P4Em2MeBIuHFpdKC.jpg"}}}},
+            "eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJ0aW1lc3RhbXAiOiIxNzczNzU4ODIxIiwidWlkIjoxMzgxfQ.z0360HY61Gvzl3u2ctIxaV-BosaSLETmDgzb_A7v9qI",
+            '.sidebar-chat-message',
+            '/audio/inquisitiveness.mp3',
+            2
+        );
+        ChatSimpleInstance.init();
+    }    if (typeof MailSimple) {
+        var MailSimpleInstance = new MailSimple(
+            "eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJ0aW1lc3RhbXAiOjE3NzM3NTg4MjEsIm93bmVyVWlkIjoxMzgxfQ.m72v5g2ao93KL8Gzw6QZPIyYS9P36lEiT8giPSN-dfE",
+             {"mailNewCounter":"/api/v2/mail/count-new/","communicationProfiles":"/api/v2/communication/available-profiles/"},
+        );
+        MailSimpleInstance.getCount();
+    }
+    var StreamInstance = new Stream('eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJvd25lcl91aWQiOjEzODEsImNyZWF0ZWRfYXQiOjE3NzM3NTg4MjF9.ijoVm6tneYH_m40apqfOMGSkc5Ecxp-_8GS8TU90E5k', 'simple', {"renewLocalToken":"/stream/token/"}, null, '/audio/notify-stream.mp3');
+    StreamInstance.init();</script><audio src="/audio/notify-stream.mp3" preload="auto" controls="none" class="stream-join-sound" style="display: none;"></audio>
+<script>jQuery(function ($) {
+jQuery('#generate-invite-link').modal({"show":false});
+jQuery(document).pjax("#profileWraps a", {"push":true,"replace":false,"timeout":1000,"scrollTo":false,"container":"#profileWraps"});
+jQuery(document).off("submit", "#profileWraps form[data-pjax]").on("submit", "#profileWraps form[data-pjax]", function (event) {jQuery.pjax.submit(event, {"push":true,"replace":false,"timeout":1000,"scrollTo":false,"container":"#profileWraps"});});
+$(function() {
+    checkProfilesOnlineStatus();
+    
+    $.pjax.defaults.timeout = 1200;
+    $.pjax.defaults.async = false;
+    
+    $(document)
+        .on('pjax:complete', function(event) {
+            if (event.target.id === 'profileWraps') {
+                checkProfilesOnlineStatus();
+                $('#' + event.target.id).parent().find('.pjax-custom-loader').removeClass('active');
+            }
+        })
+        .on('click', '.toggle-profile-online', function (event) {
+            event.preventDefault();
+            var uid = $(this).attr('data-uid');
+            var online = $(this).attr('data-online');
+            
+            toggleOnline(uid, online);
+        })
+        .on('click', '.make-stream-link', function (event) {
+            event.preventDefault();
+            var profileUid = $(this).attr('data-uid');
+            
+            if (!profileUid) {
+                alert('Can\'t generate invite link. Please try again or contact with over support.');
+                return;
+            }
+            
+            makeStreameInviteLink(profileUid);
+        })
+        .on('click', '.copy-link', function (event) {
+            var text = $(this).parents('.link-wrap').eq(0).find('.response').text();
+            
+            navigator.clipboard.writeText(text);
+        })
+});
+
+function checkProfilesOnlineStatus() {
+    var sendRequest = function(profiles) {
+        $.post('/profile/online-status/', { profiles: profiles })
+            .done(function(data) {
+                setProfileStatus(profiles, data);
+            })
+            .fail(function(error) {
+                setProfileStatus(profiles);
+            });
+    };
+    
+    var dataWrap = $('.profile-online-wrap'),
+        profileList = [];
+    
+    if (!dataWrap || dataWrap.length <= 0)
+        return;
+    
+    dataWrap.each(function() {
+        var profileId = $(this).attr('data-id');
+        
+        if (profileId) {
+            profileList.push(profileId);
+        }
+    });
+    
+    if (profileList.length === 0) {
+     return;   
+    }
+    
+    sendRequest(profileList);
+}
+function addCounter(selectorClass, count, moreEqual) {
+    $('.' + selectorClass)
+        .replaceWith(
+            count > 0 ? 
+                '<span class="' + selectorClass + ' label label-danger">' + (moreEqual && count >= moreEqual ? '+' + moreEqual : count) + '</span>' :
+                '<span id="' + selectorClass + '" ></span>'
+        );
+}
+
+function getCounters(url, cb) {
+    $.get(url)
+        .done(function (data) {
+            cb(null, data);
+        })
+        .fail(function (error) {
+            cb(error);
+        })
+}        function getCountTickets() {
+            getCounters('/counters/tickets/', function (error, data) {
+                if (error) {
+                    addCounter('counter_tickets-new', 0);
+                    return;
+                }
+
+                addCounter('counter_tickets-new', data.count);
+        });
+    }
+    
+    getCountTickets();        function getCountLikes() {
+            getCounters('/counters/news-likes/', function (error, data) {
+                if (error) {
+                    addCounter('counter_likes-new', 0);
+                    return;
+                }
+
+                addCounter('counter_likes-new', data.count, 10);
+        });
+    }
+    
+    getCountLikes();        function getCountRequests() {
+            getCounters('/counters/contact-request/', function (error, data) {
+                if (error) {
+                    addCounter('counter_requests-new', 0);
+                    return;
+                }
+
+                addCounter('counter_requests-new', data.count, 10);
+        });
+    }
+    
+    getCountRequests();        function getCountGifts() {
+            $.ajax({
+                url: '/api/agency/gifts/r/orders/notify/count',
+                method: 'GET',
+                dataType: 'json',
+                data: null,
+                headers: {
+                    token: 'eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJ0aW1lc3RhbXAiOjE3NzM3NTg4MjEsIm93bmVyVWlkIjoxMzgxfQ.3yaqtX7qML7KCH_BBIdzWrgOlQCzFpgM_Dk1i1wZhzg'
+                }
+            })
+                .done(function (response) {
+                    if (!response.success || !response.data) {
+                        addCounter('counter_gifts-new', 0);
+                        return;
+                    }
+                    
+                    addCounter('counter_gifts-new', response.data, 10);
+                })
+                .fail(function () {
+                    addCounter('counter_gifts-new', 0);
+                });
+    }
+    
+    getCountGifts();
+var ActivityCenterInstance = null;
+$(function () {
+    if (typeof ActivityCenter !== 'undefined') {
+        ActivityCenterInstance = new ActivityCenter('https://img.luxee.date', 'eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJ0aW1lc3RhbXAiOjE3NzM3NTg4MjEsIm93bmVyVWlkIjoxMzgxfQ.3yaqtX7qML7KCH_BBIdzWrgOlQCzFpgM_Dk1i1wZhzg', );
+        
+        ActivityCenterInstance.init();
+    }
+    
+    if (typeof Notify !== 'undefined') {
+        SystemNotification = new Notify(
+            'eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJleHAiOjE3NzM3NzMyMjEsInRpbWVzdGFtcCI6MTc3Mzc1ODgyMSwib3duZXJVaWQiOjEzODF9.lUtdwBgfG0bSydW3FnurTVGLsyGB6p0N-kmdZ5iaY2U',
+            null,
+            null,
+            '/audio/inquisitiveness.mp3',
+            '/audio/notify-task.mp3',
+            1381,
+            '/notify/token/');
+    }
+});
+jQuery('#error-modal').modal({"show":false,"backdrop":"static"});
+$(function () {
+    $('body').on('click', function (event) {
+        if($(event.target).parents('#sidebar-menu').length <= 0 && $('#sidebar-menu').find('li.active').length > 0) {
+            $('#sidebar-menu').find('li.active').removeClass('active');
+            $('#sidebar-menu').find('.child_menu').hide();
+        }
+    });
+});
+jQuery('#offlineModel').modal({"show":false,"backdrop":"static"});
+});</script>
+<div id="offlineModel" class="fade modal" role="dialog" tabindex="-1">
+<div class="modal-dialog ">
+<div class="modal-content">
+<div class="modal-header">
+<button type="button" class="close" data-dismiss="modal" aria-hidden="true">×</button>
+
+</div>
+<div class="modal-body">
+<div class="offline-popup_img">
+    <img src="/images/time.gif" alt="Is Online">
+</div>
+<div class="offline-popup_title">You’re inactive</div>
+<div class="offline-popup_description">Confirm your activity by clicking on the button “I am online” to continue</div>
+<div class="offline-popup_btn">
+    <button type="button" class="btn btn-success" data-dismiss="modal">I am online</button>
+</div>
+
+</div>
+
+</div>
+</div>
+</div><script defer="" src="https://static.cloudflareinsights.com/beacon.min.js/v8c78df7c7c0f484497ecbca7046644da1771523124516" integrity="sha512-8DS7rgIrAmghBFwoOTujcf6D9rXvH8xm8JQ1Ja01h9QX8EzXldiszufYa4IFfKdLUKTTrnSFXLDkUEOTrZQ8Qg==" data-cf-beacon="{&quot;version&quot;:&quot;2024.11.0&quot;,&quot;token&quot;:&quot;832b58ac5fac44b98196782c79b5aa8b&quot;,&quot;server_timing&quot;:{&quot;name&quot;:{&quot;cfCacheStatus&quot;:true,&quot;cfEdge&quot;:true,&quot;cfExtPri&quot;:true,&quot;cfL4&quot;:true,&quot;cfOrigin&quot;:true,&quot;cfSpeedBrain&quot;:true},&quot;location_startswith&quot;:null}}" crossorigin="anonymous"></script>
+
+
+<div id="lightboxOverlay" class="lightboxOverlay" style="display: none;"></div><div id="lightbox" class="lightbox" style="display: none;"><div class="lb-outerContainer"><div class="lb-container"><img class="lb-image" src="data:image/gif;base64,R0lGODlhAQABAIAAAP///wAAACH5BAEAAAAALAAAAAABAAEAAAICRAEAOw=="><div class="lb-nav"><a class="lb-prev" href=""></a><a class="lb-next" href=""></a></div><div class="lb-loader"><a class="lb-cancel"></a></div></div></div><div class="lb-dataContainer"><div class="lb-data"><div class="lb-details"><span class="lb-caption"></span><span class="lb-number"></span></div><div class="lb-closeContainer"><a class="lb-close"></a></div></div></div></div><audio src="/audio/inquisitiveness.mp3" preload="auto" controls="none" class="chat-message-sound notify-essage sound" style="display: none;"></audio><audio src="/audio/notify-task.mp3" preload="auto" controls="none" class="chat-task-sound notify-essage sound" style="display: none;"></audio></body></html>

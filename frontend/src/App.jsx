@@ -6,6 +6,7 @@ import useAuthStore from './stores/authStore';
 import useThemeStore from './stores/themeStore';
 import Login from './pages/Login';
 import Dashboard from './pages/Dashboard';
+import AiTest from './pages/AiTest';
 
 // Создаём QueryClient
 const queryClient = new QueryClient({
@@ -66,6 +67,14 @@ function App() {
             element={
               <ProtectedRoute>
                 <Dashboard />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/ai-test"
+            element={
+              <ProtectedRoute>
+                <AiTest />
               </ProtectedRoute>
             }
           />

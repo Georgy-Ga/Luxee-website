@@ -39,19 +39,47 @@ export const luxeeApi = {
 
   // Проверить сообщения на всех аккаунтах
   checkAllMessages: async () => {
-    const response = await api.get('/luxee/check-messages');
+    const response = await api.get('/luxee/messages/check-all');
     return response.data;
   },
 
   // Проверить сообщения на конкретном аккаунте
   checkAccountMessages: async (accountId) => {
-    const response = await api.get('/luxee/check-messages/account', { params: { accountId } });
+    const response = await api.get('/luxee/messages/check-account', { params: { accountId } });
     return response.data;
   },
 
-  // Получить только непрочитанные сообщения
-  checkUnreadMessages: async () => {
-    const response = await api.get('/luxee/check-messages/unread');
+  // Отправить сообщение в чат
+  sendMessage: async (accountId, profileUid, memberUid, text, chatIdentity = null) => {
+    const response = await api.post('/luxee/messages/send', { 
+      accountId, 
+      profileUid, 
+      memberUid, 
+      text,
+      chatIdentity 
+    });
+    return response.data;
+  },
+
+  // Загрузить чаты профиля (при клике на профиль)
+  loadProfileChats: async (accountId, profileUid) => {
+    const response = await api.get('/luxee/profile-chats', { 
+      params: { accountId, profileUid } 
+    });
+    return response.data;
+  },
+
+  // Открыть чат и получить последнее сообщение
+  openChat: async (accountId, profileUid, chatId) => {
+    const response = await api.get('/luxee/chat/open', { 
+      params: { accountId, profileUid, chatId } 
+    });
+    return response.data;
+  },
+
+  // Включить/выключить AI для Luxee аккаунта (для админа)
+  toggleAccountAi: async (accountId, enabled) => {
+    const response = await api.post(`/ai/accounts/${accountId}/set`, { enabled });
     return response.data;
   },
 };

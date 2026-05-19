@@ -1,11 +1,38 @@
- import { useState } from 'react';
+import { useState, useEffect } from 'react';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import useChatStore from '../stores/chatStore';
+import { luxeeApi } from '../api/luxeeApi';
+
+// Функция для декодирования HTML entities
+const decodeHtmlEntities = (text) => {
+	if (!text) return text;
+	const textarea = document.createElement('textarea');
+	textarea.innerHTML = text;
+	return textarea.value;
+};
+
+// Функция для копирования в буфер обмена (БЕЗ alert!)
+const copyToClipboard = (text) => {
+	navigator.clipboard.writeText(text).then(() => {
+		console.log(`Скопировано: ${text}`);
+	}).catch(err => {
+		console.error('Ошибка копирования:', err);
+	});
+};
 
 const Sidebar = ({ messagesData, refetch }) => {
   const [expandedAccounts, setExpandedAccounts] = useState({});
   const [expandedProfiles, setExpandedProfiles] = useState({});
+  const [copiedId, setCopiedId] = useState(null); // Для визуального эффекта копирования
   
   const { selectedProfile, selectedChat, setSelectedProfile, setSelectedChat, aiEnabledByAccount, toggleAIForAccount } = useChatStore();
+  
+  // Функция копирования с визуальным эффектом
+  const handleCopy = (id) => {
+    copyToClipboard(id.toString());
+    setCopiedId(id);
+    setTimeout(() => setCopiedId(null), 2000); // Сброс через 2 секунды
+  };
 
   const toggleAccount = (accountId) => {
     setExpandedAccounts(prev => ({ ...prev, [accountId]: !prev[accountId] }));
@@ -15,7 +42,12 @@ const Sidebar = ({ messagesData, refetch }) => {
     setExpandedProfiles(prev => ({ ...prev, [profileUid]: !prev[profileUid] }));
   };
 
+  const queryClient = useQueryClient();
+
   const handleProfileClick = (account, profile) => {
+    // Инвалидируем кэш чатов при переключении профиля
+    queryClient.invalidateQueries({ queryKey: ['profileChats'] });
+    
     setSelectedProfile({ ...profile, accountId: account.accountId, accountEmail: account.accountEmail });
     toggleProfile(profile.uid);
   };
@@ -25,6 +57,7 @@ const Sidebar = ({ messagesData, refetch }) => {
       ...chat,
       profileUid: profile.uid,
       profileUsername: profile.username,
+      profileAvatar: profile.avatar,
       accountId: account.accountId,
       accountEmail: account.accountEmail,
     });
@@ -76,41 +109,18 @@ const Sidebar = ({ messagesData, refetch }) => {
 
             {/* Профили */}
             {expandedAccounts[account.accountId] && account.profiles?.map((profile) => (
-              <div key={profile.uid} className="ml-4 mt-2">
-                <div
-                  onClick={() => handleProfileClick(account, profile)}
-                  className={`p-2 rounded-lg cursor-pointer transition-colors ${
-                    selectedProfile?.uid === profile.uid
-                      ? 'bg-purple dark:bg-accent text-white'
-                      : 'bg-light-surface dark:bg-dark-surface hover:bg-light-hover dark:hover:bg-dark-hover'
-                  }`}
-                >
-                  <div className="flex items-center gap-2">
-                    {profile.avatar && (
-                      <img src={profile.avatar} alt={profile.username} className="w-8 h-8 rounded-full" />
-                    )}
-                    <div className="flex-1 min-w-0">
-                      <p className={`font-medium text-sm truncate ${
-                        selectedProfile?.uid === profile.uid ? 'text-white' : 'text-gray-900 dark:text-white'
-                      }`}>
-                        {profile.username} {profile.isActive && '⭐'}
-                      </p>
-                      <p className={`text-xs truncate ${
-                        selectedProfile?.uid === profile.uid ? 'text-white/80' : 'text-gray-600 dark:text-gray-400'
-                      }`}>
-                        UID: {profile.uid} • {profile.newMessages} новых • {profile.unansweredMessages} неотв.
-                      </p>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Чаты с мужчинами (пока заглушка, т.к. нет API для получения списка чатов) */}
-                {expandedProfiles[profile.uid] && profile.newMessages > 0 && (
-                  <div className="ml-4 mt-2 text-xs text-gray-600 dark:text-gray-400">
-                    <p>Список чатов будет добавлен после реализации API</p>
-                  </div>
-                )}
-              </div>
+              <ProfileItem
+                key={profile.uid}
+                account={account}
+                profile={profile}
+                isExpanded={expandedProfiles[profile.uid]}
+                isSelected={selectedProfile?.uid === profile.uid}
+                onProfileClick={handleProfileClick}
+                onChatClick={handleChatClick}
+                selectedChatId={selectedChat?.chatId}
+                copiedId={copiedId}
+                onCopy={handleCopy}
+              />
             ))}
 
             {/* Сообщение если нет профилей */}
@@ -119,16 +129,156 @@ const Sidebar = ({ messagesData, refetch }) => {
                 Нет анкет на этом аккаунте
               </div>
             )}
-
-            {/* Сообщение если нет новых сообщений */}
-            {expandedAccounts[account.accountId] && account.profiles && account.profiles.length > 0 && account.totalUnread === 0 && (
-              <div className="ml-4 mt-2 p-2 text-xs text-gray-500 dark:text-gray-400 text-center">
-                Нет новых сообщений ни на одной анкете
-              </div>
-            )}
           </div>
         ))}
       </div>
+    </div>
+  );
+};
+
+// Отдельный компонент для профиля с чатами
+const ProfileItem = ({ account, profile, isExpanded, isSelected, onProfileClick, onChatClick, selectedChatId, copiedId, onCopy }) => {
+  // ⭐ Для активного профиля чаты уже загружены, для неактивных - загружаем при клике
+  const [chats, setChats] = useState(profile.chats || []);
+  const [isLoading, setIsLoading] = useState(false);
+  const [unansweredCount, setUnansweredCount] = useState(profile.unansweredMessages || 0);
+  const hasNewMessages = profile.newMessages > 0;
+  const hasChats = chats.length > 0;
+  const [hasLoaded, setHasLoaded] = useState(false);
+
+  // Загружаем чаты при раскрытии профиля с newMessages
+  useEffect(() => {
+    const loadChats = async () => {
+      console.log(`[ProfileItem] useEffect triggered:`, {
+        isExpanded,
+        hasNewMessages,
+        hasLoaded,
+        profileUid: profile.uid,
+        newMessages: profile.newMessages
+      });
+
+      // Загружаем только если есть newMessages и еще не загружали
+      if (isExpanded && hasNewMessages && !hasLoaded) {
+        setIsLoading(true);
+        try {
+          console.log(`[ProfileItem] Loading chats for profile ${profile.uid}...`);
+          const result = await luxeeApi.loadProfileChats(account.accountId, profile.uid);
+          console.log(`[ProfileItem] API response:`, result);
+          setChats(result.chats || []);
+          setUnansweredCount(result.unansweredCount || 0);
+          setHasLoaded(true);
+          console.log(`[ProfileItem] Loaded ${result.chats?.length || 0} chats, ${result.unansweredCount || 0} unanswered`);
+        } catch (error) {
+          console.error('[ProfileItem] Error loading profile chats:', error);
+        } finally {
+          setIsLoading(false);
+        }
+      }
+    };
+
+    loadChats();
+  }, [isExpanded, hasNewMessages, account.accountId, profile.uid, hasLoaded]);
+
+  // Обновляем чаты если profile.chats изменился (для активного профиля)
+  useEffect(() => {
+    if (profile.chats && profile.chats.length > 0) {
+      setChats(profile.chats);
+      setUnansweredCount(profile.unansweredMessages || 0);
+    }
+  }, [profile.chats, profile.unansweredMessages]);
+
+  return (
+    <div className="ml-4 mt-2">
+      <div
+        onClick={() => onProfileClick(account, profile)}
+        className={`p-2 rounded-lg cursor-pointer transition-colors ${
+          isSelected
+            ? 'bg-purple dark:bg-accent text-white'
+            : 'bg-light-surface dark:bg-dark-surface hover:bg-light-hover dark:hover:bg-dark-hover'
+        }`}
+      >
+        <div className="flex items-center gap-2">
+          {profile.avatar && (
+            <img src={profile.avatar} alt={profile.username} className="w-8 h-8 rounded-full" />
+          )}
+          <div className="flex-1 min-w-0">
+            <p className={`font-medium text-sm truncate ${
+              isSelected ? 'text-white' : 'text-gray-900 dark:text-white'
+            }`}>
+              {profile.username} {profile.isActive && '⭐'}
+            </p>
+            <p className={`text-xs truncate ${
+              isSelected ? 'text-white/80' : 'text-gray-600 dark:text-gray-400'
+            }`}>
+              UID: {profile.uid} • {profile.newMessages} новых • {unansweredCount} неотв.
+            </p>
+          </div>
+        </div>
+      </div>
+
+      {/* Чаты профиля - всегда показываем если есть */}
+      {isExpanded && (
+        <div className="ml-4 mt-2">
+          {isLoading ? (
+            <div className="p-2 text-xs text-gray-500 dark:text-gray-400 text-center">
+              <div className="animate-pulse">⏳ Загрузка чатов...</div>
+            </div>
+          ) : hasChats ? (
+            <div className="space-y-1">
+              {chats.map((chat) => {
+                const decodedUsername = decodeHtmlEntities(chat.memberUsername);
+                return (
+                  <div
+                    key={chat.chatId}
+                    className={`p-2 rounded cursor-pointer transition-colors text-xs ${
+                      selectedChatId === chat.chatId
+                        ? 'bg-purple/20 dark:bg-accent/20 border-l-2 border-purple dark:border-accent'
+                        : 'bg-light-bg dark:bg-dark-bg hover:bg-light-hover dark:hover:bg-dark-hover'
+                    }`}
+                  >
+                    <div 
+                      className="flex items-center justify-between gap-2"
+                      onClick={() => onChatClick(account, profile, chat)}
+                    >
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-1.5">
+                          <p className="font-medium text-gray-900 dark:text-white truncate">
+                            {decodedUsername || 'Мужчина'}
+                          </p>
+                          {chat.memberUid && (
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                onCopy(chat.memberUid);
+                              }}
+                              className={`px-1.5 py-0.5 rounded font-mono transition-all flex-shrink-0 ${
+                                copiedId === chat.memberUid
+                                  ? 'bg-green-500 dark:bg-green-600 text-white scale-105'
+                                  : 'bg-blue-100 dark:bg-blue-900 text-blue-700 dark:text-blue-300 hover:bg-blue-200 dark:hover:bg-blue-800'
+                              }`}
+                              title="Нажмите чтобы скопировать ID"
+                            >
+                              {copiedId === chat.memberUid ? '✓' : chat.memberUid}
+                            </button>
+                          )}
+                        </div>
+                        <p className="text-gray-600 dark:text-gray-400 truncate">
+                          {chat.newMessages > 0 && `🔴 ${chat.newMessages} новых`}
+                          {chat.unAnswered && ' • ⚠️ Неотвечен'}
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          ) : (
+            <div className="p-2 text-xs text-gray-500 dark:text-gray-400 text-center">
+              Нет новых сообщений
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 };

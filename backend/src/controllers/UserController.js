@@ -1,7 +1,8 @@
 import userService from '../services/userService.js';
+import tokenService from '../services/tokenService.js';
 import { validationResult } from 'express-validator';
 import ApiError from '../exceptions/apiError.js';
-import luxeeAuthService from '../services/luxeeApi/luxeeAuthService.js';
+import luxeeAuthService from '../services/luxeeApi/luxeeAuthService/index.js';
 const UserController = {
 	registration: async (req, res, next) => {
 		try {
@@ -47,7 +48,16 @@ const UserController = {
 	logout: async(req, res, next) => {
 		try {
 			const { refreshToken } = req.cookies;
-			const token = await userService.logout(refreshToken);
+			// Получаем userId из токена если есть
+			let userId = null;
+			try {
+				const userData = tokenService.validateRefreshToken(refreshToken);
+				userId = userData?.id;
+			} catch (e) {
+				// Токен невалиден, но продолжаем logout
+			}
+			
+			const token = await userService.logout(refreshToken, userId);
 			res.clearCookie('refreshToken');
 			return res.json(token);
 		} catch (error) {
@@ -71,6 +81,17 @@ const UserController = {
 		try {
 			const users = await userService.getAllUsers();
 			return res.json(users);
+		} catch (error) {
+			next(error);
+		}
+	},
+	deleteUser: async(req, res, next) => {
+		try {
+			const { userId } = req.params;
+			const requestingUserId = req.user.id; // ID текущего пользователя из middleware
+			
+			const result = await userService.deleteUser(userId, requestingUserId);
+			return res.json(result);
 		} catch (error) {
 			next(error);
 		}

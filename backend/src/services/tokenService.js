@@ -43,6 +43,10 @@ const tokenService = {
 	findToken: async refreshToken => {
 		const tokenData = await TokenModel.findOne({ refreshToken });
 		return tokenData;
+	},
+	removeTokenByUserId: async userId => {
+		const tokenData = await TokenModel.deleteOne({ user: userId });
+		return tokenData;
 	}
 };
 

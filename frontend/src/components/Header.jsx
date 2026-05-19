@@ -37,6 +37,24 @@ const Header = () => {
         </div>
 
         <div className="flex items-center gap-3">
+          {/* AI Test Button */}
+          <button
+            onClick={() => navigate('/ai-test')}
+            className="px-4 py-2 rounded-lg font-medium bg-purple-500 hover:bg-purple-600 text-white transition-colors"
+          >
+            🤖 AI Test
+          </button>
+
+          {/* Dashboard Button (when on AI Test page) */}
+          {window.location.pathname === '/ai-test' && (
+            <button
+              onClick={() => navigate('/dashboard')}
+              className="px-4 py-2 rounded-lg font-medium bg-blue-500 hover:bg-blue-600 text-white transition-colors"
+            >
+              📊 Dashboard
+            </button>
+          )}
+
           {/* AI Toggle */}
           <button
             onClick={toggleAI}
@@ -49,15 +67,13 @@ const Header = () => {
             AI: {aiEnabled ? 'ON' : 'OFF'}
           </button>
 
-          {/* Admin Button */}
-          {user?.role === 'admin' && (
-            <button
-              onClick={() => setShowAdminModal(true)}
-              className="btn-secondary"
-            >
-              ⚙️ Админ
-            </button>
-          )}
+          {/* Settings Button */}
+          <button
+            onClick={() => setShowAdminModal(true)}
+            className="btn-secondary"
+          >
+            ⚙️ Настройки
+          </button>
 
           {/* Theme Toggle */}
           <button

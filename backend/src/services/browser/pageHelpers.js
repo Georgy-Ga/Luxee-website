@@ -43,7 +43,7 @@ const pageHelpers = {
 	},
 
 	// Ожидание селектора
-	waitForElement: async ({ page, selector, state = 'visible', timeout = 15000 }) => {
+	waitForElement: async ({ page, selector, state = 'visible', timeout = 8000 }) => {
 		try {
 			await page.waitForSelector(selector, { state, timeout });
 			return { success: true };

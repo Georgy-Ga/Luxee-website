@@ -51,4 +51,16 @@ export const authApi = {
     const response = await api.get('/users');
     return response.data;
   },
+
+  // Удалить пользователя (только для админов)
+  deleteUser: async (userId) => {
+    const response = await api.delete(`/users/${userId}`);
+    return response.data;
+  },
+
+  // Включить/выключить AI для пользователя (только для админов)
+  toggleUserAi: async (userId, enabled) => {
+    const response = await api.post(`/ai/users/${userId}/set`, { enabled });
+    return response.data;
+  },
 };

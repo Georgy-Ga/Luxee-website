@@ -8,7 +8,7 @@ const useChatStore = create((set) => ({
   // Выбранный мужчина (чат)
   selectedChat: null,
   // Статус AI (глобальный и по аккаунтам)
-  aiEnabled: true,
+  aiEnabled: false,
   aiEnabledByAccount: {}, // { accountId: boolean }
 
   setSelectedAccount: (account) => set({ selectedAccount: account, selectedProfile: null, selectedChat: null }),
