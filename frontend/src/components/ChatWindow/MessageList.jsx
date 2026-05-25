@@ -11,7 +11,7 @@ const MessageList = ({ messages, isLoading, copiedId, onCopy }) => {
 	if (isLoading) {
 		return (
 			<div className="flex-1 flex items-center justify-center">
-				<div className="text-gray-500 dark:text-gray-400">Загрузка сообщений...</div>
+				<div className="text-gray-600 dark:text-gray-300">Загрузка сообщений...</div>
 			</div>
 		);
 	}
@@ -19,13 +19,13 @@ const MessageList = ({ messages, isLoading, copiedId, onCopy }) => {
 	if (!messages || messages.length === 0) {
 		return (
 			<div className="flex-1 flex items-center justify-center">
-				<div className="text-gray-500 dark:text-gray-400">Нет сообщений</div>
+				<div className="text-gray-600 dark:text-gray-300">Нет сообщений</div>
 			</div>
 		);
 	}
 
 	return (
-		<div className="flex-1 overflow-y-auto p-4 space-y-4">
+		<div className="flex-1 overflow-y-auto p-4 space-y-4 custom-scrollbar">
 			{messages.map((msg) => {
 				const isFromMan = msg.from === 'man';
 				const decodedBody = decodeHtmlEntities(msg.body);
@@ -38,8 +38,8 @@ const MessageList = ({ messages, isLoading, copiedId, onCopy }) => {
 						<div
 							className={`max-w-[70%] rounded-lg p-3 ${
 								isFromMan
-									? 'bg-gray-200 dark:bg-gray-700 text-gray-900 dark:text-white'
-									: 'bg-blue-600 text-white'
+									? 'bg-light-surface dark:bg-dark-surface text-gray-900 dark:text-white border border-light-border dark:border-dark-border'
+									: 'bg-purple dark:bg-accent text-white'
 							}`}
 						>
 							<div className="flex items-start justify-between gap-2 mb-1">

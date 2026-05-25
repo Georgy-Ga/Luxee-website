@@ -19,17 +19,47 @@ export const extractAllProfilesData = () => {
 
 	let activeProfileUid = null;
 	try {
-		activeProfileUid = modelsChat.getProfile.active?.uid;
+		// ✅ ИСПРАВЛЕНО: active.inner.uid, а не active.uid!
+		activeProfileUid = modelsChat.getProfile.active?.inner?.uid;
 	} catch (e) {
 		// Активный профиль не определен
 	}
+
+	// 🔍 DEBUG: Возвращаем RAW данные для анализа
+	const firstChatId = Object.keys(chatsListData)[0];
+	const firstChat = chatsListData[firstChatId];
+	
+	// Извлекаем только нужные поля чата (без circular references)
+	const sampleChatSafe = firstChat ? {
+		chatId: firstChatId,
+		newMessages: firstChat.newMessages,
+		unAnswered: firstChat.unAnswered,
+		lastActivity: firstChat.lastActivity,
+		membersCount: firstChat.members?.length,
+		// Только базовые поля members без channel
+		membersBasic: firstChat.members?.map(m => ({
+			uid: m.uid,
+			username: m.username,
+			first_name: m.first_name,
+			type: m.type
+		}))
+	} : null;
+	
+	const debugInfo = {
+		activeProfileUid: activeProfileUid,
+		activeProfileFull: modelsChat.getProfile.active,
+		totalChats: Object.keys(chatsListData).length,
+		chatIds: Object.keys(chatsListData),
+		sampleChat: sampleChatSafe
+	};
 
 	const result = [];
 
 	for (const uid in profilesData) {
 		const profile = profilesData[uid];
 		const profileUid = profile.inner.uid;
-		const isActive = activeProfileUid && String(activeProfileUid) === String(profileUid);
+		const isActive =
+			activeProfileUid && String(activeProfileUid) === String(profileUid);
 
 		// Получаем все outer UIDs для этого профиля
 		const allProfileUids = [profile.inner.uid];
@@ -44,9 +74,7 @@ export const extractAllProfilesData = () => {
 			uid: profileUid,
 			username: profile.inner.username,
 			avatar:
-				profile.inner.avatar?.thumbnail ||
-				profile.inner.avatar?.src ||
-				null,
+				profile.inner.avatar?.thumbnail || profile.inner.avatar?.src || null,
 			newMessages: 0,
 			unansweredMessages: 0,
 			isActive: isActive,
@@ -57,30 +85,37 @@ export const extractAllProfilesData = () => {
 			// ⭐ ДЛЯ АКТИВНОГО ПРОФИЛЯ: используем modelsChat.getChats.list → unanswered
 			const profileChats = [];
 			let unansweredCount = 0;
-			
+
 			for (const chatId in chatsListData) {
 				const chat = chatsListData[chatId];
-				
+
 				// Парсим chatId чтобы получить profileUid
 				const chatProfileUid = parseInt(chatId.split('_')[0]);
-				
+
 				// Проверяем что этот чат принадлежит одному из UID профиля
 				if (allProfileUids.includes(chatProfileUid)) {
 					// Считаем unanswered
 					if (chat.unAnswered === true) {
 						unansweredCount++;
-						
+					}
+
+					// ✅ Добавляем чат если есть новые сообщения ИЛИ неотвечен
+					if (chat.newMessages > 0 || chat.unAnswered === true) {
 						// Находим данные мужчины
 						const memberData = chat.members?.find(m => m.type === 10);
 						const memberUid = memberData?.uid || parseInt(chatId.split('_')[1]);
-						
+
 						profileChats.push({
 							chatId: chatId,
 							memberUid: memberUid,
-							memberUsername: memberData?.username || memberData?.first_name || null,
-							memberAvatar: memberData?.avatar?.thumbnail || memberData?.avatar?.src || null,
-							newMessages: 0,
-							unAnswered: true,
+							memberUsername:
+								memberData?.username || memberData?.first_name || null,
+							memberAvatar:
+								memberData?.avatar?.thumbnail ||
+								memberData?.avatar?.src ||
+								null,
+							newMessages: chat.newMessages || 0,
+							unAnswered: chat.unAnswered || false,
 							lastActivity: chat.lastActivity || null,
 						});
 					}
@@ -98,7 +133,7 @@ export const extractAllProfilesData = () => {
 		result.push(profileInfo);
 	}
 
-	return result;
+	return { profiles: result, debug: debugInfo };
 };
 
 /**
@@ -119,7 +154,8 @@ export const extractAccountProfilesData = () => {
 
 	let activeProfileUid = null;
 	try {
-		activeProfileUid = modelsChat.getProfile.active?.uid;
+		// ✅ ИСПРАВЛЕНО: active.inner.uid, а не active.uid!
+		activeProfileUid = modelsChat.getProfile.active?.inner?.uid;
 	} catch (e) {
 		// Активный профиль не определен
 	}
@@ -128,7 +164,8 @@ export const extractAccountProfilesData = () => {
 
 	for (const uid in profilesData) {
 		const profile = profilesData[uid];
-		const isActive = activeProfileUid && String(activeProfileUid) === String(uid);
+		const isActive =
+			activeProfileUid && String(activeProfileUid) === String(uid);
 
 		// Получаем все outer UIDs для этого профиля
 		const allProfileUids = [profile.inner.uid];
@@ -142,9 +179,7 @@ export const extractAccountProfilesData = () => {
 			uid: profile.inner.uid,
 			username: profile.inner.username,
 			avatar:
-				profile.inner.avatar?.thumbnail ||
-				profile.inner.avatar?.src ||
-				null,
+				profile.inner.avatar?.thumbnail || profile.inner.avatar?.src || null,
 			newMessages: profile.newMessages || 0,
 			unansweredMessages: 0,
 			isActive: isActive,
@@ -156,31 +191,35 @@ export const extractAccountProfilesData = () => {
 		if (chatsData) {
 			let unansweredCount = 0;
 			const profileChats = [];
-			
+
 			for (const chatId in chatsData) {
 				const chat = chatsData[chatId];
-				
+
 				// Парсим chatId чтобы получить profileUid
 				const chatProfileUid = parseInt(chatId.split('_')[0]);
-				
+
 				// Проверяем что этот чат принадлежит одному из UID профиля
 				if (allProfileUids.includes(chatProfileUid)) {
 					// Считаем unanswered
 					if (chat.unAnswered === true) {
 						unansweredCount++;
 					}
-					
+
 					// Добавляем чат если есть новые сообщения или неотвечен
 					if (chat.newMessages > 0 || chat.unAnswered === true) {
 						// Находим данные мужчины
 						const memberData = chat.members?.find(m => m.type === 10);
 						const memberUid = memberData?.uid || parseInt(chatId.split('_')[1]);
-						
+
 						profileChats.push({
 							chatId: chatId,
 							memberUid: memberUid,
-							memberUsername: memberData?.username || memberData?.first_name || null,
-							memberAvatar: memberData?.avatar?.thumbnail || memberData?.avatar?.src || null,
+							memberUsername:
+								memberData?.username || memberData?.first_name || null,
+							memberAvatar:
+								memberData?.avatar?.thumbnail ||
+								memberData?.avatar?.src ||
+								null,
 							newMessages: chat.newMessages || 0,
 							unAnswered: chat.unAnswered || false,
 							lastActivity: chat.lastActivity || null,
@@ -188,7 +227,7 @@ export const extractAccountProfilesData = () => {
 					}
 				}
 			}
-			
+
 			profileInfo.unansweredMessages = unansweredCount;
 			profileInfo.chats = profileChats;
 		}

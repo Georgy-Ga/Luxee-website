@@ -53,8 +53,8 @@ const UsersTab = () => {
 
   return (
     <div className="space-y-6">
-      <form onSubmit={handleRegister} className="space-y-4">
-        <h3 className="text-lg font-semibold text-gray-900 dark:text-white">
+      <form onSubmit={handleRegister} className="card p-4 space-y-4">
+        <h3 className="text-lg font-semibold text-purple dark:text-accent-light">
           Создать нового пользователя
         </h3>
         
@@ -66,7 +66,7 @@ const UsersTab = () => {
             type="email"
             value={newUserEmail}
             onChange={(e) => setNewUserEmail(e.target.value)}
-            className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 dark:bg-gray-700 dark:text-white"
+            className="input-field"
             placeholder="user@example.com"
           />
         </div>
@@ -80,13 +80,13 @@ const UsersTab = () => {
               type={showNewUserPassword ? 'text' : 'password'}
               value={newUserPassword}
               onChange={(e) => setNewUserPassword(e.target.value)}
-              className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 dark:bg-gray-700 dark:text-white"
+              className="input-field pr-10"
               placeholder="Минимум 3 символа"
             />
             <button
               type="button"
               onClick={() => setShowNewUserPassword(!showNewUserPassword)}
-              className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200"
+              className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 hover:text-purple dark:text-gray-400 dark:hover:text-accent-light transition-colors"
             >
               {showNewUserPassword ? '👁️' : '👁️‍🗨️'}
             </button>
@@ -102,25 +102,25 @@ const UsersTab = () => {
         <button
           type="submit"
           disabled={registerMutation.isPending}
-          className="w-full bg-blue-600 hover:bg-blue-700 text-white font-medium py-2 px-4 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+          className="btn-primary w-full disabled:opacity-50 disabled:cursor-not-allowed"
         >
           {registerMutation.isPending ? 'Создание...' : 'Создать пользователя'}
         </button>
       </form>
 
-      <div>
-        <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">
-          Список пользователей
+      <div className="card p-4">
+        <h3 className="text-lg font-semibold text-purple dark:text-accent-light mb-4">
+          Список пользователей ({users?.length || 0})
         </h3>
         <div className="space-y-2">
           {users?.map((u) => (
             <div
               key={u._id}
-              className="flex items-center justify-between p-3 bg-gray-50 dark:bg-gray-700 rounded-lg"
+              className="flex items-center justify-between p-3 bg-light-surface dark:bg-dark-surface rounded-lg border border-light-border dark:border-dark-border"
             >
-              <div>
+              <div className="flex-1">
                 <p className="font-medium text-gray-900 dark:text-white">{u.email}</p>
-                <p className="text-sm text-gray-500 dark:text-gray-400">
+                <p className="text-sm text-gray-600 dark:text-gray-300">
                   Роль: {u.role === 'admin' ? '👑 Администратор' : '👤 Пользователь'}
                 </p>
               </div>

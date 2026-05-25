@@ -20,28 +20,28 @@ const AdminModal = ({ onClose }) => {
 
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-      <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl w-full max-w-4xl max-h-[90vh] overflow-hidden flex flex-col">
-        <div className="flex items-center justify-between p-6 border-b border-gray-200 dark:border-gray-700">
-          <h2 className="text-2xl font-bold text-gray-900 dark:text-white">
+      <div className="bg-light-bg dark:bg-dark-bg rounded-lg shadow-xl w-full max-w-4xl max-h-[90vh] overflow-hidden flex flex-col border border-light-border dark:border-dark-border">
+        <div className="flex items-center justify-between p-6 border-b border-light-border dark:border-dark-border bg-light-surface dark:bg-dark-surface">
+          <h2 className="text-2xl font-bold text-purple dark:text-accent-light">
             Панель управления
           </h2>
           <button
             onClick={onClose}
-            className="text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 text-2xl"
+            className="text-gray-600 hover:text-purple dark:text-gray-300 dark:hover:text-accent-light text-2xl transition-colors"
           >
             ×
           </button>
         </div>
 
-        <div className="flex border-b border-gray-200 dark:border-gray-700">
+        <div className="flex border-b border-light-border dark:border-dark-border bg-light-surface dark:bg-dark-surface">
           {tabs.map((tab) => (
             <button
               key={tab.id}
               onClick={() => setActiveTab(tab.id)}
               className={`flex-1 px-4 py-3 text-sm font-medium transition-colors ${
                 activeTab === tab.id
-                  ? 'text-blue-600 dark:text-blue-400 border-b-2 border-blue-600 dark:border-blue-400'
-                  : 'text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200'
+                  ? 'text-purple dark:text-accent-light border-b-2 border-purple dark:border-accent'
+                  : 'text-gray-600 dark:text-gray-300 hover:text-purple dark:hover:text-accent-light'
               }`}
             >
               {tab.label}
@@ -49,7 +49,7 @@ const AdminModal = ({ onClose }) => {
           ))}
         </div>
 
-        <div className="flex-1 overflow-y-auto p-6">
+        <div className="flex-1 overflow-y-auto p-6 custom-scrollbar">
           <ActiveComponent />
         </div>
       </div>

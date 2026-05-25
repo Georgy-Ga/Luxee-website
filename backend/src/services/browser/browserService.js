@@ -5,11 +5,15 @@ import browserConfig from '../../config/browserConfig.js';
 let browserInstance = null;
 // Map для хранения контекстов: accountId -> context
 const contexts = new Map();
+// Флаг для отслеживания краша браузера
+let browserCrashed = false;
+// Флаг для предотвращения множественных восстановлений
+let isRecovering = false;
 
 const browserService = {
 	// Запуск браузера (один на всё приложение)
 	launchBrowser: async ({ headless = browserConfig.headless, slowMo = browserConfig.slowMo } = {}) => {
-		if (browserInstance) {
+		if (browserInstance && !browserCrashed) {
 			return browserInstance;
 		}
 
@@ -25,6 +29,22 @@ const browserService = {
 				],
 			});
 
+			// Сбросить флаг краша
+			browserCrashed = false;
+
+			// Установить обработчик события disconnected
+			browserInstance.on('disconnected', async () => {
+				console.error('[Browser Service] ⚠️ Browser disconnected unexpectedly!');
+				browserCrashed = true;
+				browserInstance = null;
+				
+				// Очистить все контексты из Map (они больше не валидны)
+				contexts.clear();
+				
+				// Запустить автоматическое восстановление
+				await browserService.handleBrowserCrash();
+			});
+
 			console.log(`[Browser Service] Browser launched (headless: ${headless}, slowMo: ${slowMo}ms, devtools: ${browserConfig.devtools})`);
 			return browserInstance;
 		} catch (error) {
@@ -35,10 +55,22 @@ const browserService = {
 
 	// Получить браузер
 	getBrowser: async () => {
-		if (!browserInstance) {
+		// Если браузер крашнулся, перезапустить
+		if (browserCrashed || !browserInstance) {
+			console.log('[Browser Service] Browser not available, launching...');
 			return await browserService.launchBrowser();
 		}
-		return browserInstance;
+		
+		// Проверить что браузер действительно работает
+		try {
+			await browserInstance.version();
+			return browserInstance;
+		} catch (error) {
+			console.error('[Browser Service] Browser check failed:', error.message);
+			browserCrashed = true;
+			browserInstance = null;
+			return await browserService.launchBrowser();
+		}
 	},
 
 	// Создать контекст для аккаунта
@@ -154,9 +186,59 @@ const browserService = {
 		}
 	},
 
+	// Обработка краша браузера
+	handleBrowserCrash: async () => {
+		// Предотвратить множественные восстановления
+		if (isRecovering) {
+			console.log('[Browser Service] Recovery already in progress, skipping...');
+			return;
+		}
+
+		isRecovering = true;
+
+		try {
+			console.log('[Browser Service] 🔄 Starting automatic recovery after browser crash...');
+			
+			// Подождать немного перед восстановлением
+			await new Promise(resolve => setTimeout(resolve, 2000));
+			
+			// Импортируем contextRecoveryService динамически чтобы избежать циклических зависимостей
+			const { default: contextRecoveryService } = await import('./contextRecoveryService.js');
+			
+			// Восстановить все контексты
+			const result = await contextRecoveryService.recoverAllContexts();
+			
+			console.log(`[Browser Service] ✅ Recovery complete: ${result.recovered} contexts recovered, ${result.failed} failed`);
+			
+			if (result.failed > 0) {
+				console.warn(`[Browser Service] ⚠️ Some contexts failed to recover. Check logs for details.`);
+			}
+		} catch (error) {
+			console.error('[Browser Service] ❌ Error during automatic recovery:', error);
+		} finally {
+			isRecovering = false;
+		}
+	},
+
+	// Проверить статус браузера
+	isBrowserHealthy: async () => {
+		if (!browserInstance || browserCrashed) {
+			return false;
+		}
+
+		try {
+			await browserInstance.version();
+			return true;
+		} catch (error) {
+			return false;
+		}
+	},
+
 	// Получить статистику
 	getStats: () => ({
-		browserRunning: !!browserInstance,
+		browserRunning: !!browserInstance && !browserCrashed,
+		browserCrashed,
+		isRecovering,
 		activeContexts: contexts.size,
 		accountIds: Array.from(contexts.keys()),
 	}),

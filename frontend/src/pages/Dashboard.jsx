@@ -25,7 +25,7 @@ const Dashboard = () => {
         <Sidebar messagesData={messagesData} refetch={refetch} />
         
         {/* Окно чата справа */}
-        <div className="flex-1">
+        <div className="flex-1 h-full">
           {selectedChat ? (
             <ChatWindow />
           ) : (

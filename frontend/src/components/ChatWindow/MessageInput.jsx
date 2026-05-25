@@ -1,7 +1,17 @@
-import { useState } from 'react';
+import { useState, useRef, useEffect } from 'react';
 
 const MessageInput = ({ onSend, isSending }) => {
 	const [message, setMessage] = useState('');
+	const textareaRef = useRef(null);
+
+	// Автоматическое изменение высоты textarea
+	useEffect(() => {
+		const textarea = textareaRef.current;
+		if (textarea) {
+			textarea.style.height = 'auto';
+			textarea.style.height = Math.min(textarea.scrollHeight, 200) + 'px';
+		}
+	}, [message]);
 
 	const handleSubmit = (e) => {
 		e.preventDefault();
@@ -19,21 +29,23 @@ const MessageInput = ({ onSend, isSending }) => {
 	};
 
 	return (
-		<form onSubmit={handleSubmit} className="p-4 border-t border-gray-200 dark:border-gray-600">
-			<div className="flex gap-2">
+		<form onSubmit={handleSubmit} className="p-4 border-t border-light-border dark:border-dark-border bg-light-surface dark:bg-dark-surface">
+			<div className="flex gap-2 items-end">
 				<textarea
+					ref={textareaRef}
 					value={message}
 					onChange={(e) => setMessage(e.target.value)}
 					onKeyDown={handleKeyDown}
 					placeholder="Введите сообщение... (Enter для отправки, Shift+Enter для новой строки)"
-					className="flex-1 px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 dark:bg-gray-700 dark:text-white resize-none"
-					rows="3"
+					className="input-field resize-none overflow-hidden"
+					rows="1"
 					disabled={isSending}
+					style={{ minHeight: '40px', maxHeight: '200px' }}
 				/>
 				<button
 					type="submit"
 					disabled={!message.trim() || isSending}
-					className="px-6 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed self-end"
+					className="btn-primary px-4 py-2 disabled:opacity-50 disabled:cursor-not-allowed flex-shrink-0"
 				>
 					{isSending ? '⏳' : '📤'}
 				</button>

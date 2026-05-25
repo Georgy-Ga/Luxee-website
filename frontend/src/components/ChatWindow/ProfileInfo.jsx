@@ -2,7 +2,7 @@ const ProfileInfo = ({ profile }) => {
 	if (!profile) return null;
 
 	return (
-		<div className="p-4 bg-gray-50 dark:bg-gray-700 border-b border-gray-200 dark:border-gray-600">
+		<div className="p-4 bg-light-surface dark:bg-dark-surface border-b border-light-border dark:border-dark-border">
 			<div className="flex items-center gap-4">
 				{profile.avatar && (
 					<img
@@ -12,11 +12,11 @@ const ProfileInfo = ({ profile }) => {
 					/>
 				)}
 				<div className="flex-1">
-					<h3 className="font-semibold text-gray-900 dark:text-white">
+					<h3 className="font-semibold text-purple dark:text-accent-light">
 						{profile.name || 'Без имени'}
 					</h3>
 					{profile.age && (
-						<p className="text-sm text-gray-500 dark:text-gray-400">
+						<p className="text-sm text-gray-600 dark:text-gray-300">
 							{profile.age} лет
 						</p>
 					)}
@@ -25,10 +25,10 @@ const ProfileInfo = ({ profile }) => {
 					<div className="flex items-center gap-2">
 						<div
 							className={`w-3 h-3 rounded-full ${
-								profile.online ? 'bg-green-500' : 'bg-gray-400'
+								profile.online ? 'bg-green-500' : 'bg-gray-500'
 							}`}
 						/>
-						<span className="text-sm text-gray-500 dark:text-gray-400">
+						<span className="text-sm text-gray-600 dark:text-gray-300">
 							{profile.online ? 'Онлайн' : 'Оффлайн'}
 						</span>
 					</div>

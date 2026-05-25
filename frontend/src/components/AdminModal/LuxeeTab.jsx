@@ -66,8 +66,8 @@ const LuxeeTab = () => {
 
   return (
     <div className="space-y-6">
-      <form onSubmit={handleAddLuxee} className="space-y-4">
-        <h3 className="text-lg font-semibold text-gray-900 dark:text-white">
+      <form onSubmit={handleAddLuxee} className="card p-4 space-y-4">
+        <h3 className="text-lg font-semibold text-purple dark:text-accent-light">
           Добавить Luxee аккаунт
         </h3>
         
@@ -79,7 +79,7 @@ const LuxeeTab = () => {
             type="email"
             value={luxeeEmail}
             onChange={(e) => setLuxeeEmail(e.target.value)}
-            className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 dark:bg-gray-700 dark:text-white"
+            className="input-field"
             placeholder="luxee@example.com"
           />
         </div>
@@ -93,13 +93,13 @@ const LuxeeTab = () => {
               type={showLuxeePassword ? 'text' : 'password'}
               value={luxeePassword}
               onChange={(e) => setLuxeePassword(e.target.value)}
-              className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 dark:bg-gray-700 dark:text-white"
+              className="input-field pr-10"
               placeholder="Пароль от Luxee"
             />
             <button
               type="button"
               onClick={() => setShowLuxeePassword(!showLuxeePassword)}
-              className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200"
+              className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 hover:text-purple dark:text-gray-400 dark:hover:text-accent-light transition-colors"
             >
               {showLuxeePassword ? '👁️' : '👁️‍🗨️'}
             </button>
@@ -115,25 +115,25 @@ const LuxeeTab = () => {
         <button
           type="submit"
           disabled={addLuxeeMutation.isPending}
-          className="w-full bg-blue-600 hover:bg-blue-700 text-white font-medium py-2 px-4 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+          className="btn-primary w-full disabled:opacity-50 disabled:cursor-not-allowed"
         >
           {addLuxeeMutation.isPending ? 'Добавление...' : 'Добавить аккаунт'}
         </button>
       </form>
 
-      <div>
-        <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">
-          Мои Luxee аккаунты
+      <div className="card p-4">
+        <h3 className="text-lg font-semibold text-purple dark:text-accent-light mb-4">
+          Мои Luxee аккаунты ({luxeeAccounts?.length || 0})
         </h3>
         <div className="space-y-2">
           {luxeeAccounts?.map((acc) => (
             <div
               key={acc._id}
-              className="flex items-center justify-between p-3 bg-gray-50 dark:bg-gray-700 rounded-lg"
+              className="flex items-center justify-between p-3 bg-light-surface dark:bg-dark-surface rounded-lg border border-light-border dark:border-dark-border"
             >
-              <div>
+              <div className="flex-1">
                 <p className="font-medium text-gray-900 dark:text-white">{acc.email}</p>
-                <p className="text-sm text-gray-500 dark:text-gray-400">
+                <p className="text-sm text-gray-600 dark:text-gray-300">
                   Статус: {acc.isActive ? '🟢 Активен' : '🔴 Неактивен'}
                 </p>
               </div>

@@ -5,6 +5,7 @@ import browserService from '../../browser/browserService.js';
 import pageHelpers from '../../browser/pageHelpers.js';
 import keepAliveService from '../keepAliveService.js';
 import messageCheckIntervalService from '../messageCheckIntervalService.js';
+import profileActivationService from '../profileActivationService.js';
 
 /**
  * Восстановить сессию Luxee аккаунта
@@ -35,6 +36,10 @@ export const restoreSession = async ({ userId, accountId }) => {
 
 		const currentUrl = pageHelpers.getCurrentUrl(page);
 		console.log('[Luxee Auth] Session restored, URL:', currentUrl);
+
+		// ✅ Активируем первый профиль
+		console.log('[Luxee Auth] Activating first profile');
+		await profileActivationService.activateFirstProfile({ page });
 
 		// Запускаем keep-alive
 		await keepAliveService.start({ accountId, context });

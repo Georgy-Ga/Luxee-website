@@ -86,7 +86,22 @@ const aiBrowserContextService = {
 			}
 
 			const context = browserService.getContext(account.aiContext);
-			return context;
+			
+			// Проверить что контекст действительно работает
+			if (context) {
+				try {
+					await context.pages();
+					return context;
+				} catch (error) {
+					console.warn(`[AI Browser Context] Context for account ${accountId} is broken, will recreate`);
+					// Контекст сломан, очистить его
+					account.aiContext = null;
+					await account.save();
+					return null;
+				}
+			}
+			
+			return null;
 		} catch (error) {
 			console.error('[AI Browser Context] Error getting AI context:', error);
 			return null;
@@ -100,6 +115,14 @@ const aiBrowserContextService = {
 	 */
 	getOrCreateAiContext: async (accountId) => {
 		try {
+			// Проверить что браузер работает
+			const isBrowserHealthy = await browserService.isBrowserHealthy();
+			if (!isBrowserHealthy) {
+				console.log('[AI Browser Context] Browser not healthy, waiting for recovery...');
+				// Подождать немного для восстановления браузера
+				await new Promise(resolve => setTimeout(resolve, 3000));
+			}
+
 			// Пытаемся получить существующий контекст
 			let context = await aiBrowserContextService.getAiContext(accountId);
 

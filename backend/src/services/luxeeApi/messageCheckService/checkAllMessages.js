@@ -2,6 +2,7 @@
 import LuxeeAccountModel from '../../../models/LuxeeAccountModel.js';
 import browserService from '../../browser/browserService.js';
 import pageHelpers from '../../browser/pageHelpers.js';
+import profileActivationService from '../profileActivationService.js';
 import { extractAllProfilesData } from './profileDataExtractor.js';
 
 /**
@@ -50,8 +51,17 @@ export const checkAllMessages = async ({ userId }) => {
 				// Получаем страницу
 				const page = await pageHelpers.getOrCreatePage(context);
 
+				// ✅ АКТИВИРУЕМ ПЕРВЫЙ ПРОФИЛЬ (если ещё не активирован)
+				await profileActivationService.activateFirstProfile({ page });
+
 				// ✅ ЧИТАЕМ API БЕЗ ПЕРЕКЛЮЧЕНИЯ ПРОФИЛЕЙ
-				const profilesData = await page.evaluate(extractAllProfilesData);
+				const result = await page.evaluate(extractAllProfilesData);
+				const profilesData = result.profiles;
+
+				// 🔍 DEBUG: Логируем данные профилей
+				console.log(`[DEBUG] Active profile UID:`, result.debug.activeProfileUid);
+				console.log(`[DEBUG] Total chats:`, result.debug.totalChats);
+				console.log(`[DEBUG] Sample chat:`, JSON.stringify(result.debug.sampleChat, null, 2));
 
 				// Подсчитываем статистику
 				const accountUnread = profilesData.reduce(

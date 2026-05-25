@@ -15,7 +15,7 @@ const ChatWindow = () => {
 	const selectedChat = useChatStore(state => state.selectedChat);
 	
 	const handleCopy = (id) => {
-		copyToClipboard(id.toString());
+		copyToClipboard(id.toString());е
 		setCopiedId(id);
 		setTimeout(() => setCopiedId(null), 2000);
 	};
@@ -69,12 +69,12 @@ const ChatWindow = () => {
 
 	if (!selectedChat) {
 		return (
-			<div className="flex-1 flex items-center justify-center bg-gray-50 dark:bg-gray-800">
+			<div className="flex-1 flex items-center justify-center bg-light-bg dark:bg-dark-bg">
 				<div className="text-center">
-					<p className="text-xl text-gray-500 dark:text-gray-400 mb-2">
+					<p className="text-xl text-gray-600 dark:text-gray-300 mb-2">
 						💬 Выберите чат
 					</p>
-					<p className="text-sm text-gray-400 dark:text-gray-500">
+					<p className="text-sm text-gray-500 dark:text-gray-400">
 						Выберите чат из списка слева
 					</p>
 				</div>
@@ -83,7 +83,7 @@ const ChatWindow = () => {
 	}
 
 	return (
-		<div className="flex-1 flex flex-col bg-white dark:bg-gray-800">
+		<div className="h-full flex flex-col bg-light-bg dark:bg-dark-bg">
 			<ProfileInfo profile={chatData?.profile} />
 			<MessageList
 				messages={chatData?.messages}

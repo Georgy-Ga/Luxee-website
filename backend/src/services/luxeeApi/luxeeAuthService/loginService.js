@@ -6,6 +6,7 @@ import pageHelpers from '../../browser/pageHelpers.js';
 import chatNavigationService from '../chatNavigationService.js';
 import keepAliveService from '../keepAliveService.js';
 import messageCheckIntervalService from '../messageCheckIntervalService.js';
+import profileActivationService from '../profileActivationService.js';
 
 /**
  * Авторизация на Luxee
@@ -175,6 +176,10 @@ export const login = async ({ userId, luxeeEmail, luxeePassword }) => {
 		// Переходим в раздел чатов
 		console.log('[Luxee Auth] Navigating to chats section');
 		await chatNavigationService.navigateToChats({ page });
+
+		// ✅ Активируем первый профиль
+		console.log('[Luxee Auth] Activating first profile');
+		await profileActivationService.activateFirstProfile({ page });
 
 		// Запускаем keep-alive для поддержания активности
 		console.log('[Luxee Auth] Starting keep-alive');
