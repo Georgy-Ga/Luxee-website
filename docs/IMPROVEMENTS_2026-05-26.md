@@ -153,51 +153,63 @@ export const getAllUsersAiStatus = async (req, res) => {
 ## 5. Корректный подсчёт неотвеченных сообщений
 
 ### Проблема
-Счётчик `unansweredMessages` показывал чаты, на которые AI уже ответил, потому что не учитывал данные из `AnsweredChat` коллекции.
+Для активного профиля счётчик `unansweredMessages` из API включает в себя новые сообщения, что приводит к неправильному отображению количества реально неотвеченных чатов.
+
+**Пример:**
+- API возвращает: `unanswered: 6`, `newMessages: 4`
+- Реально неотвеченных: `6 - 4 = 2`
+- Но система показывала все 6 как неотвеченные
 
 ### Решение
 **Файл:** `backend/src/services/luxeeApi/messageCheckService/checkAccountMessages.js`
 
-Добавлена проверка отвеченных чатов:
+Добавлена специальная логика для активного профиля:
 ```javascript
-// ✅ Получаем отвеченные чаты из MongoDB для корректного подсчёта unanswered
-for (const profile of profilesData) {
-    const answeredChats = await answeredChatService.getAnsweredChats({
-        accountId: account._id,
-        profileUid: profile.profileUid,
-    });
-
-    // Создаём Set с chatId отвеченных чатов для быстрой проверки
-    const answeredChatIds = new Set(answeredChats.map(c => c.chatId));
-
-    // Пересчитываем unanswered, исключая отвеченные чаты
-    let realUnansweredCount = 0;
-    const filteredChats = [];
-
-    for (const chat of profile.chats) {
-        const isAnswered = answeredChatIds.has(chat.chatId);
-        
-        // Считаем только неотвеченные
-        if (chat.unAnswered && !isAnswered) {
-            realUnansweredCount++;
-        }
-
-        // Добавляем чат в список только если есть новые сообщения ИЛИ он неотвечен
-        if (chat.newMessages > 0 || (chat.unAnswered && !isAnswered)) {
-            filteredChats.push(chat);
-        }
-    }
-
-    profile.unansweredMessages = realUnansweredCount;
-    profile.chats = filteredChats;
+// Для активного профиля: unanswered включает новые сообщения
+// Реальные неотвеченные = unanswered - newMessages
+if (profile.isActive) {
+    const totalNewMessages = profile.chats.reduce((sum, chat) => sum + (chat.newMessages || 0), 0);
+    const rawUnanswered = profile.unansweredMessages || 0;
+    
+    // Вычитаем новые сообщения из unanswered
+    profile.unansweredMessages = Math.max(0, rawUnanswered - totalNewMessages);
+    
+    console.log(
+        `[Message Check] Profile ${profile.profileUid}: raw unanswered=${rawUnanswered}, new=${totalNewMessages}, real unanswered=${profile.unansweredMessages}`
+    );
 }
+
+// Получаем отвеченные чаты для фильтрации
+const answeredChats = await answeredChatService.getAnsweredChats({
+    accountId: account._id,
+    profileUid: profile.profileUid,
+});
+
+// Создаём Set с chatId отвеченных чатов для быстрой проверки
+const answeredChatIds = new Set(answeredChats.map(c => c.chatId));
+
+// Фильтруем чаты, исключая те на которые AI уже ответил
+const filteredChats = [];
+
+for (const chat of profile.chats) {
+    const isAnswered = answeredChatIds.has(chat.chatId);
+    
+    // Добавляем чат в список только если есть новые сообщения ИЛИ он неотвечен
+    if (chat.newMessages > 0 || (chat.unAnswered && !isAnswered)) {
+        filteredChats.push(chat);
+    }
+}
+
+profile.chats = filteredChats;
 ```
 
 ### Результат
-- Точный подсчёт неотвеченных сообщений
+- Точный подсчёт неотвеченных сообщений для активного профиля
+- Правильная формула: `реальные неотвеченные = unanswered - newMessages`
 - Исключение чатов, на которые AI уже ответил
 - Корректная фильтрация чатов в UI
 - Добавлен `totalUnanswered` в ответ API
+- Детальное логирование для отладки
 
 ---
 
