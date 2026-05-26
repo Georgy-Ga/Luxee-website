@@ -37,8 +37,31 @@ export const disableUserAi = async (req, res) => {
 
 export const getAllUsersAiStatus = async (req, res) => {
 	try {
-		const statuses = await aiManagementService.getAllUsersAiStatus();
-		res.json({ success: true, users: statuses });
+		const users = await aiManagementService.getAllUsersAiStatus();
+		const accounts = await aiManagementService.getAllAccountsAiStatus();
+		
+		// Группируем аккаунты по пользователям
+		const usersWithAccounts = users.map(user => {
+			const userAccounts = accounts.filter(acc => 
+				acc.user && acc.user._id.toString() === user._id.toString()
+			);
+			
+			return {
+				_id: user._id,
+				email: user.email,
+				role: user.role,
+				aiEnabled: user.aiEnabled,
+				aiEnabledByAdmin: user.aiEnabledByAdmin,
+				accounts: userAccounts.map(acc => ({
+					_id: acc._id,
+					luxeeEmail: acc.luxeeEmail,
+					aiEnabled: acc.aiEnabled,
+					aiEnabledByAdmin: acc.aiEnabledByAdmin
+				}))
+			};
+		});
+		
+		res.json({ success: true, users: usersWithAccounts });
 	} catch (error) {
 		console.error('[AI Management Controller] Error getting all users AI status:', error);
 		res.status(500).json({ success: false, error: error.message });

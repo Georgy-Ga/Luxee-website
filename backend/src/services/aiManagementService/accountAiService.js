@@ -6,8 +6,8 @@ import aiBrowserContextService from '../browser/aiBrowserContextService.js';
 export const getAllAccountsAiStatus = async () => {
 	try {
 		const accounts = await LuxeeAccountModel.find()
-			.select('userId email aiEnabled aiEnabledByAdmin')
-			.populate('userId', 'email')
+			.select('user luxeeEmail aiEnabled aiEnabledByAdmin')
+			.populate('user', 'email')
 			.sort({ createdAt: 1 });
 		return accounts;
 	} catch (error) {
@@ -18,8 +18,8 @@ export const getAllAccountsAiStatus = async () => {
 
 export const getUserAccountsAiStatus = async (userId) => {
 	try {
-		const accounts = await LuxeeAccountModel.find({ userId })
-			.select('email aiEnabled aiEnabledByAdmin')
+		const accounts = await LuxeeAccountModel.find({ user: userId })
+			.select('luxeeEmail aiEnabled aiEnabledByAdmin')
 			.sort({ createdAt: 1 });
 		return accounts;
 	} catch (error) {
@@ -32,8 +32,8 @@ export const getAccountAiStatus = async (userId, accountId) => {
 	try {
 		const account = await LuxeeAccountModel.findOne({
 			_id: accountId,
-			userId,
-		}).select('email aiEnabled aiEnabledByAdmin');
+			user: userId,
+		}).select('luxeeEmail aiEnabled aiEnabledByAdmin');
 
 		if (!account) {
 			throw new Error('Account not found');
@@ -51,7 +51,7 @@ export const setAccountAiByAdmin = async (accountId, enabled) => {
 			accountId,
 			{ aiEnabledByAdmin: enabled },
 			{ new: true },
-		).select('email aiEnabled aiEnabledByAdmin');
+		).select('luxeeEmail aiEnabled aiEnabledByAdmin');
 
 		if (!account) {
 			throw new Error('Account not found');
@@ -64,7 +64,16 @@ export const setAccountAiByAdmin = async (accountId, enabled) => {
 			enabled,
 		);
 
-		if (!enabled) {
+		if (enabled) {
+			// Создаём AI контекст сразу при включении
+			try {
+				await aiBrowserContextService.getOrCreateAiContext(accountId);
+				console.log('[AI Management Service] AI context created for account:', accountId);
+			} catch (error) {
+				console.error('[AI Management Service] Failed to create AI context:', error);
+			}
+		} else {
+			// Закрываем AI контекст при выключении
 			await aiBrowserContextService.closeAiContext(accountId);
 		}
 
@@ -79,7 +88,7 @@ export const toggleAccountAi = async (userId, accountId) => {
 	try {
 		const account = await LuxeeAccountModel.findOne({
 			_id: accountId,
-			userId,
+			user: userId,
 		});
 
 		if (!account) {
@@ -115,7 +124,7 @@ export const canAccountUseAi = async (userId, accountId) => {
 	try {
 		const account = await LuxeeAccountModel.findOne({
 			_id: accountId,
-			userId,
+			user: userId,
 		}).select('aiEnabled aiEnabledByAdmin');
 
 		if (!account) {

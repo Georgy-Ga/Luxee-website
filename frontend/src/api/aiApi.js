@@ -29,8 +29,8 @@ export const aiApi = {
 	/**
 	 * Переключить свой AI
 	 */
-	toggleMyAi: async () => {
-		const response = await api.post('/ai/my-toggle');
+	toggleMyAi: async (enabled) => {
+		const response = await api.post('/ai/my-toggle', { enabled });
 		return response.data;
 	},
 

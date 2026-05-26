@@ -1,6 +1,8 @@
 // Сервис управления AI для пользователей
 
 import UserModel from '../../models/UserModel.js';
+import LuxeeAccountModel from '../../models/LuxeeAccountModel.js';
+import aiBrowserContextService from '../browser/aiBrowserContextService.js';
 
 export const getAllUsersAiStatus = async () => {
 	try {
@@ -47,6 +49,26 @@ export const setUserAiByAdmin = async (userId, enabled) => {
 			'Enabled:',
 			enabled,
 		);
+
+		// Если выключаем AI для пользователя - выключаем на всех его аккаунтах
+		if (!enabled) {
+			const accounts = await LuxeeAccountModel.find({ user: userId });
+			console.log(`[AI Management Service] Disabling AI on ${accounts.length} accounts for user ${userId}`);
+			
+			for (const account of accounts) {
+				// Выключаем AI на аккаунте
+				account.aiEnabled = false;
+				await account.save();
+				
+				// Закрываем AI контекст
+				try {
+					await aiBrowserContextService.closeAiContext(account._id);
+				} catch (error) {
+					console.error(`[AI Management Service] Failed to close AI context for account ${account._id}:`, error);
+				}
+			}
+		}
+
 		return user;
 	} catch (error) {
 		console.error('[AI Management Service] Error setting user AI by admin:', error);

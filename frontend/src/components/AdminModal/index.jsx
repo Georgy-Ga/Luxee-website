@@ -13,7 +13,7 @@ const AdminModal = ({ onClose }) => {
   const tabs = [
     { id: 'luxee', label: '🌐 Luxee аккаунты', component: LuxeeTab },
     ...(isAdmin ? [{ id: 'users', label: '👥 Пользователи', component: UsersTab }] : []),
-    { id: 'ai', label: '🤖 AI Управление', component: AiTab },
+    { id: 'ai', label: 'AI Управление', component: AiTab },
   ];
 
   const ActiveComponent = tabs.find(t => t.id === activeTab)?.component || LuxeeTab;

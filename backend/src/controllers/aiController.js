@@ -25,18 +25,18 @@ class AiController {
 			console.log('[AI Controller] Message:', message);
 			console.log('[AI Controller] History length:', history?.length || 0);
 
-			// Генерируем ответ
-			const aiResponse = await aiService.testResponse({
-				profileData: profile,
-				userMessage: message,
-				history: history || [],
-			});
+		// Генерируем ответ
+		const aiResponse = await aiService.testAI({
+			profile: profile,
+			manMessage: message,
+			conversationHistory: history || [],
+		});
 
 			console.log('[AI Controller] AI Response generated successfully');
 
 			return res.json({
 				success: true,
-				response: aiResponse,
+				response: aiResponse.response, // Извлекаем текст ответа из объекта
 				profile: {
 					username: profile.username,
 					age: profile.age,

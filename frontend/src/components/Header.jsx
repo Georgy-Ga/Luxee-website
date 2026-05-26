@@ -42,7 +42,7 @@ const Header = () => {
             onClick={() => navigate('/ai-test')}
             className="px-4 py-2 rounded-lg font-medium bg-purple-500 hover:bg-purple-600 text-white transition-colors"
           >
-            🤖 AI Test
+            AI Test
           </button>
 
           {/* Dashboard Button (when on AI Test page) */}
