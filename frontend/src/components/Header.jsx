@@ -12,7 +12,7 @@ const Header = () => {
   
   const { user, logout: logoutStore } = useAuthStore();
   const { isDark, toggleTheme } = useThemeStore();
-  const { aiEnabled, toggleAI } = useChatStore();
+  const { aiEnabled, toggleAI, sidebarOpen, toggleSidebar } = useChatStore();
 
   const handleLogout = async () => {
     try {
@@ -26,21 +26,32 @@ const Header = () => {
 
   return (
     <>
-      <header className="h-16 border-b border-light-border dark:border-dark-border bg-light-surface dark:bg-dark-surface px-6 flex items-center justify-between">
-        <div className="flex items-center gap-4">
-          <h1 className="text-xl font-bold text-gray-900 dark:text-white">
+      <header className="h-14 lg:h-16 border-b border-light-border dark:border-dark-border bg-light-surface dark:bg-dark-surface px-3 lg:px-6 flex items-center justify-between">
+        <div className="flex items-center gap-2 lg:gap-4">
+          {/* Mobile Menu Button */}
+          <button
+            onClick={toggleSidebar}
+            className="lg:hidden p-2 hover:bg-light-hover dark:hover:bg-dark-hover rounded-lg transition-colors"
+            aria-label="Toggle sidebar"
+          >
+            <svg className="w-6 h-6 text-gray-900 dark:text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
+            </svg>
+          </button>
+
+          <h1 className="text-base lg:text-xl font-bold text-gray-900 dark:text-white truncate">
             Model Chat Manager
           </h1>
-          <span className="text-sm text-gray-600 dark:text-gray-400">
+          <span className="hidden md:inline text-xs lg:text-sm text-gray-600 dark:text-gray-400 truncate">
             {user?.email}
           </span>
         </div>
 
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-1.5 lg:gap-3">
           {/* AI Test Button */}
           <button
             onClick={() => navigate('/ai-test')}
-            className="px-4 py-2 rounded-lg font-medium bg-purple-500 hover:bg-purple-600 text-white transition-colors"
+            className="hidden sm:block px-2 lg:px-4 py-1.5 lg:py-2 text-xs lg:text-sm rounded-lg font-medium bg-purple-500 hover:bg-purple-600 text-white transition-colors"
           >
             AI Test
           </button>
@@ -49,7 +60,7 @@ const Header = () => {
           {window.location.pathname === '/ai-test' && (
             <button
               onClick={() => navigate('/dashboard')}
-              className="px-4 py-2 rounded-lg font-medium bg-blue-500 hover:bg-blue-600 text-white transition-colors"
+              className="hidden sm:block px-2 lg:px-4 py-1.5 lg:py-2 text-xs lg:text-sm rounded-lg font-medium bg-blue-500 hover:bg-blue-600 text-white transition-colors"
             >
               📊 Dashboard
             </button>
@@ -58,27 +69,31 @@ const Header = () => {
           {/* AI Toggle */}
           <button
             onClick={toggleAI}
-            className={`px-4 py-2 rounded-lg font-medium transition-colors ${
+            className={`px-2 lg:px-4 py-1.5 lg:py-2 text-xs lg:text-sm rounded-lg font-medium transition-colors ${
               aiEnabled
                 ? 'bg-green-500 hover:bg-green-600 text-white'
                 : 'bg-red-500 hover:bg-red-600 text-white'
             }`}
+            title={`AI: ${aiEnabled ? 'ON' : 'OFF'}`}
           >
-            AI: {aiEnabled ? 'ON' : 'OFF'}
+            <span className="hidden sm:inline">AI: {aiEnabled ? 'ON' : 'OFF'}</span>
+            <span className="sm:hidden">{aiEnabled ? '🤖' : '🚫'}</span>
           </button>
 
           {/* Settings Button */}
           <button
             onClick={() => setShowAdminModal(true)}
-            className="btn-secondary"
+            className="btn-secondary text-xs lg:text-sm px-2 lg:px-3 py-1.5 lg:py-2"
+            title="Настройки"
           >
-            ⚙️ Настройки
+            <span className="hidden sm:inline">⚙️ Настройки</span>
+            <span className="sm:hidden">⚙️</span>
           </button>
 
           {/* Theme Toggle */}
           <button
             onClick={toggleTheme}
-            className="btn-secondary"
+            className="btn-secondary text-xs lg:text-sm px-2 lg:px-3 py-1.5 lg:py-2"
             aria-label="Toggle theme"
           >
             {isDark ? '☀️' : '🌙'}
@@ -87,9 +102,11 @@ const Header = () => {
           {/* Logout */}
           <button
             onClick={handleLogout}
-            className="btn-secondary"
+            className="btn-secondary text-xs lg:text-sm px-2 lg:px-3 py-1.5 lg:py-2"
+            title="Выход"
           >
-            Выход
+            <span className="hidden sm:inline">Выход</span>
+            <span className="sm:hidden">🚪</span>
           </button>
         </div>
       </header>

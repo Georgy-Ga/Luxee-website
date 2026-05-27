@@ -13,6 +13,7 @@ const aiManagementService = {
 	canUserUseAi: userAiService.canUserUseAi,
 	enableUserAi: userAiService.enableUserAi,
 	disableUserAi: userAiService.disableUserAi,
+	setAllUserAccountsAiByAdmin: userAiService.setAllUserAccountsAiByAdmin,
 
 	// Управление AI для аккаунтов
 	getAllAccountsAiStatus: accountAiService.getAllAccountsAiStatus,

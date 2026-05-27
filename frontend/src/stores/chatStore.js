@@ -10,6 +10,8 @@ const useChatStore = create((set) => ({
   // Статус AI (глобальный и по аккаунтам)
   aiEnabled: false,
   aiEnabledByAccount: {}, // { accountId: boolean }
+  // Состояние sidebar для мобильных устройств
+  sidebarOpen: false,
 
   setSelectedAccount: (account) => set({ selectedAccount: account, selectedProfile: null, selectedChat: null }),
   
@@ -33,10 +35,15 @@ const useChatStore = create((set) => ({
     },
   })),
 
+  toggleSidebar: () => set((state) => ({ sidebarOpen: !state.sidebarOpen })),
+  
+  closeSidebar: () => set({ sidebarOpen: false }),
+
   reset: () => set({
     selectedAccount: null,
     selectedProfile: null,
     selectedChat: null,
+    sidebarOpen: false,
   }),
 }));
 

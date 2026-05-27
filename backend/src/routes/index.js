@@ -66,6 +66,7 @@ router.get('/ai/users', authMiddleware, roleMiddleware('admin'), AiManagementCon
 router.get('/ai/my-status', authMiddleware, AiManagementController.getMyAiStatus);
 router.post('/ai/my-toggle', authMiddleware, AiManagementController.toggleMyAi);
 router.post('/ai/users/:userId/set', authMiddleware, roleMiddleware('admin'), AiManagementController.setUserAiByAdmin);
+router.post('/ai/users/:userId/set-all-accounts', authMiddleware, roleMiddleware('admin'), AiManagementController.setAllUserAccountsAiByAdmin);
 
 // AI Management routes - Accounts
 router.get('/ai/accounts', authMiddleware, roleMiddleware('admin'), AiManagementController.getAllAccountsAiStatus);

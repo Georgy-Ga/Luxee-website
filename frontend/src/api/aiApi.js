@@ -91,6 +91,14 @@ export const aiApi = {
 	},
 
 	/**
+	 * Установить AI статус для всех аккаунтов пользователя админом (только админ)
+	 */
+	setAllUserAccountsAiByAdmin: async (userId, aiEnabledByAdmin) => {
+		const response = await api.post(`/ai/users/${userId}/set-all-accounts`, { aiEnabledByAdmin });
+		return response.data;
+	},
+
+	/**
 	 * Получить AI статус всех аккаунтов (только админ)
 	 */
 	getAllAccountsAiStatus: async () => {

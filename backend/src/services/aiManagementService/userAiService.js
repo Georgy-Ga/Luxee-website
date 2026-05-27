@@ -130,3 +130,29 @@ export const disableUserAi = async (userId, adminId) => {
 		throw error;
 	}
 };
+
+export const setAllUserAccountsAiByAdmin = async (userId, enabled, adminId) => {
+	try {
+		const accounts = await LuxeeAccountModel.find({ user: userId });
+		console.log(`[AI Management Service] Admin ${adminId} setting AI to ${enabled} for ${accounts.length} accounts of user ${userId}`);
+		
+		for (const account of accounts) {
+			account.aiEnabledByAdmin = enabled;
+			await account.save();
+			
+			// Если выключаем - закрываем AI контекст
+			if (!enabled) {
+				try {
+					await aiBrowserContextService.closeAiContext(account._id);
+				} catch (error) {
+					console.error(`[AI Management Service] Failed to close AI context for account ${account._id}:`, error);
+				}
+			}
+		}
+		
+		return { updated: accounts.length };
+	} catch (error) {
+		console.error('[AI Management Service] Error setting all user accounts AI by admin:', error);
+		throw error;
+	}
+};

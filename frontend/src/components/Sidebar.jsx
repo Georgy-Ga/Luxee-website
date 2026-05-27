@@ -25,7 +25,7 @@ const Sidebar = ({ messagesData, refetch }) => {
   const [expandedProfiles, setExpandedProfiles] = useState({});
   const [copiedId, setCopiedId] = useState(null); // Для визуального эффекта копирования
   
-  const { selectedProfile, selectedChat, setSelectedProfile, setSelectedChat, aiEnabledByAccount, toggleAIForAccount } = useChatStore();
+  const { selectedProfile, selectedChat, setSelectedProfile, setSelectedChat, aiEnabledByAccount, toggleAIForAccount, closeSidebar } = useChatStore();
   
   // Функция копирования с визуальным эффектом
   const handleCopy = (id) => {
@@ -61,32 +61,34 @@ const Sidebar = ({ messagesData, refetch }) => {
       accountId: account.accountId,
       accountEmail: account.accountEmail,
     });
+    // Закрываем sidebar на мобильных устройствах после выбора чата
+    closeSidebar();
   };
 
   if (!messagesData?.accounts?.length) {
     return (
-      <div className="w-80 border-r border-light-border dark:border-dark-border bg-light-surface dark:bg-dark-surface p-4">
-        <p className="text-gray-500 dark:text-gray-400 text-center">Нет аккаунтов</p>
+      <div className="h-full w-full border-r border-light-border dark:border-dark-border bg-light-surface dark:bg-dark-surface p-3 lg:p-4">
+        <p className="text-gray-500 dark:text-gray-400 text-center text-sm">Нет аккаунтов</p>
       </div>
     );
   }
 
   return (
-    <div className="w-80 border-r border-light-border dark:border-dark-border bg-light-surface dark:bg-dark-surface overflow-y-auto custom-scrollbar">
-      <div className="p-4">
-        <h2 className="text-lg font-bold mb-4 text-gray-900 dark:text-white">
+    <div className="h-full w-full border-r border-light-border dark:border-dark-border bg-light-surface dark:bg-dark-surface overflow-y-auto custom-scrollbar">
+      <div className="p-3 lg:p-4">
+        <h2 className="text-base lg:text-lg font-bold mb-3 lg:mb-4 text-gray-900 dark:text-white">
           Luxee Аккаунты
         </h2>
 
         {messagesData.accounts.map((account) => (
-          <div key={account.accountId} className="mb-4">
+          <div key={account.accountId} className="mb-3 lg:mb-4">
             {/* Аккаунт */}
-            <div className="flex items-center justify-between p-3 rounded-lg bg-light-bg dark:bg-dark-bg hover:bg-light-hover dark:hover:bg-dark-hover cursor-pointer transition-colors">
-              <div className="flex-1" onClick={() => toggleAccount(account.accountId)}>
-                <p className="font-medium text-gray-900 dark:text-white text-sm">
+            <div className="flex items-center justify-between p-2 lg:p-3 rounded-lg bg-light-bg dark:bg-dark-bg hover:bg-light-hover dark:hover:bg-dark-hover cursor-pointer transition-colors">
+              <div className="flex-1 min-w-0" onClick={() => toggleAccount(account.accountId)}>
+                <p className="font-medium text-gray-900 dark:text-white text-xs lg:text-sm truncate">
                   {account.accountEmail}
                 </p>
-                <p className="text-xs text-gray-600 dark:text-gray-400">
+                <p className="text-[10px] lg:text-xs text-gray-600 dark:text-gray-400">
                   {account.profiles?.length || 0} профилей • {account.totalUnread || 0} новых
                 </p>
               </div>
@@ -97,7 +99,7 @@ const Sidebar = ({ messagesData, refetch }) => {
                   e.stopPropagation();
                   toggleAIForAccount(account.accountId);
                 }}
-                className={`ml-2 px-2 py-1 rounded text-xs font-medium ${
+                className={`ml-1.5 lg:ml-2 px-1.5 lg:px-2 py-0.5 lg:py-1 rounded text-[10px] lg:text-xs font-medium flex-shrink-0 ${
                   aiEnabledByAccount[account.accountId] !== false
                     ? 'bg-green-500 text-white'
                     : 'bg-red-500 text-white'
@@ -125,7 +127,7 @@ const Sidebar = ({ messagesData, refetch }) => {
 
             {/* Сообщение если нет профилей */}
             {expandedAccounts[account.accountId] && (!account.profiles || account.profiles.length === 0) && (
-              <div className="ml-4 mt-2 p-2 text-xs text-gray-500 dark:text-gray-400 text-center">
+              <div className="ml-3 lg:ml-4 mt-2 p-2 text-[10px] lg:text-xs text-gray-500 dark:text-gray-400 text-center">
                 Нет анкет на этом аккаунте
               </div>
             )}

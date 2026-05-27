@@ -99,3 +99,15 @@ export const setUserAiByAdmin = async (req, res) => {
 		res.status(500).json({ success: false, error: error.message });
 	}
 };
+
+export const setAllUserAccountsAiByAdmin = async (req, res) => {
+	try {
+		const { userId } = req.params;
+		const { aiEnabledByAdmin } = req.body;
+		await aiManagementService.setAllUserAccountsAiByAdmin(userId, aiEnabledByAdmin, req.user.id);
+		res.json({ success: true, message: 'All user accounts AI status updated by admin' });
+	} catch (error) {
+		console.error('[AI Management Controller] Error setting all user accounts AI by admin:', error);
+		res.status(500).json({ success: false, error: error.message });
+	}
+};

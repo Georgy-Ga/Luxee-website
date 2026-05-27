@@ -22,6 +22,7 @@ const aiManagementController = {
 	getMyAiStatus: userAiController.getMyAiStatus,
 	toggleMyAi: userAiController.toggleMyAi,
 	setUserAiByAdmin: userAiController.setUserAiByAdmin,
+	setAllUserAccountsAiByAdmin: userAiController.setAllUserAccountsAiByAdmin,
 
 	// Управление AI для аккаунтов
 	getAccountAiStatus: accountAiController.getAccountAiStatus,
