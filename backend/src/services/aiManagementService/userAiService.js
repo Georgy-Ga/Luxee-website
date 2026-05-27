@@ -136,18 +136,26 @@ export const setAllUserAccountsAiByAdmin = async (userId, enabled, adminId) => {
 		const accounts = await LuxeeAccountModel.find({ user: userId });
 		console.log(`[AI Management Service] Admin ${adminId} setting AI to ${enabled} for ${accounts.length} accounts of user ${userId}`);
 		
-		for (const account of accounts) {
-			account.aiEnabledByAdmin = enabled;
-			await account.save();
+		// Обновляем все аккаунты в базе данных одним запросом (быстрее)
+		await LuxeeAccountModel.updateMany(
+			{ user: userId },
+			{ aiEnabledByAdmin: enabled }
+		);
+		
+		// Если выключаем - закрываем AI контексты параллельно с ограничением
+		if (!enabled) {
+			const closePromises = accounts.map(account => 
+				aiBrowserContextService.closeAiContext(account._id)
+					.catch(error => {
+						console.error(`[AI Management Service] Failed to close AI context for account ${account._id}:`, error);
+						// Не прерываем выполнение, просто логируем ошибку
+						return null;
+					})
+			);
 			
-			// Если выключаем - закрываем AI контекст
-			if (!enabled) {
-				try {
-					await aiBrowserContextService.closeAiContext(account._id);
-				} catch (error) {
-					console.error(`[AI Management Service] Failed to close AI context for account ${account._id}:`, error);
-				}
-			}
+			// Закрываем контексты параллельно, но не ждем завершения всех
+			// Используем Promise.allSettled чтобы не упасть если один из контекстов не закроется
+			await Promise.allSettled(closePromises);
 		}
 		
 		return { updated: accounts.length };
