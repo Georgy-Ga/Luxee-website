@@ -13,8 +13,22 @@ const PORT = process.env.PORT || 5000;
 
 app.use(express.json());
 app.use(cookieParser());
+// Настройка CORS для работы в Docker и локально
+const allowedOrigins = process.env.ALLOWED_ORIGINS 
+	? process.env.ALLOWED_ORIGINS.split(',')
+	: ['http://localhost:5173', 'http://localhost:5174', 'http://localhost:80', 'http://localhost'];
+
 app.use(cors({
-	origin: ['http://localhost:5173', 'http://localhost:5174'], // Vite может использовать разные порты
+	origin: (origin, callback) => {
+		// Разрешаем запросы без origin (например, мобильные приложения или Postman)
+		if (!origin) return callback(null, true);
+		
+		if (allowedOrigins.indexOf(origin) !== -1 || allowedOrigins.includes('*')) {
+			callback(null, true);
+		} else {
+			callback(new Error('Not allowed by CORS'));
+		}
+	},
 	credentials: true, // Разрешаем отправку cookies
 	methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
 	allowedHeaders: ['Content-Type', 'Authorization'],

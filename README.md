@@ -34,12 +34,40 @@
 ## Технологии
 
 - **Backend**: Node.js, Express.js
+- **Frontend**: React, Vite, TailwindCSS
 - **База данных**: MongoDB, Mongoose
 - **Авторизация**: JWT (jsonwebtoken), bcrypt
 - **Автоматизация**: Playwright
 - **Валидация**: express-validator
+- **Контейнеризация**: Docker, Docker Compose
 
-## Установка
+## 🐳 Быстрый старт с Docker (Рекомендуется)
+
+Самый простой способ запустить проект - использовать Docker:
+
+```bash
+# 1. Клонировать репозиторий
+git clone https://github.com/Georgy-Ga/Luxee-website.git
+cd Luxee-website
+
+# 2. Создать .env файл
+cp .env.example .env
+# Отредактируйте .env и заполните необходимые переменные
+
+# 3. Запустить все сервисы одной командой
+docker compose up -d
+
+# 4. Создать администратора
+docker exec -it luxee-backend node createAdmin.js
+```
+
+**Готово!** Приложение доступно:
+- Frontend: http://localhost
+- Backend API: http://localhost:5000/api
+
+📖 **Подробная документация по Docker**: [DOCKER_DEPLOYMENT.md](DOCKER_DEPLOYMENT.md)
+
+## Установка без Docker
 
 ```bash
 # Клонировать репозиторий
@@ -98,11 +126,14 @@ backend/
 
 ## Создание админа
 
+### С Docker:
 ```bash
-# Запустить скрипт для генерации хеша пароля
-node backend/createAdmin.js
+docker exec -it luxee-backend node createAdmin.js
+```
 
-# Добавить пользователя в MongoDB Compass в коллекцию 'users'
+### Без Docker:
+```bash
+node backend/createAdmin.js
 ```
 
 ## Лицензия
