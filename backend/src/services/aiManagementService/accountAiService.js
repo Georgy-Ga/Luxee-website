@@ -2,6 +2,7 @@
 
 import LuxeeAccountModel from '../../models/LuxeeAccountModel.js';
 import aiBrowserContextService from '../browser/aiBrowserContextService.js';
+import aiAutoResponseService from '../aiAutoResponseService.js';
 
 export const getAllAccountsAiStatus = async () => {
 	try {
@@ -65,15 +66,20 @@ export const setAccountAiByAdmin = async (accountId, enabled) => {
 		);
 
 		if (enabled) {
-			// Создаём AI контекст сразу при включении
+			// Создаём AI контекст и запускаем автоответы при включении
 			try {
 				await aiBrowserContextService.getOrCreateAiContext(accountId);
 				console.log('[AI Management Service] AI context created for account:', accountId);
+				
+				// Запускаем автоответы
+				await aiAutoResponseService.start(accountId);
+				console.log('[AI Management Service] Auto-response started for account:', accountId);
 			} catch (error) {
-				console.error('[AI Management Service] Failed to create AI context:', error);
+				console.error('[AI Management Service] Failed to create AI context or start auto-response:', error);
 			}
 		} else {
-			// Закрываем AI контекст при выключении
+			// Останавливаем автоответы и закрываем AI контекст при выключении
+			await aiAutoResponseService.stop(accountId);
 			await aiBrowserContextService.closeAiContext(accountId);
 		}
 
@@ -109,7 +115,17 @@ export const toggleAccountAi = async (userId, accountId) => {
 			account.aiEnabled,
 		);
 
-		if (!account.aiEnabled) {
+		if (account.aiEnabled && account.aiEnabledByAdmin) {
+			// Запускаем автоответы если AI включен
+			try {
+				await aiAutoResponseService.start(accountId);
+				console.log('[AI Management Service] Auto-response started for account:', accountId);
+			} catch (error) {
+				console.error('[AI Management Service] Failed to start auto-response:', error);
+			}
+		} else {
+			// Останавливаем автоответы если AI выключен
+			await aiAutoResponseService.stop(accountId);
 			await aiBrowserContextService.closeAiContext(accountId);
 		}
 

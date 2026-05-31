@@ -3,6 +3,7 @@ import { body } from 'express-validator';
 import UserController from '../controllers/UserController.js';
 import AiController from '../controllers/aiController.js';
 import AiManagementController from '../controllers/aiManagementController/index.js';
+import AiAutoResponseController from '../controllers/aiAutoResponseController.js';
 import LuxeeController from '../controllers/luxeeController.js';
 import authMiddleware from '../middleware/authMiddleware.js';
 import roleMiddleware from '../middleware/roleMiddleware.js';
@@ -157,6 +158,38 @@ router.post(
 	'/ai/my-accounts/:accountId/toggle',
 	authMiddleware,
 	AiManagementController.toggleMyAccountAi,
+);
+
+// AI Auto Response routes
+router.post(
+	'/ai/auto-response/accounts/:accountId/start',
+	authMiddleware,
+	AiAutoResponseController.startForAccount,
+);
+router.post(
+	'/ai/auto-response/accounts/:accountId/stop',
+	authMiddleware,
+	AiAutoResponseController.stopForAccount,
+);
+router.post(
+	'/ai/auto-response/start-all',
+	authMiddleware,
+	AiAutoResponseController.startForUser,
+);
+router.post(
+	'/ai/auto-response/stop-all',
+	authMiddleware,
+	AiAutoResponseController.stopForUser,
+);
+router.get(
+	'/ai/auto-response/status',
+	authMiddleware,
+	AiAutoResponseController.getStatus,
+);
+router.get(
+	'/ai/auto-response/accounts/:accountId/is-running',
+	authMiddleware,
+	AiAutoResponseController.isRunning,
 );
 
 export default router;

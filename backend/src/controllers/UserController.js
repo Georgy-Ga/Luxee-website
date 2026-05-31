@@ -3,6 +3,7 @@ import tokenService from '../services/tokenService.js';
 import { validationResult } from 'express-validator';
 import ApiError from '../exceptions/apiError.js';
 import luxeeAuthService from '../services/luxeeApi/luxeeAuthService/index.js';
+import aiAutoResponseService from '../services/aiAutoResponseService.js';
 const UserController = {
 	registration: async (req, res, next) => {
 		try {
@@ -38,6 +39,15 @@ const UserController = {
 			} catch (error) {
 				console.error('[User Login] Error restoring Luxee contexts:', error.message);
 				// Не прерываем логин если не удалось восстановить контексты
+			}
+			
+			// Автоматически запускаем автоответы для всех аккаунтов с включенным AI
+			try {
+				console.log(`[User Login] Starting AI auto-responses for user ${userData.user.id}`);
+				await aiAutoResponseService.startForUser(userData.user.id);
+			} catch (error) {
+				console.error('[User Login] Error starting AI auto-responses:', error.message);
+				// Не прерываем логин если не удалось запустить автоответы
 			}
 			
 			return res.json(userData);
