@@ -1,8 +1,12 @@
 // Конфигурация AI сервиса
 
-export const AI_API_URL = 'http://localhost:20128/v1';
-export const AI_API_KEY = 'sk-58fb17d673b3f139-7eab3b-9707cfff';
-export const AI_MODEL = 'cx/gpt-5.2'; // GPT-3.5 Turbo - стабильная, быстрая, отлично следует промпту
+// Получаем настройки из переменных окружения
+export const AI_API_URL = process.env.AI_API_URL || 'http://localhost:20128/v1';
+export const AI_API_KEY = process.env.AI_API_KEY || 'sk-58fb17d673b3f139-7eab3b-9707cfff';
+export const AI_MODEL = process.env.AI_MODEL || 'gemini-cli/gemini-2.5-flash';
+
+console.log('[AI Config] AI_API_URL:', AI_API_URL);
+console.log('[AI Config] AI_MODEL:', AI_MODEL);
 
 // Системный промпт с правилами поведения (от первого лица)
 export const SYSTEM_PROMPT = `I'm a woman on a dating site and I need to respond to a man's message. My response should be interesting and make him want to continue talking with me.

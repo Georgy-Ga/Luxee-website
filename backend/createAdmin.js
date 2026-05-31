@@ -12,7 +12,7 @@ bcrypt.hash(password, 3).then(hash => {
 	console.log(
 		JSON.stringify(
 			{
-				email: 'admin',
+				email: 'admin@example.com',
 				password: hash,
 				role: 'admin',
 			},

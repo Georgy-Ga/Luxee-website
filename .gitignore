@@ -41,3 +41,10 @@ data/
 
 # Docker volumes
 volumes/
+
+# Temporary files
+*.tmp
+*-temp.js
+analyze-*.js
+enable-*.js
+insert-*.js

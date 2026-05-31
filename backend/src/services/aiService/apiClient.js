@@ -35,6 +35,13 @@ export const sendAIRequest = async (messages, retryCount = 0) => {
 		return aiResponse;
 	} catch (error) {
 		console.error('[AI Service] Error calling AI API:', error.message);
+		
+		// Логируем детали ошибки от API
+		if (error.response) {
+			console.error('[AI Service] Error status:', error.response.status);
+			console.error('[AI Service] Error data:', JSON.stringify(error.response.data, null, 2));
+		}
+		
 		throw error;
 	}
 };

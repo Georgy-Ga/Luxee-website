@@ -22,9 +22,12 @@ const browserService = {
 				headless,
 				slowMo, // Замедление действий в мс (чтобы видеть что происходит)
 				devtools: browserConfig.devtools, // Открывать DevTools
+				executablePath: '/usr/bin/chromium-browser', // Использовать системный Chromium
 				args: [
 					'--no-sandbox', 
 					'--disable-setuid-sandbox',
+					'--disable-dev-shm-usage', // Для Docker
+					'--disable-gpu', // Для headless режима
 					'--start-maximized', // Открывать на весь экран
 				],
 			});
