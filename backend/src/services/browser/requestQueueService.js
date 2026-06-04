@@ -5,8 +5,6 @@ class RequestQueueService {
 	constructor() {
 		// Очереди для каждого аккаунта: accountId -> Promise
 		this.queues = new Map();
-		// Блокировки для каждого аккаунта: accountId -> boolean
-		this.locks = new Map();
 		// Глобальная очередь для отправки сообщений
 		this.globalSendQueue = Promise.resolve();
 		this.globalSendLock = false;
@@ -19,36 +17,26 @@ class RequestQueueService {
 	 * @returns {Promise} Результат выполнения функции
 	 */
 	async executeInQueue(accountId, fn) {
-		// Ждем пока предыдущий запрос завершится
-		while (this.locks.get(accountId)) {
-			await this.queues.get(accountId);
-			// Небольшая задержка для предотвращения гонки
-			await new Promise(resolve => setTimeout(resolve, 100));
-		}
-
-		// Устанавливаем блокировку
-		this.locks.set(accountId, true);
-
-		// Создаем промис для текущего запроса
-		const promise = (async () => {
-			try {
+		// Получаем текущую очередь или создаем resolved промис
+		const currentQueue = this.queues.get(accountId) || Promise.resolve();
+		
+		// Создаем новый промис в цепочке (атомарная операция)
+		const newQueue = currentQueue
+			.then(async () => {
 				console.log(`[Request Queue] Starting request for account ${accountId}`);
 				const result = await fn();
 				console.log(`[Request Queue] Completed request for account ${accountId}`);
 				return result;
-			} catch (error) {
+			})
+			.catch(error => {
 				console.error(`[Request Queue] Error in request for account ${accountId}:`, error.message);
 				throw error;
-			} finally {
-				// Снимаем блокировку
-				this.locks.set(accountId, false);
-			}
-		})();
-
-		// Сохраняем промис в очередь
-		this.queues.set(accountId, promise);
-
-		return promise;
+			});
+		
+		// Сохраняем новый промис в очередь
+		this.queues.set(accountId, newQueue);
+		
+		return newQueue;
 	}
 
 	/**
@@ -80,12 +68,12 @@ class RequestQueueService {
 	}
 
 	/**
-	 * Проверить, заблокирован ли аккаунт
+	 * Проверить, есть ли активная очередь для аккаунта
 	 * @param {string} accountId - ID аккаунта
 	 * @returns {boolean}
 	 */
 	isLocked(accountId) {
-		return this.locks.get(accountId) || false;
+		return this.queues.has(accountId);
 	}
 
 	/**
@@ -102,7 +90,6 @@ class RequestQueueService {
 	 */
 	clearQueue(accountId) {
 		this.queues.delete(accountId);
-		this.locks.set(accountId, false);
 	}
 
 	/**
@@ -110,7 +97,6 @@ class RequestQueueService {
 	 */
 	clearAll() {
 		this.queues.clear();
-		this.locks.clear();
 		this.globalSendQueue = Promise.resolve();
 		this.globalSendLock = false;
 	}

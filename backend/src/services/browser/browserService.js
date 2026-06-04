@@ -5,10 +5,18 @@ import browserConfig from '../../config/browserConfig.js';
 let browserInstance = null;
 // Map для хранения контекстов: accountId -> context
 const contexts = new Map();
+// Map для хранения времени последней активности: accountId -> timestamp
+const contextLastActivity = new Map();
 // Флаг для отслеживания краша браузера
 let browserCrashed = false;
 // Флаг для предотвращения множественных восстановлений
 let isRecovering = false;
+// TTL для неактивных контекстов (30 минут в миллисекундах)
+const CONTEXT_TTL = 30 * 60 * 1000;
+// Интервал проверки неактивных контекстов (5 минут)
+const CLEANUP_INTERVAL = 5 * 60 * 1000;
+// Интервал для автоочистки
+let cleanupIntervalId = null;
 
 const browserService = {
 	// Запуск браузера (один на всё приложение)
@@ -108,6 +116,8 @@ const browserService = {
 			}
 
 			contexts.set(accountId, context);
+			// Обновить время последней активности
+			contextLastActivity.set(accountId, Date.now());
 			return context;
 		} catch (error) {
 			console.error('[Browser Service] Error creating context:', error);
@@ -117,7 +127,19 @@ const browserService = {
 
 	// Получить контекст аккаунта
 	getContext: accountId => {
-		return contexts.get(accountId);
+		const context = contexts.get(accountId);
+		if (context) {
+			// Обновить время последней активности при каждом обращении
+			contextLastActivity.set(accountId, Date.now());
+		}
+		return context;
+	},
+
+	// Обновить время активности контекста
+	updateContextActivity: accountId => {
+		if (contexts.has(accountId)) {
+			contextLastActivity.set(accountId, Date.now());
+		}
 	},
 
 	// Получить все контексты
@@ -154,10 +176,76 @@ const browserService = {
 			if (context) {
 				await context.close();
 				contexts.delete(accountId);
+				contextLastActivity.delete(accountId);
 				console.log(`[Browser Service] Context closed for account ${accountId}`);
 			}
 		} catch (error) {
 			console.error('[Browser Service] Error closing context:', error);
+		}
+	},
+
+	// Очистить неактивные контексты (TTL)
+	cleanupInactiveContexts: async () => {
+		try {
+			const now = Date.now();
+			const inactiveAccounts = [];
+
+			// Найти неактивные контексты
+			for (const [accountId, lastActivity] of contextLastActivity.entries()) {
+				const inactiveTime = now - lastActivity;
+				if (inactiveTime > CONTEXT_TTL) {
+					inactiveAccounts.push({ accountId, inactiveTime });
+				}
+			}
+
+			if (inactiveAccounts.length === 0) {
+				console.log('[Browser Service] No inactive contexts to cleanup');
+				return { cleaned: 0, total: contexts.size };
+			}
+
+			console.log(`[Browser Service] Found ${inactiveAccounts.length} inactive contexts (TTL: ${CONTEXT_TTL / 60000} minutes)`);
+
+			// Закрыть неактивные контексты
+			let cleaned = 0;
+			for (const { accountId, inactiveTime } of inactiveAccounts) {
+				try {
+					await browserService.closeContext(accountId);
+					cleaned++;
+					console.log(`[Browser Service] Closed inactive context ${accountId} (inactive for ${Math.round(inactiveTime / 60000)} minutes)`);
+				} catch (error) {
+					console.error(`[Browser Service] Error closing inactive context ${accountId}:`, error.message);
+				}
+			}
+
+			console.log(`[Browser Service] Cleanup complete: ${cleaned}/${inactiveAccounts.length} contexts closed. Remaining: ${contexts.size}`);
+			
+			return { cleaned, total: contexts.size };
+		} catch (error) {
+			console.error('[Browser Service] Error during cleanup:', error);
+			return { cleaned: 0, total: contexts.size };
+		}
+	},
+
+	// Запустить автоматическую очистку
+	startAutoCleanup: () => {
+		if (cleanupIntervalId) {
+			console.log('[Browser Service] Auto cleanup already running');
+			return;
+		}
+
+		console.log(`[Browser Service] Starting auto cleanup (interval: ${CLEANUP_INTERVAL / 60000} minutes, TTL: ${CONTEXT_TTL / 60000} minutes)`);
+		
+		cleanupIntervalId = setInterval(async () => {
+			await browserService.cleanupInactiveContexts();
+		}, CLEANUP_INTERVAL);
+	},
+
+	// Остановить автоматическую очистку
+	stopAutoCleanup: () => {
+		if (cleanupIntervalId) {
+			clearInterval(cleanupIntervalId);
+			cleanupIntervalId = null;
+			console.log('[Browser Service] Auto cleanup stopped');
 		}
 	},
 

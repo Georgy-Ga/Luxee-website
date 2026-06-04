@@ -39,20 +39,22 @@ export const buildMessages = ({ conversationHistory, manMessage, profile, custom
 		});
 	}
 
-	// Добавляем текущее сообщение от мужчины С ПРОМПТОМ В НАЧАЛЕ
-	const messageWithPrompt = `${SYSTEM_PROMPT}
+	// Добавляем system message отдельно (лучше для AI)
+	messages.unshift({
+		role: 'system',
+		content: SYSTEM_PROMPT,
+	});
 
-${profileContext}
+	// Добавляем текущее сообщение от мужчины
+	const userMessage = `${profileContext}
 
----
+Man's message: "${manMessage}"
 
-Man's message: ${manMessage}
-
-Your response (as ${profile.username}):`;
+Generate a natural, friendly response as ${profile.username}. Write a complete message (1-3 sentences).`;
 
 	messages.push({
 		role: 'user',
-		content: messageWithPrompt,
+		content: userMessage,
 	});
 
 	return messages;

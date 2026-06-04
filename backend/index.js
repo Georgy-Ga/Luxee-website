@@ -6,6 +6,7 @@ import mongoose from 'mongoose';
 import router from './src/routes/index.js';
 import errorMiddleware from './src/middleware/errorMiddleware.js';
 import contextRecoveryService from './src/services/browser/contextRecoveryService.js';
+import browserService from './src/services/browser/browserService.js';
 dotenv.config();
 
 const app = express();
@@ -49,6 +50,9 @@ const start = async () => {
 				console.log('\n[Server] Starting context auto-recovery...');
 				const result = await contextRecoveryService.recoverAllContexts();
 				console.log(`[Server] Context recovery complete: ${result.recovered} recovered, ${result.failed} failed\n`);
+				
+				// Запустить автоматическую очистку неактивных контекстов
+				browserService.startAutoCleanup();
 			} catch (error) {
 				console.error('[Server] Error during context recovery:', error.message);
 			}

@@ -5,8 +5,8 @@ const UserSchema = new Schema({
 	email: {type: String, required: true, unique: true},
 	password: {type: String, required: true},
 	role: {type: String, enum: ['user', 'admin'], default: 'user'},
-	aiEnabled: {type: Boolean, default: true}, // Может ли пользователь использовать AI (сам выключает)
-	aiEnabledByAdmin: {type: Boolean, default: true}, // Разрешил ли админ использовать AI
+	aiEnabled: {type: Boolean, default: false}, // Может ли пользователь использовать AI (сам выключает)
+	aiEnabledByAdmin: {type: Boolean, default: false}, // Разрешил ли админ использовать AI (по умолчанию выключено)
 })
 
 export default model('User', UserSchema);
