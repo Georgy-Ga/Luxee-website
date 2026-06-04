@@ -9,6 +9,7 @@ const useChatStore = create((set) => ({
   selectedChat: null,
   // Статус AI (глобальный и по аккаунтам)
   aiEnabled: false,
+  aiEnabledByAdmin: false, // Разрешил ли админ AI
   aiEnabledByAccount: {}, // { accountId: boolean }
   // Состояние sidebar для мобильных устройств
   sidebarOpen: false,
@@ -18,6 +19,9 @@ const useChatStore = create((set) => ({
   setSelectedProfile: (profile) => set({ selectedProfile: profile, selectedChat: null }),
   
   setSelectedChat: (chat) => set({ selectedChat: chat }),
+
+  // Установить AI статус из user data
+  setAIStatus: (aiEnabled, aiEnabledByAdmin) => set({ aiEnabled, aiEnabledByAdmin }),
 
   toggleAI: () => set((state) => ({ aiEnabled: !state.aiEnabled })),
 

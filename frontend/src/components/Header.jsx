@@ -12,7 +12,36 @@ const Header = () => {
   
   const { user, logout: logoutStore } = useAuthStore();
   const { isDark, toggleTheme } = useThemeStore();
-  const { aiEnabled, toggleAI, sidebarOpen, toggleSidebar } = useChatStore();
+  const { aiEnabled, aiEnabledByAdmin, toggleAI, sidebarOpen, toggleSidebar } = useChatStore();
+  
+  const isAdmin = user?.role === 'admin';
+  
+  const handleAIToggle = async () => {
+    // Если AI выключена и пользователь не админ - блокируем включение
+    if (!aiEnabled && !isAdmin) {
+      alert('Только администратор может включить AI');
+      return;
+    }
+    
+    // Если AI включена, но админ не разрешил и пользователь не админ - блокируем
+    if (aiEnabled && !isAdmin && !aiEnabledByAdmin) {
+      alert('AI была включена администратором. Вы не можете её выключить.');
+      return;
+    }
+    
+    try {
+      const newState = !aiEnabled;
+      
+      // Сохраняем на сервере
+      await authApi.toggleMyAi(newState);
+      
+      // Обновляем локально
+      toggleAI();
+    } catch (error) {
+      console.error('Error toggling AI:', error);
+      alert('Ошибка при переключении AI');
+    }
+  };
 
   const handleLogout = async () => {
     try {
@@ -68,27 +97,29 @@ const Header = () => {
 
           {/* AI Toggle */}
           <button
-            onClick={toggleAI}
+            onClick={handleAIToggle}
             className={`px-2 lg:px-4 py-1.5 lg:py-2 text-xs lg:text-sm rounded-lg font-medium transition-colors ${
               aiEnabled
                 ? 'bg-green-500 hover:bg-green-600 text-white'
                 : 'bg-red-500 hover:bg-red-600 text-white'
             }`}
-            title={`AI: ${aiEnabled ? 'ON' : 'OFF'}`}
+            title={`AI: ${aiEnabled ? 'ON' : 'OFF'}${!isAdmin && !aiEnabledByAdmin ? ' (Only admin can enable)' : ''}`}
           >
             <span className="hidden sm:inline">AI: {aiEnabled ? 'ON' : 'OFF'}</span>
             <span className="sm:hidden">{aiEnabled ? '🤖' : '🚫'}</span>
           </button>
 
-          {/* Settings Button */}
-          <button
-            onClick={() => setShowAdminModal(true)}
-            className="btn-secondary text-xs lg:text-sm px-2 lg:px-3 py-1.5 lg:py-2"
-            title="Настройки"
-          >
-            <span className="hidden sm:inline">⚙️ Настройки</span>
-            <span className="sm:hidden">⚙️</span>
-          </button>
+          {/* Settings Button - Only for admins */}
+          {isAdmin && (
+            <button
+              onClick={() => setShowAdminModal(true)}
+              className="btn-secondary text-xs lg:text-sm px-2 lg:px-3 py-1.5 lg:py-2"
+              title="Настройки"
+            >
+              <span className="hidden sm:inline">⚙️ Настройки</span>
+              <span className="sm:hidden">⚙️</span>
+            </button>
+          )}
 
           {/* Theme Toggle */}
           <button

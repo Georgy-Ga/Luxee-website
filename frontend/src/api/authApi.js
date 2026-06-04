@@ -63,4 +63,10 @@ export const authApi = {
     const response = await api.post(`/ai/users/${userId}/set`, { enabled });
     return response.data;
   },
+
+  // Включить/выключить AI для себя (для обычных пользователей)
+  toggleMyAi: async (enabled) => {
+    const response = await api.post('/ai/my-toggle', { enabled });
+    return response.data;
+  },
 };

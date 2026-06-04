@@ -4,6 +4,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { authApi } from './api/authApi';
 import useAuthStore from './stores/authStore';
 import useThemeStore from './stores/themeStore';
+import useChatStore from './stores/chatStore';
 import Login from './pages/Login';
 import Dashboard from './pages/Dashboard';
 import AiTest from './pages/AiTest';
@@ -36,6 +37,7 @@ const ProtectedRoute = ({ children }) => {
 function App() {
   const { setUser, setLoading } = useAuthStore();
   const { isDark, setTheme } = useThemeStore();
+  const { setAIStatus } = useChatStore();
 
   // Проверяем авторизацию при загрузке
   useEffect(() => {
@@ -43,6 +45,11 @@ function App() {
       try {
         const { user } = await authApi.getCurrentUser();
         setUser(user);
+        
+        // Загружаем AI статус из user данных
+        if (user) {
+          setAIStatus(user.aiEnabled || false, user.aiEnabledByAdmin || false);
+        }
       } catch (error) {
         console.log('Not authenticated');
         setLoading(false);
@@ -50,7 +57,7 @@ function App() {
     };
 
     checkAuth();
-  }, [setUser, setLoading]);
+  }, [setUser, setLoading, setAIStatus]);
 
   // Применяем тему при загрузке
   useEffect(() => {
