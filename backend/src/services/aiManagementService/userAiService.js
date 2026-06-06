@@ -98,6 +98,29 @@ export const toggleUserAi = async (userId) => {
 	}
 };
 
+export const setUserAiState = async (userId, enabled) => {
+	try {
+		const user = await UserModel.findById(userId);
+		if (!user) {
+			throw new Error('User not found');
+		}
+
+		// Если пытаемся включить, но админ не разрешил - ошибка
+		if (enabled && !user.aiEnabledByAdmin) {
+			throw new Error('AI disabled by admin. Cannot enable.');
+		}
+
+		user.aiEnabled = enabled;
+		await user.save();
+
+		console.log('[AI Management Service] User set AI state:', userId, 'New state:', user.aiEnabled);
+		return user;
+	} catch (error) {
+		console.error('[AI Management Service] Error setting user AI state:', error);
+		throw error;
+	}
+};
+
 export const canUserUseAi = async (userId) => {
 	try {
 		const user = await UserModel.findById(userId).select('aiEnabled aiEnabledByAdmin');

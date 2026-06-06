@@ -10,6 +10,7 @@ const aiManagementService = {
 	getUserAiStatus: userAiService.getUserAiStatus,
 	setUserAiByAdmin: userAiService.setUserAiByAdmin,
 	toggleUserAi: userAiService.toggleUserAi,
+	setUserAiState: userAiService.setUserAiState,
 	canUserUseAi: userAiService.canUserUseAi,
 	enableUserAi: userAiService.enableUserAi,
 	disableUserAi: userAiService.disableUserAi,

@@ -29,17 +29,18 @@ const useChatStore = create((set) => ({
   toggleAIForAccount: async (accountId) => {
     try {
       // Вызываем API для переключения AI аккаунта
-      await aiApi.toggleMyAccountAi(accountId);
+      const result = await aiApi.toggleMyAccountAi(accountId);
       
-      // Обновляем локальное состояние
+      // Обновляем локальное состояние используя РЕАЛЬНЫЕ данные от backend
       set((state) => ({
         aiEnabledByAccount: {
           ...state.aiEnabledByAccount,
-          [accountId]: !state.aiEnabledByAccount[accountId],
+          // AI работает только если оба флага true
+          [accountId]: result.aiEnabled && result.aiEnabledByAdmin,
         },
       }));
       
-      return { success: true };
+      return { success: true, result };
     } catch (error) {
       console.error('Error toggling account AI:', error);
       // Не меняем состояние если ошибка

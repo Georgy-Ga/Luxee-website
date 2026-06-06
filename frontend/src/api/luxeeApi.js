@@ -77,9 +77,9 @@ export const luxeeApi = {
     return response.data;
   },
 
-  // Включить/выключить AI для Luxee аккаунта (для админа)
-  toggleAccountAi: async (accountId, enabled) => {
-    const response = await api.post(`/ai/accounts/${accountId}/set`, { enabled });
+  // Установить AI для Luxee аккаунта админом (используется в AdminModal)
+  setAccountAiByAdmin: async (accountId, aiEnabledByAdmin) => {
+    const response = await api.post(`/ai/accounts/${accountId}/set`, { aiEnabledByAdmin });
     return response.data;
   },
 };

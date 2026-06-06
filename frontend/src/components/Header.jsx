@@ -13,20 +13,20 @@ const Header = () => {
   
   const { user, logout: logoutStore } = useAuthStore();
   const { isDark, toggleTheme } = useThemeStore();
-  const { aiEnabled, aiEnabledByAdmin, toggleAI, sidebarOpen, toggleSidebar } = useChatStore();
+  const { aiEnabled, aiEnabledByAdmin, setAIStatus, sidebarOpen, toggleSidebar } = useChatStore();
   
   const isAdmin = user?.role === 'admin';
   
   const handleAIToggle = async () => {
-    // Если AI выключена и пользователь не админ - блокируем включение
-    if (!aiEnabled && !isAdmin) {
-      alert('Только администратор может включить AI');
+    // Пользователь не может включить AI если админ не разрешил
+    if (!aiEnabled && !aiEnabledByAdmin && !isAdmin) {
+      alert('AI отключен администратором. Обратитесь к администратору для включения.');
       return;
     }
     
-    // Если AI включена, но админ не разрешил и пользователь не админ - блокируем
-    if (aiEnabled && !isAdmin && !aiEnabledByAdmin) {
-      alert('AI была включена администратором. Вы не можете её выключить.');
+    // Обычный пользователь может только выключить AI
+    if (!aiEnabled && !isAdmin) {
+      alert('Только администратор может включить AI');
       return;
     }
     
@@ -34,10 +34,10 @@ const Header = () => {
       const newState = !aiEnabled;
       
       // Сохраняем на сервере
-      await aiApi.toggleMyAi(newState);
+      const result = await aiApi.toggleMyAi(newState);
       
-      // Обновляем локально
-      toggleAI();
+      // Обновляем локально используя РЕАЛЬНЫЕ данные от backend
+      setAIStatus(result.aiEnabled, result.aiEnabledByAdmin);
     } catch (error) {
       console.error('Error toggling AI:', error);
       alert('Ошибка при переключении AI');

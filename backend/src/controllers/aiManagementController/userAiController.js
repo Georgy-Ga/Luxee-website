@@ -80,8 +80,14 @@ export const getMyAiStatus = async (req, res) => {
 
 export const toggleMyAi = async (req, res) => {
 	try {
-		const result = await aiManagementService.toggleUserAi(req.user.id);
-		res.json({ success: true, ...result });
+		const { enabled } = req.body;
+		
+		// Если передан параметр enabled - используем его, иначе toggle
+		const result = enabled !== undefined 
+			? await aiManagementService.setUserAiState(req.user.id, enabled)
+			: await aiManagementService.toggleUserAi(req.user.id);
+			
+		res.json({ success: true, aiEnabled: result.aiEnabled, aiEnabledByAdmin: result.aiEnabledByAdmin });
 	} catch (error) {
 		console.error('[AI Management Controller] Error toggling my AI:', error);
 		res.status(500).json({ success: false, error: error.message });
