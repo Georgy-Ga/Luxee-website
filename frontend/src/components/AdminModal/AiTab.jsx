@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { aiApi } from '../../api/aiApi';
+import useChatStore from '../../stores/chatStore';
 
 const AiTab = () => {
 	const [users, setUsers] = useState([]);
@@ -9,6 +10,9 @@ const AiTab = () => {
 	const [processingAccounts, setProcessingAccounts] = useState(new Set());
 	const [processingUserAi, setProcessingUserAi] = useState(new Set());
 	const [error, setError] = useState(null);
+	
+	// Получаем setAIForAccount из chatStore для синхронизации
+	const { setAIForAccount, setAIStatus } = useChatStore();
 
 	useEffect(() => {
 		loadData();
@@ -63,6 +67,12 @@ const AiTab = () => {
 			
 			await aiApi.setAllUserAccountsAiByAdmin(userId, newStatus);
 			await loadData();
+			
+			// Обновляем chatStore для синхронизации Sidebar
+			accounts.forEach(account => {
+				// Когда админ разрешает = AI сразу включен (оба флага true)
+				setAIForAccount(account._id, newStatus);
+			});
 		} catch (error) {
 			console.error('Failed to toggle all accounts AI:', error);
 			const action = getAccountsStatus(accounts) === 'all' ? 'выключить' : 'включить';
@@ -84,8 +94,13 @@ const AiTab = () => {
 			setProcessingAccounts(prev => new Set(prev).add(accountId));
 			setError(null);
 			
-			await aiApi.setAccountAiByAdmin(accountId, !currentStatus);
+			const newStatus = !currentStatus;
+			await aiApi.setAccountAiByAdmin(accountId, newStatus);
 			await loadData();
+			
+			// Обновляем chatStore для синхронизации Sidebar
+			// Когда админ разрешает = AI сразу включен
+			setAIForAccount(accountId, newStatus);
 		} catch (error) {
 			console.error('Failed to toggle account AI:', error);
 			const action = currentStatus ? 'выключить' : 'включить';
