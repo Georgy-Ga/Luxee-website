@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { authApi } from '../api/authApi';
+import { aiApi } from '../api/aiApi';
 import useAuthStore from '../stores/authStore';
 import useThemeStore from '../stores/themeStore';
 import useChatStore from '../stores/chatStore';
@@ -33,7 +34,7 @@ const Header = () => {
       const newState = !aiEnabled;
       
       // Сохраняем на сервере
-      await authApi.toggleMyAi(newState);
+      await aiApi.toggleMyAi(newState);
       
       // Обновляем локально
       toggleAI();
@@ -109,17 +110,15 @@ const Header = () => {
             <span className="sm:hidden">{aiEnabled ? '🤖' : '🚫'}</span>
           </button>
 
-          {/* Settings Button - Only for admins */}
-          {isAdmin && (
-            <button
-              onClick={() => setShowAdminModal(true)}
-              className="btn-secondary text-xs lg:text-sm px-2 lg:px-3 py-1.5 lg:py-2"
-              title="Настройки"
-            >
-              <span className="hidden sm:inline">⚙️ Настройки</span>
-              <span className="sm:hidden">⚙️</span>
-            </button>
-          )}
+          {/* Settings Button - For all users */}
+          <button
+            onClick={() => setShowAdminModal(true)}
+            className="btn-secondary text-xs lg:text-sm px-2 lg:px-3 py-1.5 lg:py-2"
+            title="Настройки"
+          >
+            <span className="hidden sm:inline">⚙️ Настройки</span>
+            <span className="sm:hidden">⚙️</span>
+          </button>
 
           {/* Theme Toggle */}
           <button

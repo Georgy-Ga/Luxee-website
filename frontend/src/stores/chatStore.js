@@ -1,4 +1,5 @@
 import { create } from 'zustand';
+import { aiApi } from '../api/aiApi';
 
 const useChatStore = create((set) => ({
   // Выбранный аккаунт Luxee
@@ -25,12 +26,26 @@ const useChatStore = create((set) => ({
 
   toggleAI: () => set((state) => ({ aiEnabled: !state.aiEnabled })),
 
-  toggleAIForAccount: (accountId) => set((state) => ({
-    aiEnabledByAccount: {
-      ...state.aiEnabledByAccount,
-      [accountId]: !state.aiEnabledByAccount[accountId],
-    },
-  })),
+  toggleAIForAccount: async (accountId) => {
+    try {
+      // Вызываем API для переключения AI аккаунта
+      await aiApi.toggleMyAccountAi(accountId);
+      
+      // Обновляем локальное состояние
+      set((state) => ({
+        aiEnabledByAccount: {
+          ...state.aiEnabledByAccount,
+          [accountId]: !state.aiEnabledByAccount[accountId],
+        },
+      }));
+      
+      return { success: true };
+    } catch (error) {
+      console.error('Error toggling account AI:', error);
+      // Не меняем состояние если ошибка
+      throw error;
+    }
+  },
 
   setAIForAccount: (accountId, enabled) => set((state) => ({
     aiEnabledByAccount: {
@@ -38,6 +53,27 @@ const useChatStore = create((set) => ({
       [accountId]: enabled,
     },
   })),
+
+  // Загрузить AI статусы всех аккаунтов пользователя
+  loadAccountAIStatuses: async () => {
+    try {
+      const data = await aiApi.getMyAccountsAiStatus();
+      const statuses = {};
+      
+      if (data.accounts && Array.isArray(data.accounts)) {
+        data.accounts.forEach(account => {
+          // AI аккаунта включен если и aiEnabled и aiEnabledByAdmin = true
+          statuses[account._id] = account.aiEnabled && account.aiEnabledByAdmin;
+        });
+      }
+      
+      set({ aiEnabledByAccount: statuses });
+      return statuses;
+    } catch (error) {
+      console.error('Error loading account AI statuses:', error);
+      return {};
+    }
+  },
 
   toggleSidebar: () => set((state) => ({ sidebarOpen: !state.sidebarOpen })),
   

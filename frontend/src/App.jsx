@@ -37,7 +37,7 @@ const ProtectedRoute = ({ children }) => {
 function App() {
   const { setUser, setLoading } = useAuthStore();
   const { isDark, setTheme } = useThemeStore();
-  const { setAIStatus } = useChatStore();
+  const { setAIStatus, loadAccountAIStatuses } = useChatStore();
 
   // Проверяем авторизацию при загрузке
   useEffect(() => {
@@ -49,6 +49,8 @@ function App() {
         // Загружаем AI статус из user данных
         if (user) {
           setAIStatus(user.aiEnabled || false, user.aiEnabledByAdmin || false);
+          // Загружаем AI статусы всех аккаунтов пользователя
+          await loadAccountAIStatuses();
         }
       } catch (error) {
         console.log('Not authenticated');
@@ -57,7 +59,7 @@ function App() {
     };
 
     checkAuth();
-  }, [setUser, setLoading, setAIStatus]);
+  }, [setUser, setLoading, setAIStatus, loadAccountAIStatuses]);
 
   // Применяем тему при загрузке
   useEffect(() => {

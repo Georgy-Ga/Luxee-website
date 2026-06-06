@@ -95,15 +95,20 @@ const Sidebar = ({ messagesData, refetch }) => {
               
               {/* AI Toggle для аккаунта */}
               <button
-                onClick={(e) => {
+                onClick={async (e) => {
                   e.stopPropagation();
-                  toggleAIForAccount(account.accountId);
+                  try {
+                    await toggleAIForAccount(account.accountId);
+                  } catch (error) {
+                    alert('Ошибка при переключении AI для аккаунта');
+                  }
                 }}
-                className={`ml-1.5 lg:ml-2 px-1.5 lg:px-2 py-0.5 lg:py-1 rounded text-[10px] lg:text-xs font-medium flex-shrink-0 ${
-                  aiEnabledByAccount[account.accountId] !== false
-                    ? 'bg-green-500 text-white'
-                    : 'bg-red-500 text-white'
+                className={`ml-1.5 lg:ml-2 px-1.5 lg:px-2 py-0.5 lg:py-1 rounded text-[10px] lg:text-xs font-medium flex-shrink-0 transition-colors ${
+                  aiEnabledByAccount[account.accountId] === true
+                    ? 'bg-green-500 hover:bg-green-600 text-white'
+                    : 'bg-red-500 hover:bg-red-600 text-white'
                 }`}
+                title={aiEnabledByAccount[account.accountId] === true ? 'AI включен' : 'AI выключен'}
               >
                 AI
               </button>

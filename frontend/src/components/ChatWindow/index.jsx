@@ -15,7 +15,7 @@ const ChatWindow = () => {
 	const selectedChat = useChatStore(state => state.selectedChat);
 	
 	const handleCopy = (id) => {
-		copyToClipboard(id.toString());е
+		copyToClipboard(id.toString());
 		setCopiedId(id);
 		setTimeout(() => setCopiedId(null), 2000);
 	};
