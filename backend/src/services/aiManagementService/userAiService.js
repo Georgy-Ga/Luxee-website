@@ -34,9 +34,13 @@ export const getUserAiStatus = async (userId) => {
 
 export const setUserAiByAdmin = async (userId, enabled) => {
 	try {
+		// ✅ FIX: Когда админ включает/выключает AI - обновляем ОБА флага
 		const user = await UserModel.findByIdAndUpdate(
 			userId,
-			{ aiEnabledByAdmin: enabled },
+			{ 
+				aiEnabledByAdmin: enabled,
+				aiEnabled: enabled  // ВАЖНО: оба флага одновременно!
+			},
 			{ new: true },
 		).select('email role aiEnabled aiEnabledByAdmin');
 
@@ -159,6 +163,13 @@ export const setAllUserAccountsAiByAdmin = async (userId, enabled, adminId) => {
 	try {
 		const accounts = await LuxeeAccountModel.find({ user: userId });
 		console.log(`[AI Management Service] Admin ${adminId} setting AI to ${enabled} for ${accounts.length} accounts of user ${userId}`);
+		
+		// ✅ FIX: Обновляем User тоже, иначе canUserUseAi вернёт false!
+		await UserModel.findByIdAndUpdate(userId, {
+			aiEnabledByAdmin: enabled,
+			aiEnabled: enabled
+		});
+		console.log(`[AI Management Service] Updated user ${userId}: aiEnabled=${enabled}, aiEnabledByAdmin=${enabled}`);
 		
 		// ВАЖНО: Концепция - админ контролирует ОБА флага
 		// Когда админ разрешает = сразу включено (aiEnabled = aiEnabledByAdmin)
