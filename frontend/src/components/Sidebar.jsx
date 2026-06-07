@@ -93,25 +93,21 @@ const Sidebar = ({ messagesData, refetch }) => {
                 </p>
               </div>
               
-              {/* AI Toggle для аккаунта */}
-              <button
-                onClick={async (e) => {
-                  e.stopPropagation();
-                  try {
-                    await toggleAIForAccount(account.accountId);
-                  } catch (error) {
-                    alert('Ошибка при переключении AI для аккаунта');
-                  }
-                }}
-                className={`ml-1.5 lg:ml-2 px-1.5 lg:px-2 py-0.5 lg:py-1 rounded text-[10px] lg:text-xs font-medium flex-shrink-0 transition-colors ${
+              {/* AI Status для аккаунта (только показ статуса, управление только через админ панель) */}
+              <div
+                className={`ml-1.5 lg:ml-2 px-1.5 lg:px-2 py-0.5 lg:py-1 rounded text-[10px] lg:text-xs font-medium flex-shrink-0 ${
                   aiEnabledByAccount[account.accountId] === true
-                    ? 'bg-green-500 hover:bg-green-600 text-white'
-                    : 'bg-red-500 hover:bg-red-600 text-white'
+                    ? 'bg-green-500 text-white'
+                    : 'bg-gray-400 text-white'
                 }`}
-                title={aiEnabledByAccount[account.accountId] === true ? 'AI включен' : 'AI выключен'}
+                title={
+                  aiEnabledByAccount[account.accountId] === true 
+                    ? 'AI включен (управление через админ панель)' 
+                    : 'AI выключен (управление через админ панель)'
+                }
               >
                 AI
-              </button>
+              </div>
             </div>
 
             {/* Профили */}
