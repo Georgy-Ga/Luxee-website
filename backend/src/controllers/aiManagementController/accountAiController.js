@@ -88,3 +88,13 @@ export const toggleMyAccountAi = async (req, res) => {
 		res.status(500).json({ success: false, error: error.message });
 	}
 };
+
+export const toggleAllMyAccountsAi = async (req, res) => {
+	try {
+		const result = await aiManagementService.toggleAllMyAccountsAi(req.user.id);
+		res.json({ success: true, ...result });
+	} catch (error) {
+		console.error('[AI Management Controller] Error toggling all my accounts AI:', error);
+		res.status(500).json({ success: false, error: error.message });
+	}
+};

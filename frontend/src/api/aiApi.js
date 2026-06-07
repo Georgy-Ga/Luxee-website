@@ -129,4 +129,12 @@ export const aiApi = {
 		const response = await api.post(`/ai/my-accounts/${accountId}/toggle`);
 		return response.data;
 	},
+
+	/**
+	 * Переключить AI на ВСЕХ своих аккаунтах сразу
+	 */
+	toggleAllMyAccountsAi: async () => {
+		const response = await api.post('/ai/my-accounts/toggle-all');
+		return response.data;
+	},
 };

@@ -184,3 +184,64 @@ export const disableAccountAi = async (userId, accountId, adminId) => {
 		throw error;
 	}
 };
+
+export const toggleAllMyAccountsAi = async (userId) => {
+	try {
+		const accounts = await LuxeeAccountModel.find({ user: userId });
+		
+		if (accounts.length === 0) {
+			return { message: 'No accounts found', updated: 0 };
+		}
+		
+		// Определяем новый статус: если хотя бы один включен - выключаем все, иначе - включаем все
+		const anyEnabled = accounts.some(acc => acc.aiEnabled);
+		const newStatus = !anyEnabled;
+		
+		console.log(`[AI Management Service] User ${userId} toggling AI for ${accounts.length} accounts to ${newStatus}`);
+		
+		let updated = 0;
+		const results = [];
+		
+		for (const account of accounts) {
+			// Пользователь может ВЫКЛЮЧИТЬ любой аккаунт, но ВКЛЮЧИТЬ только если админ разрешил
+			if (newStatus === true && !account.aiEnabledByAdmin) {
+				console.log(`[AI Management Service] Skipping account ${account._id}: admin has not enabled AI`);
+				results.push({ accountId: account._id, status: 'skipped', reason: 'Admin has not enabled AI' });
+				continue;
+			}
+			
+			try {
+				account.aiEnabled = newStatus;
+				await account.save();
+				
+				if (newStatus && account.aiEnabledByAdmin) {
+					// Включаем AI
+					await aiBrowserContextService.getOrCreateAiContext(account._id);
+					await aiAutoResponseService.start(account._id);
+					console.log(`[AI Management Service] ✓ AI started for account ${account._id}`);
+				} else {
+					// Выключаем AI
+					await aiAutoResponseService.stop(account._id);
+					await aiBrowserContextService.closeAiContext(account._id);
+					console.log(`[AI Management Service] ✓ AI stopped for account ${account._id}`);
+				}
+				
+				updated++;
+				results.push({ accountId: account._id, status: 'success', aiEnabled: newStatus });
+			} catch (error) {
+				console.error(`[AI Management Service] ✗ Failed to toggle AI for account ${account._id}:`, error);
+				results.push({ accountId: account._id, status: 'error', error: error.message });
+			}
+		}
+		
+		return { 
+			message: `AI ${newStatus ? 'enabled' : 'disabled'} for accounts`,
+			updated,
+			total: accounts.length,
+			results
+		};
+	} catch (error) {
+		console.error('[AI Management Service] Error toggling all my accounts AI:', error);
+		throw error;
+	}
+};

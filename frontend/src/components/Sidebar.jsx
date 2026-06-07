@@ -76,9 +76,29 @@ const Sidebar = ({ messagesData, refetch }) => {
   return (
     <div className="h-full w-full border-r border-light-border dark:border-dark-border bg-light-surface dark:bg-dark-surface overflow-y-auto custom-scrollbar">
       <div className="p-3 lg:p-4">
-        <h2 className="text-base lg:text-lg font-bold mb-3 lg:mb-4 text-gray-900 dark:text-white">
-          Luxee Аккаунты
-        </h2>
+        <div className="flex items-center justify-between mb-3 lg:mb-4">
+          <h2 className="text-base lg:text-lg font-bold text-gray-900 dark:text-white">
+            Luxee Аккаунты
+          </h2>
+          
+          {/* Глобальная кнопка AI - управляет всеми аккаунтами сразу */}
+          <button
+            onClick={async () => {
+              try {
+                const { default: { aiApi } } = await import('../api/aiApi');
+                await aiApi.toggleAllMyAccountsAi();
+                // Перезагружаем данные
+                await refetch();
+              } catch (error) {
+                alert(error.response?.data?.error || 'Ошибка при переключении AI на всех аккаунтах');
+              }
+            }}
+            className="px-2 lg:px-3 py-1 rounded text-xs lg:text-sm font-medium bg-purple hover:bg-purple-600 dark:bg-accent-light dark:hover:bg-accent-light/80 text-white transition-colors flex items-center gap-1"
+            title="Переключить AI на всех аккаунтах сразу"
+          >
+            🤖 AI: Все
+          </button>
+        </div>
 
         {messagesData.accounts.map((account) => (
           <div key={account.accountId} className="mb-3 lg:mb-4">

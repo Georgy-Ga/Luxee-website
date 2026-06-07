@@ -22,6 +22,7 @@ const aiManagementService = {
 	getAccountAiStatus: accountAiService.getAccountAiStatus,
 	setAccountAiByAdmin: accountAiService.setAccountAiByAdmin,
 	toggleAccountAi: accountAiService.toggleAccountAi, // Пользователь может выключить, но не включить без разрешения админа
+	toggleAllMyAccountsAi: accountAiService.toggleAllMyAccountsAi, // Переключить AI на всех своих аккаунтах
 	canAccountUseAi: accountAiService.canAccountUseAi,
 	enableAccountAi: accountAiService.enableAccountAi,
 	disableAccountAi: accountAiService.disableAccountAi,

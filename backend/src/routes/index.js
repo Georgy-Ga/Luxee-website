@@ -159,6 +159,11 @@ router.post(
 	authMiddleware,
 	AiManagementController.toggleMyAccountAi,
 );
+router.post(
+	'/ai/my-accounts/toggle-all',
+	authMiddleware,
+	AiManagementController.toggleAllMyAccountsAi,
+);
 
 // AI Auto Response routes
 router.post(
