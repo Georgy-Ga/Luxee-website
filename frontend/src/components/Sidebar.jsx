@@ -96,7 +96,7 @@ const Sidebar = ({ messagesData, refetch }) => {
             className="px-2 lg:px-3 py-1 rounded text-xs lg:text-sm font-medium bg-purple hover:bg-purple-600 dark:bg-accent-light dark:hover:bg-accent-light/80 text-white transition-colors flex items-center gap-1"
             title="Переключить AI на всех аккаунтах сразу"
           >
-            🤖 AI: Все
+            AI: Все
           </button>
         </div>
 
