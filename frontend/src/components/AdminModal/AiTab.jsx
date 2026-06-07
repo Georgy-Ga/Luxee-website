@@ -8,7 +8,6 @@ const AiTab = () => {
 	const [expandedUsers, setExpandedUsers] = useState(new Set());
 	const [processingUsers, setProcessingUsers] = useState(new Set());
 	const [processingAccounts, setProcessingAccounts] = useState(new Set());
-	const [processingUserAi, setProcessingUserAi] = useState(new Set());
 	const [error, setError] = useState(null);
 	
 	// Получаем setAIForAccount из chatStore для синхронизации
@@ -114,28 +113,6 @@ const AiTab = () => {
 		}
 	};
 
-	const handleToggleUserAi = async (userId, currentStatus) => {
-		// Защита от двойного клика
-		if (processingUserAi.has(userId)) return;
-		
-		try {
-			setProcessingUserAi(prev => new Set(prev).add(userId));
-			setError(null);
-			
-			await aiApi.setUserAiByAdmin(userId, !currentStatus);
-			await loadData();
-		} catch (error) {
-			console.error('Failed to toggle user AI:', error);
-			const action = currentStatus ? 'выключить' : 'включить';
-			setError(`Не удалось ${action} глобальный AI для пользователя. ${error.response?.data?.error || error.message}`);
-		} finally {
-			setProcessingUserAi(prev => {
-				const next = new Set(prev);
-				next.delete(userId);
-				return next;
-			});
-		}
-	};
 
 	if (loading) {
 		return (
@@ -221,41 +198,11 @@ const AiTab = () => {
 										{hasAccounts && (
 											<>
 												<span>Аккаунтов: {user.accounts.length}</span>
-												<span className="mx-2">|</span>
 											</>
 										)}
 									</div>
 
-									{/* Кнопка управления глобальным AI пользователя */}
-									<button
-										onClick={() => handleToggleUserAi(user._id, user.aiEnabled)}
-										disabled={processingUserAi.has(user._id)}
-										className={`px-2 py-1 rounded text-xs font-medium transition-colors ${
-											user.aiEnabled
-												? 'bg-green-500 hover:bg-green-600 text-white'
-												: 'bg-gray-400 hover:bg-gray-500 text-white'
-										} ${processingUserAi.has(user._id) ? 'opacity-70 cursor-not-allowed' : ''}`}
-										title={
-											processingUserAi.has(user._id)
-												? 'Обработка...'
-												: user.aiEnabled
-												? 'Глобальный AI включен. Нажмите чтобы выключить'
-												: 'Глобальный AI выключен. Нажмите чтобы включить'
-										}
-									>
-										{processingUserAi.has(user._id) ? (
-											<span className="flex items-center gap-1">
-												<span className="inline-block w-2 h-2 border border-white border-t-transparent rounded-full animate-spin"></span>
-												...
-											</span>
-										) : (
-											<>
-												{user.aiEnabled ? '🤖 AI: ON' : '🚫 AI: OFF'}
-											</>
-										)}
-									</button>
-
-									{/* Умная кнопка для всех аккаунтов */}
+									{/* Кнопка для управления AI на всех аккаунтах пользователя */}
 									{hasAccounts && (
 										<button
 											onClick={() => handleToggleAllAccounts(user._id, user.accounts)}
