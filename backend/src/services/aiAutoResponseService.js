@@ -161,61 +161,80 @@ const aiAutoResponseService = {
 			const page = await pageHelpers.getOrCreatePage(aiContext);
 
 			// Получаем список профилей и чатов через AI контекст
+			// ✅ ИСПОЛЬЗУЕМ ТУ ЖЕ ЛОГИКУ ЧТО И messageCheckService
 			const profilesData = await page.evaluate(() => {
-				if (typeof modelsChat === 'undefined' || !modelsChat.getProfiles?.list) {
+				if (typeof modelsChat === 'undefined' || !modelsChat.getProfile?.data) {
 					return [];
 				}
 
 				const profiles = [];
-				const profilesList = modelsChat.getProfiles.list;
+				const profilesData = modelsChat.getProfile.data;
+				const chatsData = modelsChat.getChats?.list || {};
 
-				for (const profileUid in profilesList) {
-					const profile = profilesList[profileUid];
-					const chats = modelsChat.getChats?.list || {};
+				for (const uid in profilesData) {
+					const profile = profilesData[uid];
+					const profileUid = profile.inner.uid;
+
+					// Получаем все outer UIDs для этого профиля
+					const allProfileUids = [profile.inner.uid];
+					if (profile.outer) {
+						for (const outerUid in profile.outer) {
+							allProfileUids.push(profile.outer[outerUid].uid);
+						}
+					}
 
 					// Собираем чаты с неотвеченными сообщениями
 					const unansweredChats = [];
 
-					for (const chatId in chats) {
-						const chat = chats[chatId];
+					for (const chatId in chatsData) {
+						const chat = chatsData[chatId];
 
-						// Проверяем что чат принадлежит этому профилю
-						if (chat.profileUid !== parseInt(profileUid)) continue;
+						// ✅ ПРАВИЛЬНО: парсим profileUid из chatId (формат: "profileUid_memberUid")
+						const chatProfileUid = parseInt(chatId.split('_')[0]);
+
+						// Проверяем что чат принадлежит одному из UID профиля
+						if (!allProfileUids.includes(chatProfileUid)) continue;
 
 						// Проверяем что есть неотвеченное сообщение
 						if (chat.unAnswered === true) {
-							// Получаем последнее сообщение от мужчины
+							// Находим данные мужчины (type: 10)
+							const manMember = chat.members?.find(m => m.type === 10);
+							const memberUid = manMember?.uid || parseInt(chatId.split('_')[1]);
+
+							// Получаем последнее сообщение
 							const messages = chat.message || [];
-							const manUid = chat.members?.find(m => m.type === 10)?.uid;
+							let lastManMessage = null;
 
-							if (manUid) {
-								// Ищем последнее сообщение от мужчины
-								const manMessages = messages.filter(m => m.uid === manUid);
-								const lastManMessage = manMessages[manMessages.length - 1];
-
-								if (lastManMessage) {
-									unansweredChats.push({
-										chatId: chat.chatIdentity || chatId,
-										memberUid: manUid,
-										memberUsername: chat.members.find(m => m.uid === manUid)?.username,
-										lastManMessage: {
-											body: lastManMessage.body,
-											createdAt: lastManMessage.createdAt,
-										},
-										unAnswered: chat.unAnswered,
-									});
+							// Ищем последнее сообщение от мужчины (uType: 2)
+							for (let i = messages.length - 1; i >= 0; i--) {
+								if (messages[i].uType === 2) {
+									lastManMessage = messages[i];
+									break;
 								}
+							}
+
+							if (lastManMessage && manMember) {
+								unansweredChats.push({
+									chatId: chat.identity || chatId,
+									memberUid: memberUid,
+									memberUsername: manMember.username || manMember.first_name,
+									lastManMessage: {
+										body: lastManMessage.body,
+										createdAt: lastManMessage.createdAt,
+									},
+									unAnswered: chat.unAnswered,
+								});
 							}
 						}
 					}
 
 					if (unansweredChats.length > 0) {
 						profiles.push({
-							profileUid: parseInt(profileUid),
-							profileName: profile.name,
-							profileAge: profile.age,
-							profileCountry: profile.country,
-							profileCity: profile.city,
+							profileUid: profileUid,
+							profileName: profile.inner.username,
+							profileAge: profile.inner.age,
+							profileCountry: profile.inner.country,
+							profileCity: profile.inner.city,
 							unansweredChats,
 						});
 					}
