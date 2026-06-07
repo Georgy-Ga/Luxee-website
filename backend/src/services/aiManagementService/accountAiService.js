@@ -98,9 +98,55 @@ export const setAccountAiByAdmin = async (accountId, enabled) => {
 	}
 };
 
-// УДАЛЕНО: toggleAccountAi - пользователь НЕ может сам включать/выключать AI
-// Только админ контролирует AI через setAccountAiByAdmin
-// Концепция: админ разрешил = сразу включено, пользователь не имеет контроля
+export const toggleAccountAi = async (userId, accountId) => {
+	try {
+		const account = await LuxeeAccountModel.findOne({
+			_id: accountId,
+			user: userId,
+		});
+
+		if (!account) {
+			throw new Error('Account not found');
+		}
+
+		const newStatus = !account.aiEnabled;
+
+		// ВАЖНО: Пользователь может ВЫКЛЮЧИТЬ AI, но НЕ может ВКЛЮЧИТЬ без разрешения админа
+		if (newStatus === true && !account.aiEnabledByAdmin) {
+			throw new Error('AI disabled by admin. Cannot enable. Contact administrator.');
+		}
+
+		account.aiEnabled = newStatus;
+		await account.save();
+
+		console.log(
+			`[AI Management Service] User ${userId} toggled AI for account ${accountId}:`,
+			`aiEnabled=${newStatus}, aiEnabledByAdmin=${account.aiEnabledByAdmin}`
+		);
+
+		if (account.aiEnabled && account.aiEnabledByAdmin) {
+			// Запускаем автоответы если AI включен и админ разрешил
+			try {
+				console.log(`[AI Management Service] Starting auto-response for account ${accountId}...`);
+				await aiAutoResponseService.start(accountId);
+				console.log(`[AI Management Service] ✓ Auto-response started for account ${accountId}`);
+			} catch (error) {
+				console.error(`[AI Management Service] ✗ Failed to start auto-response for account ${accountId}:`, error);
+			}
+		} else {
+			// Останавливаем автоответы если AI выключен
+			console.log(`[AI Management Service] Stopping auto-response for account ${accountId}...`);
+			await aiAutoResponseService.stop(accountId);
+			await aiBrowserContextService.closeAiContext(accountId);
+			console.log(`[AI Management Service] ✓ Auto-response stopped for account ${accountId}`);
+		}
+
+		return account;
+	} catch (error) {
+		console.error('[AI Management Service] Error toggling account AI:', error);
+		throw error;
+	}
+};
 
 export const canAccountUseAi = async (userId, accountId) => {
 	try {
