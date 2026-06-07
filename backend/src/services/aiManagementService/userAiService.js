@@ -3,6 +3,7 @@
 import UserModel from '../../models/UserModel.js';
 import LuxeeAccountModel from '../../models/LuxeeAccountModel.js';
 import aiBrowserContextService from '../browser/aiBrowserContextService.js';
+import aiAutoResponseService from '../aiAutoResponseService.js';
 
 export const getAllUsersAiStatus = async () => {
 	try {
@@ -159,26 +160,48 @@ export const setAllUserAccountsAiByAdmin = async (userId, enabled, adminId) => {
 		const accounts = await LuxeeAccountModel.find({ user: userId });
 		console.log(`[AI Management Service] Admin ${adminId} setting AI to ${enabled} for ${accounts.length} accounts of user ${userId}`);
 		
-		// Обновляем все аккаунты в базе данных одним запросом (быстрее)
+		// ВАЖНО: Концепция - админ контролирует ОБА флага
+		// Когда админ разрешает = сразу включено (aiEnabled = aiEnabledByAdmin)
 		await LuxeeAccountModel.updateMany(
 			{ user: userId },
-			{ aiEnabledByAdmin: enabled }
+			{ 
+				aiEnabledByAdmin: enabled,
+				aiEnabled: enabled  // Админ контролирует ОБА флага
+			}
 		);
 		
-		// Если выключаем - закрываем AI контексты параллельно с ограничением
-		if (!enabled) {
-			const closePromises = accounts.map(account => 
-				aiBrowserContextService.closeAiContext(account._id)
+		if (enabled) {
+			// При включении - создаем AI контексты и запускаем автоответы
+			console.log(`[AI Management Service] Starting AI for ${accounts.length} accounts...`);
+			for (const account of accounts) {
+				try {
+					console.log(`[AI Management Service] Creating AI context for account ${account._id}...`);
+					await aiBrowserContextService.getOrCreateAiContext(account._id);
+					console.log(`[AI Management Service] ✓ AI context created for account ${account._id}`);
+					
+					console.log(`[AI Management Service] Starting auto-response for account ${account._id}...`);
+					await aiAutoResponseService.start(account._id);
+					console.log(`[AI Management Service] ✓ Auto-response started for account ${account._id}`);
+				} catch (error) {
+					console.error(`[AI Management Service] ✗ Failed to start AI for account ${account._id}:`, error);
+				}
+			}
+		} else {
+			// Если выключаем - останавливаем автоответы и закрываем AI контексты
+			console.log(`[AI Management Service] Stopping AI for ${accounts.length} accounts...`);
+			const stopPromises = accounts.map(account => 
+				aiAutoResponseService.stop(account._id)
+					.then(() => aiBrowserContextService.closeAiContext(account._id))
+					.then(() => {
+						console.log(`[AI Management Service] ✓ AI stopped for account ${account._id}`);
+					})
 					.catch(error => {
-						console.error(`[AI Management Service] Failed to close AI context for account ${account._id}:`, error);
-						// Не прерываем выполнение, просто логируем ошибку
+						console.error(`[AI Management Service] ✗ Failed to stop AI for account ${account._id}:`, error);
 						return null;
 					})
 			);
 			
-			// Закрываем контексты параллельно, но не ждем завершения всех
-			// Используем Promise.allSettled чтобы не упасть если один из контекстов не закроется
-			await Promise.allSettled(closePromises);
+			await Promise.allSettled(stopPromises);
 		}
 		
 		return { updated: accounts.length };

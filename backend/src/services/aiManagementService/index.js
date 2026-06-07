@@ -21,7 +21,7 @@ const aiManagementService = {
 	getUserAccountsAiStatus: accountAiService.getUserAccountsAiStatus,
 	getAccountAiStatus: accountAiService.getAccountAiStatus,
 	setAccountAiByAdmin: accountAiService.setAccountAiByAdmin,
-	toggleAccountAi: accountAiService.toggleAccountAi,
+	// toggleAccountAi УДАЛЕНО - только админ контролирует AI
 	canAccountUseAi: accountAiService.canAccountUseAi,
 	enableAccountAi: accountAiService.enableAccountAi,
 	disableAccountAi: accountAiService.disableAccountAi,
