@@ -21,9 +21,9 @@ export const generateResponse = async ({
 		console.log('[AI Service] Man message:', manMessage);
 		console.log('[AI Service] History length:', conversationHistory.length);
 
-		// Получаем кастомные правила для профиля
-		const customRules = await aiRuleService.getRulesForProfile(profile.uid);
-		console.log('[AI Service] Custom rules loaded:', customRules ? 'Yes' : 'No');
+		// Получаем активные кастомные правила
+		const customRules = await aiRuleService.getActiveRules();
+		console.log('[AI Service] Custom rules loaded:', customRules?.length || 0);
 
 		// Строим сообщения для AI
 		const messages = buildMessages({
