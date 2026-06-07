@@ -33,6 +33,7 @@ const aiManagementController = {
 	getMyAccountsAiStatus: accountAiController.getMyAccountsAiStatus,
 	setAccountAiByAdmin: accountAiController.setAccountAiByAdmin,
 	toggleMyAccountAi: accountAiController.toggleMyAccountAi,
+	toggleAllMyAccountsAi: accountAiController.toggleAllMyAccountsAi,
 };
 
 export default aiManagementController;
