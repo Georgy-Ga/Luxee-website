@@ -10,8 +10,9 @@ export const useAiManagement = () => {
   const [users, setUsers] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
-  const [processingUsers, setProcessingUsers] = useState(new Set());
-  const [processingAccounts, setProcessingAccounts] = useState(new Set());
+  // Используем lazy initialization для Set объектов
+  const [processingUsers, setProcessingUsers] = useState(() => new Set());
+  const [processingAccounts, setProcessingAccounts] = useState(() => new Set());
   
   const { setAIForAccount } = useChatStore();
 

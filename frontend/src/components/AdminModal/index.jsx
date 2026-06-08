@@ -50,7 +50,9 @@ const AdminModal = ({ onClose }) => {
         </div>
 
         <div className="flex-1 overflow-y-auto p-3 lg:p-6 custom-scrollbar">
-          <ActiveComponent />
+          <div key={activeTab} className="animate-fade-in">
+            <ActiveComponent />
+          </div>
         </div>
       </div>
     </div>
