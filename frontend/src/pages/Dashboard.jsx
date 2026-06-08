@@ -3,7 +3,7 @@ import { useQuery } from '@tanstack/react-query';
 import { luxeeApi } from '../api/luxeeApi';
 import Sidebar from '../components/Sidebar';
 import ChatWindow from '../components/ChatWindow';
-import Header from '../components/Header';
+import Header from '../components/layout/Header';
 import useChatStore from '../stores/chatStore';
 
 const Dashboard = () => {

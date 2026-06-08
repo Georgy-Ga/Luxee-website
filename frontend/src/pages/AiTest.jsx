@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { aiApi } from '../api/aiApi';
-import Header from '../components/Header';
+import Header from '../components/layout/Header';
 
 const AiTest = () => {
 	const [profile, setProfile] = useState({
