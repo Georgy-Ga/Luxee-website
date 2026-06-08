@@ -5,9 +5,21 @@ import { useState, useCallback } from 'react';
  * Поддерживает как объекты, так и Set для expanded items
  */
 export const useAccordion = (initialExpanded = {}, useSet = false) => {
-  const [expanded, setExpanded] = useState(
-    useSet ? new Set(initialExpanded) : initialExpanded
-  );
+  const [expanded, setExpanded] = useState(() => {
+    if (useSet) {
+      // Если передан Set - используем его
+      if (initialExpanded instanceof Set) {
+        return new Set(initialExpanded);
+      }
+      // Если передан массив - создаем Set из него
+      if (Array.isArray(initialExpanded)) {
+        return new Set(initialExpanded);
+      }
+      // Для объектов или undefined создаем пустой Set
+      return new Set();
+    }
+    return initialExpanded;
+  });
 
   const toggle = useCallback((id) => {
     setExpanded(prev => {
