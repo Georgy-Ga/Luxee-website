@@ -1,4 +1,4 @@
-import Button from '../common/Button';
+import { Button } from '../ui';
 
 /**
  * Карточка Luxee аккаунта

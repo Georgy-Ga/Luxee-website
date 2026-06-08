@@ -1,8 +1,7 @@
 import { useState } from 'react';
 import { useMutation, useQuery } from '@tanstack/react-query';
 import { luxeeApi } from '../../api/luxeeApi';
-import Button from '../common/Button';
-import Input from '../common/Input';
+import { Button, Input } from '../ui';
 import LuxeeAccountCard from './LuxeeAccountCard';
 
 const LuxeeTab = () => {
