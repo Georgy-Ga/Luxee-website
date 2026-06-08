@@ -7,14 +7,15 @@ import { SYSTEM_PROMPT } from './config.js';
  */
 export const buildProfileContext = (profile, customRules) => {
 	let profileContext = `My profile information:
-- Name: ${profile.username}
-- Age: ${profile.age || 'not specified'}
-- Country: ${profile.country || 'not specified'}
-- City: ${profile.city || 'not specified'}`;
+- Name: ${profile?.username || 'not specified'}
+- Age: ${profile?.age || 'not specified'}
+- Country: ${profile?.country || 'not specified'}
+- City: ${profile?.city || 'not specified'}`;
 
-	// Добавляем кастомные правила если есть
-	if (customRules && customRules.trim()) {
-		profileContext += `\n\nAdditional rules for this profile:\n${customRules}`;
+	// Добавляем кастомные правила если есть (customRules это массив объектов)
+	if (customRules && Array.isArray(customRules) && customRules.length > 0) {
+		const rulesText = customRules.map(rule => rule.content).join('\n');
+		profileContext += `\n\nAdditional rules for this profile:\n${rulesText}`;
 	}
 
 	profileContext += `\n\nI should use this information ONLY when he asks where I'm from, how old I am, or who I am. Don't mention it in every message.`;

@@ -2,6 +2,9 @@ import { useState, useEffect } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import useChatStore from '../stores/chatStore';
 import { luxeeApi } from '../api/luxeeApi';
+import { useToast } from '../hooks/useToast';
+import GlobalAIButton from './Sidebar/GlobalAIButton';
+import AccountAIButton from './Sidebar/AccountAIButton';
 
 // Функция для декодирования HTML entities
 const decodeHtmlEntities = (text) => {
@@ -24,6 +27,7 @@ const Sidebar = ({ messagesData, refetch }) => {
   const [expandedAccounts, setExpandedAccounts] = useState({});
   const [expandedProfiles, setExpandedProfiles] = useState({});
   const [copiedId, setCopiedId] = useState(null); // Для визуального эффекта копирования
+  const { showToast, ToastContainer } = useToast();
   
   const { selectedProfile, selectedChat, setSelectedProfile, setSelectedChat, aiEnabledByAccount, toggleAIForAccount, closeSidebar } = useChatStore();
   
@@ -74,31 +78,24 @@ const Sidebar = ({ messagesData, refetch }) => {
   }
 
   return (
-    <div className="h-full w-full border-r border-light-border dark:border-dark-border bg-light-surface dark:bg-dark-surface overflow-y-auto custom-scrollbar">
-      <div className="p-3 lg:p-4">
-        <div className="flex items-center justify-between mb-3 lg:mb-4">
-          <h2 className="text-base lg:text-lg font-bold text-gray-900 dark:text-white">
-            Luxee Аккаунты
-          </h2>
-          
-          {/* Глобальная кнопка AI - управляет всеми аккаунтами сразу */}
-          <button
-            onClick={async () => {
-              try {
-                const { default: { aiApi } } = await import('../api/aiApi');
-                await aiApi.toggleAllMyAccountsAi();
-                // Перезагружаем данные
+    <>
+      <ToastContainer />
+      <div className="h-full w-full border-r border-light-border dark:border-dark-border bg-light-surface dark:bg-dark-surface overflow-y-auto custom-scrollbar">
+        <div className="p-3 lg:p-4">
+          <div className="flex items-center justify-between mb-3 lg:mb-4">
+            <h2 className="text-base lg:text-lg font-bold text-gray-900 dark:text-white">
+              Luxee Аккаунты
+            </h2>
+            
+            {/* Глобальная кнопка AI */}
+            <GlobalAIButton
+              onSuccess={async () => {
+                showToast('AI переключен на всех аккаунтах', 'success');
                 await refetch();
-              } catch (error) {
-                alert(error.response?.data?.error || 'Ошибка при переключении AI на всех аккаунтах');
-              }
-            }}
-            className="px-2 lg:px-3 py-1 rounded text-xs lg:text-sm font-medium bg-purple hover:bg-purple-600 dark:bg-accent-light dark:hover:bg-accent-light/80 text-white transition-colors flex items-center gap-1"
-            title="Переключить AI на всех аккаунтах сразу"
-          >
-            AI: Все
-          </button>
-        </div>
+              }}
+              onError={(message) => showToast(message, 'error')}
+            />
+          </div>
 
         {messagesData.accounts.map((account) => (
           <div key={account.accountId} className="mb-3 lg:mb-4">
@@ -113,29 +110,13 @@ const Sidebar = ({ messagesData, refetch }) => {
                 </p>
               </div>
               
-              {/* AI Toggle для аккаунта (пользователь может выключить, но не может включить без разрешения админа) */}
-              <button
-                onClick={async (e) => {
-                  e.stopPropagation();
-                  try {
-                    await toggleAIForAccount(account.accountId);
-                  } catch (error) {
-                    alert(error.response?.data?.error || 'Ошибка при переключении AI');
-                  }
-                }}
-                className={`ml-1.5 lg:ml-2 px-1.5 lg:px-2 py-0.5 lg:py-1 rounded text-[10px] lg:text-xs font-medium flex-shrink-0 transition-colors ${
-                  aiEnabledByAccount[account.accountId] === true
-                    ? 'bg-green-500 hover:bg-green-600 text-white'
-                    : 'bg-gray-400 hover:bg-gray-500 text-white'
-                }`}
-                title={
-                  aiEnabledByAccount[account.accountId] === true 
-                    ? 'AI включен. Нажмите чтобы выключить' 
-                    : 'AI выключен. Включить может только админ'
-                }
-              >
-                AI
-              </button>
+              {/* AI Toggle для аккаунта */}
+              <AccountAIButton
+                accountId={account.accountId}
+                isEnabled={aiEnabledByAccount[account.accountId] === true}
+                onToggle={toggleAIForAccount}
+                onError={(message) => showToast(message, 'error')}
+              />
             </div>
 
             {/* Профили */}
@@ -164,6 +145,7 @@ const Sidebar = ({ messagesData, refetch }) => {
         ))}
       </div>
     </div>
+    </>
   );
 };
 
