@@ -6,6 +6,9 @@ import browserService from './browserService.js';
 import pageHelpers from './pageHelpers.js';
 import LuxeeAccountModel from '../../models/LuxeeAccountModel.js';
 
+// Флаги состояния для предотвращения race conditions
+const contextOperations = new Map(); // accountId -> { creating: boolean, closing: boolean }
+
 const aiBrowserContextService = {
 	/**
 	 * Создать отдельный контекст для AI
@@ -14,16 +17,34 @@ const aiBrowserContextService = {
 	 */
 	createAiContext: async (accountId) => {
 		try {
+			// Проверяем флаги состояния
+			const operation = contextOperations.get(accountId) || {};
+			if (operation.closing) {
+				throw new Error('Context is being closed, cannot create');
+			}
+			if (operation.creating) {
+				console.log(`[AI Browser Context] Context creation already in progress for ${accountId}`);
+				// Ждем завершения текущего создания
+				await new Promise(resolve => setTimeout(resolve, 500));
+				const aiContextId = `${accountId}_ai`;
+				return aiContextId;
+			}
+
+			// Устанавливаем флаг создания
+			contextOperations.set(accountId, { creating: true, closing: false });
+
 			console.log(`[AI Browser Context] Creating AI context for account ${accountId}`);
 
 			// Получаем основной аккаунт
 			const account = await LuxeeAccountModel.findById(accountId);
 			if (!account) {
+				contextOperations.delete(accountId);
 				throw new Error('Account not found');
 			}
 
 			// Проверяем что у аккаунта есть сессия
 			if (!account.sessionData) {
+				contextOperations.delete(accountId);
 				throw new Error('Account has no session data. Please login first.');
 			}
 
@@ -34,6 +55,7 @@ const aiBrowserContextService = {
 			const existingContext = browserService.getContext(aiContextId);
 			if (existingContext) {
 				console.log(`[AI Browser Context] AI context already exists for account ${accountId}`);
+				contextOperations.delete(accountId);
 				return aiContextId;
 			}
 
@@ -66,9 +88,14 @@ const aiBrowserContextService = {
 
 			console.log(`[AI Browser Context] AI context ready for account ${accountId}`);
 
+			// Очищаем флаг создания
+			contextOperations.delete(accountId);
+
 			return aiContextId;
 		} catch (error) {
 			console.error('[AI Browser Context] Error creating AI context:', error);
+			// Очищаем флаг при ошибке
+			contextOperations.delete(accountId);
 			throw error;
 		}
 	},
@@ -149,11 +176,22 @@ const aiBrowserContextService = {
 	 */
 	closeAiContext: async (accountId) => {
 		try {
+			// Проверяем флаги состояния
+			const operation = contextOperations.get(accountId) || {};
+			if (operation.creating) {
+				console.log(`[AI Browser Context] Context is being created, waiting before close...`);
+				await new Promise(resolve => setTimeout(resolve, 500));
+			}
+
+			// Устанавливаем флаг закрытия
+			contextOperations.set(accountId, { creating: false, closing: true });
+
 			console.log(`[AI Browser Context] Closing AI context for account ${accountId}`);
 
 			const account = await LuxeeAccountModel.findById(accountId);
 			if (!account || !account.aiContext) {
 				console.log('[AI Browser Context] No AI context to close');
+				contextOperations.delete(accountId);
 				return;
 			}
 
@@ -165,8 +203,13 @@ const aiBrowserContextService = {
 			await account.save();
 
 			console.log(`[AI Browser Context] AI context closed for account ${accountId}`);
+			
+			// Очищаем флаг закрытия
+			contextOperations.delete(accountId);
 		} catch (error) {
 			console.error('[AI Browser Context] Error closing AI context:', error);
+			// Очищаем флаг при ошибке
+			contextOperations.delete(accountId);
 			throw error;
 		}
 	},

@@ -1,6 +1,9 @@
 import { useState } from 'react';
 import { useMutation, useQuery } from '@tanstack/react-query';
 import { luxeeApi } from '../../api/luxeeApi';
+import Button from '../common/Button';
+import Input from '../common/Input';
+import LuxeeAccountCard from './LuxeeAccountCard';
 
 const LuxeeTab = () => {
   const [luxeeEmail, setLuxeeEmail] = useState('');
@@ -127,35 +130,14 @@ const LuxeeTab = () => {
         </h3>
         <div className="space-y-2">
           {luxeeAccounts?.map((acc) => (
-            <div
-              key={acc._id}
-              className="flex items-center justify-between p-3 bg-light-surface dark:bg-dark-surface rounded-lg border border-light-border dark:border-dark-border"
-            >
-              <div className="flex-1">
-                <p className="font-medium text-gray-900 dark:text-white">{acc.email}</p>
-                <p className="text-sm text-gray-600 dark:text-gray-300">
-                  Статус: {acc.isActive ? '🟢 Активен' : '🔴 Неактивен'}
-                </p>
-              </div>
-              <div className="flex gap-2">
-                {!acc.isActive && (
-                  <button
-                    onClick={() => restoreMutation.mutate(acc._id)}
-                    disabled={restoreMutation.isPending}
-                    className="px-3 py-1 bg-green-600 hover:bg-green-700 text-white rounded-lg transition-colors disabled:opacity-50"
-                  >
-                    Восстановить
-                  </button>
-                )}
-                <button
-                  onClick={() => deleteLuxeeMutation.mutate(acc._id)}
-                  disabled={deleteLuxeeMutation.isPending}
-                  className="px-3 py-1 bg-red-600 hover:bg-red-700 text-white rounded-lg transition-colors disabled:opacity-50"
-                >
-                  Удалить
-                </button>
-              </div>
-            </div>
+            <LuxeeAccountCard
+              key={acc._id || acc.accountId}
+              account={acc}
+              onRestore={(id) => restoreMutation.mutate(id)}
+              onDelete={(id) => deleteLuxeeMutation.mutate(id)}
+              isRestoring={restoreMutation.isPending}
+              isDeleting={deleteLuxeeMutation.isPending}
+            />
           ))}
         </div>
       </div>

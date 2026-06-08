@@ -137,6 +137,8 @@ export const toggleAccountAi = async (userId, accountId) => {
 			// Останавливаем автоответы если AI выключен
 			console.log(`[AI Management Service] Stopping auto-response for account ${accountId}...`);
 			await aiAutoResponseService.stop(accountId);
+			// Небольшая задержка перед закрытием контекста чтобы избежать race condition
+			await new Promise(resolve => setTimeout(resolve, 100));
 			await aiBrowserContextService.closeAiContext(accountId);
 			console.log(`[AI Management Service] ✓ Auto-response stopped for account ${accountId}`);
 		}
