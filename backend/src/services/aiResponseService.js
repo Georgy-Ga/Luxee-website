@@ -16,6 +16,7 @@ const aiResponseService = {
 	 * @param {string} params.accountId - ID Luxee аккаунта
 	 * @param {Object} params.profile - Профиль девушки
 	 * @param {string} params.manMessage - Сообщение от мужчины
+	 * @param {number} params.messageType - Тип сообщения (1 = текст, другие = эмодзи/медиа)
 	 * @param {Array} params.conversationHistory - История переписки (опционально)
 	 * @returns {Promise<string>} - Ответ AI
 	 */
@@ -24,6 +25,7 @@ const aiResponseService = {
 		accountId,
 		profile,
 		manMessage,
+		messageType = 1,
 		conversationHistory = [],
 	}) => {
 		try {
@@ -48,6 +50,7 @@ const aiResponseService = {
 			const response = await aiService.generateResponse({
 				profile,
 				manMessage,
+				messageType,
 				conversationHistory,
 			});
 
@@ -176,6 +179,7 @@ const aiResponseService = {
 	 * @param {string} params.chatId - ID чата
 	 * @param {Object} params.profile - Профиль девушки
 	 * @param {string} params.manMessage - Сообщение от мужчины
+	 * @param {number} params.messageType - Тип сообщения (1 = текст, другие = эмодзи/медиа)
 	 * @param {Array} params.conversationHistory - История переписки
 	 * @returns {Promise<Object>} - Результат
 	 */
@@ -186,6 +190,7 @@ const aiResponseService = {
 		chatId,
 		profile,
 		manMessage,
+		messageType = 1,
 		conversationHistory = [],
 	}) => {
 		try {
@@ -197,6 +202,7 @@ const aiResponseService = {
 				accountId,
 				profile,
 				manMessage,
+				messageType,
 				conversationHistory,
 			});
 

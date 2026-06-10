@@ -164,18 +164,12 @@ const chatOpenService = {
 								media: msg.media?.length,
 							});
 							
-							// Если body пустой, проверяем тип сообщения
-							if (!messageBody || messageBody.trim() === '') {
-								// type: 1 = обычное, 2 = wink, 3 = media и т.д.
-								if (msg.type === 2 || msg.type === '2') {
-									messageBody = '😉 Wink';
-									messageType = 2;
-								} else if (msg.media && msg.media.length > 0) {
-									messageBody = `📷 ${msg.media.length} фото`;
-									messageType = 3;
-								}
-								// Убираем "(пустое сообщение)" - просто оставляем пустым
+							// ⭐ Если body пустой И type не 1 = эмодзи/стикер
+							if ((!messageBody || messageBody.trim() === '') && msg.type !== 1) {
+								messageBody = '😊 [Emoji]';
+								messageType = msg.type;
 							}
+							// Медиа пока не обрабатываем отдельно
 							
 							return {
 								id: msg._id,

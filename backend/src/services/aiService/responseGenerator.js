@@ -12,6 +12,7 @@ const MAX_RETRIES = 3;
  */
 export const generateResponse = async ({
 	manMessage,
+	messageType,
 	profile,
 	conversationHistory = [],
 }) => {
@@ -19,6 +20,7 @@ export const generateResponse = async ({
 		console.log('[AI Service] Generating response...');
 		console.log('[AI Service] Profile:', profile.username);
 		console.log('[AI Service] Man message:', manMessage);
+		console.log('[AI Service] Message type:', messageType);
 		console.log('[AI Service] History length:', conversationHistory.length);
 
 		// Получаем активные кастомные правила
@@ -29,6 +31,7 @@ export const generateResponse = async ({
 		const messages = buildMessages({
 			conversationHistory,
 			manMessage,
+			messageType,
 			profile,
 			customRules,
 		});

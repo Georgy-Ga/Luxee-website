@@ -26,7 +26,7 @@ export const buildProfileContext = (profile, customRules) => {
 /**
  * Построить массив сообщений для AI API
  */
-export const buildMessages = ({ conversationHistory, manMessage, profile, customRules }) => {
+export const buildMessages = ({ conversationHistory, manMessage, messageType, profile, customRules }) => {
 	const messages = [];
 	const profileContext = buildProfileContext(profile, customRules);
 
@@ -46,10 +46,16 @@ export const buildMessages = ({ conversationHistory, manMessage, profile, custom
 		content: SYSTEM_PROMPT,
 	});
 
+	// ⭐ Определяем контекст для эмодзи
+	let messageContext = '';
+	if (manMessage.includes('[Emoji]')) {
+		messageContext = '[The man sent you an emoji/sticker - respond warmly with emotion and ask a question]\n';
+	}
+
 	// Добавляем текущее сообщение от мужчины
 	const userMessage = `${profileContext}
 
-Man's message: "${manMessage}"
+${messageContext}Man's message: "${manMessage}"
 
 Generate a natural, friendly response as ${profile.username}. Write a complete message (1-3 sentences).`;
 

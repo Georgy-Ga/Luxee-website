@@ -279,6 +279,17 @@ const aiAutoResponseService = {
 						}
 
 						console.log(
+							`[AI Auto Response] Opening chat ${chat.chatId} to get full data...`
+						);
+
+						// ⭐ Открываем чат чтобы получить полные данные включая messageType
+						const chatData = await chatOpenService.openChat({
+							accountId,
+							profileUid: profile.profileUid,
+							chatId: chat.chatId,
+						});
+
+						console.log(
 							`[AI Auto Response] Generating response for chat ${chat.chatId}...`
 						);
 
@@ -289,13 +300,14 @@ const aiAutoResponseService = {
 							profileUid: profile.profileUid,
 							chatId: chat.chatId,
 							profile: {
-								name: profile.profileName,
+								username: profile.profileName,
 								age: profile.profileAge,
 								country: profile.profileCountry,
 								city: profile.profileCity,
 							},
-							manMessage: chat.lastManMessage.body,
-							conversationHistory: [], // TODO: можно добавить историю если нужно
+							manMessage: chatData.lastMessage?.body || chat.lastManMessage.body,
+							messageType: chatData.lastMessage?.type || 1,
+							conversationHistory: chatData.messages?.slice(0, -1) || [],
 						});
 
 						if (result.success) {
