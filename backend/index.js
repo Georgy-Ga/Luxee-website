@@ -1,5 +1,7 @@
 import dotenv from 'dotenv';
 import express from 'express';
+import { createServer } from 'http';
+import { Server } from 'socket.io';
 import cors from 'cors';
 import cookieParser from 'cookie-parser';
 import mongoose from 'mongoose';
@@ -7,10 +9,26 @@ import router from './src/routes/index.js';
 import errorMiddleware from './src/middleware/errorMiddleware.js';
 import contextRecoveryService from './src/services/browser/contextRecoveryService.js';
 import browserService from './src/services/browser/browserService.js';
+import { getSocketConfig } from './src/config/socket.js';
+import socketAuthMiddleware from './src/middleware/socketAuth.js';
+import socketService from './src/services/socketService.js';
+
 dotenv.config();
 
 const app = express();
+const httpServer = createServer(app);
 const PORT = process.env.PORT || 5000;
+
+// Настройка Socket.io
+const io = new Server(httpServer, getSocketConfig());
+
+// Middleware для аутентификации Socket.io
+io.use(socketAuthMiddleware);
+
+// Инициализация Socket Service
+socketService.initialize(io);
+
+console.log('[Server] ✓ Socket.io initialized');
 
 app.use(express.json());
 app.use(cookieParser());
@@ -40,8 +58,11 @@ app.use(errorMiddleware);
 const start = async () => {
 	try {
 		await mongoose.connect(process.env.MONGO_URL);
-		app.listen(PORT, () => {
-			console.log(`Server is running on port ${PORT}`);
+		console.log('[Server] ✓ MongoDB connected');
+		
+		httpServer.listen(PORT, () => {
+			console.log(`[Server] ✓ HTTP Server running on port ${PORT}`);
+			console.log(`[Server] ✓ WebSocket Server ready`);
 		});
 		
 		// Автовосстановление контекстов после запуска сервера

@@ -5,6 +5,7 @@ import { authApi } from './api/authApi';
 import useAuthStore from './stores/authStore';
 import useThemeStore from './stores/themeStore';
 import useChatStore from './stores/chatStore';
+import { SocketProvider } from './contexts/SocketContext';
 import Login from './pages/Login';
 import Dashboard from './pages/Dashboard';
 import AiTest from './pages/AiTest';
@@ -68,29 +69,31 @@ function App() {
 
   return (
     <QueryClientProvider client={queryClient}>
-      <BrowserRouter>
-        <Routes>
-          <Route path="/login" element={<Login />} />
-          <Route
-            path="/dashboard"
-            element={
-              <ProtectedRoute>
-                <Dashboard />
-              </ProtectedRoute>
-            }
-          />
-          <Route
-            path="/ai-test"
-            element={
-              <ProtectedRoute>
-                <AiTest />
-              </ProtectedRoute>
-            }
-          />
-          <Route path="/" element={<Navigate to="/dashboard" replace />} />
-          <Route path="*" element={<Navigate to="/dashboard" replace />} />
-        </Routes>
-      </BrowserRouter>
+      <SocketProvider>
+        <BrowserRouter>
+          <Routes>
+            <Route path="/login" element={<Login />} />
+            <Route
+              path="/dashboard"
+              element={
+                <ProtectedRoute>
+                  <Dashboard />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/ai-test"
+              element={
+                <ProtectedRoute>
+                  <AiTest />
+                </ProtectedRoute>
+              }
+            />
+            <Route path="/" element={<Navigate to="/dashboard" replace />} />
+            <Route path="*" element={<Navigate to="/dashboard" replace />} />
+          </Routes>
+        </BrowserRouter>
+      </SocketProvider>
     </QueryClientProvider>
   );
 }

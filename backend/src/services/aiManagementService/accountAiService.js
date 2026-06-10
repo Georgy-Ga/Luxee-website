@@ -3,6 +3,7 @@
 import LuxeeAccountModel from '../../models/LuxeeAccountModel.js';
 import aiBrowserContextService from '../browser/aiBrowserContextService.js';
 import aiAutoResponseService from '../aiAutoResponseService.js';
+import socketService from '../socketService.js';
 
 export const getAllAccountsAiStatus = async () => {
 	try {
@@ -68,6 +69,15 @@ export const setAccountAiByAdmin = async (accountId, enabled) => {
 			`aiEnabledByAdmin=${enabled}, aiEnabled=${enabled}`
 		);
 
+		// Emit Socket.io событие для синхронизации
+		socketService.emitAccountAIChanged(
+			accountId,
+			account.user.toString(),
+			enabled,
+			enabled,
+			'admin'
+		);
+
 		if (enabled) {
 			// Создаём AI контекст и запускаем автоответы при включении
 			try {
@@ -122,6 +132,15 @@ export const toggleAccountAi = async (userId, accountId) => {
 		console.log(
 			`[AI Management Service] User ${userId} toggled AI for account ${accountId}:`,
 			`aiEnabled=${newStatus}, aiEnabledByAdmin=${account.aiEnabledByAdmin}`
+		);
+
+		// Emit Socket.io событие для синхронизации
+		socketService.emitAccountAIChanged(
+			accountId,
+			userId,
+			account.aiEnabled,
+			account.aiEnabledByAdmin,
+			'user'
 		);
 
 		if (account.aiEnabled && account.aiEnabledByAdmin) {
@@ -203,6 +222,7 @@ export const toggleAllMyAccountsAi = async (userId) => {
 		
 		let updated = 0;
 		const results = [];
+		const changedAccounts = [];
 		
 		for (const account of accounts) {
 			// Пользователь может ВЫКЛЮЧИТЬ любой аккаунт, но ВКЛЮЧИТЬ только если админ разрешил
@@ -230,12 +250,22 @@ export const toggleAllMyAccountsAi = async (userId) => {
 				
 				updated++;
 				results.push({ accountId: account._id, status: 'success', aiEnabled: newStatus });
+				changedAccounts.push({
+					accountId: account._id.toString(),
+					aiEnabled: newStatus,
+					aiEnabledByAdmin: account.aiEnabledByAdmin
+				});
 			} catch (error) {
 				console.error(`[AI Management Service] ✗ Failed to toggle AI for account ${account._id}:`, error);
 				results.push({ accountId: account._id, status: 'error', error: error.message });
 			}
 		}
 		
+		// Emit Socket.io событие для массового изменения
+		if (changedAccounts.length > 0) {
+			socketService.emitBulkAIChanged(userId, changedAccounts, 'user');
+		}
+
 		return { 
 			message: `AI ${newStatus ? 'enabled' : 'disabled'} for accounts`,
 			updated,

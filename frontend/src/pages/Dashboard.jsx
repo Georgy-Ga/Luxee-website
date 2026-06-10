@@ -5,11 +5,15 @@ import Sidebar from '../components/Sidebar';
 import ChatWindow from '../components/ChatWindow';
 import Header from '../components/layout/Header';
 import useChatStore from '../stores/chatStore';
+import { useAiSync } from '../hooks/useAiSync';
 
 const Dashboard = () => {
   const selectedChat = useChatStore((state) => state.selectedChat);
   const sidebarOpen = useChatStore((state) => state.sidebarOpen);
   const closeSidebar = useChatStore((state) => state.closeSidebar);
+
+  // Подключаем real-time синхронизацию AI статусов
+  const { isSyncing } = useAiSync();
 
   // Получаем сообщения каждые 10 секунд
   const { data: messagesData, refetch } = useQuery({
