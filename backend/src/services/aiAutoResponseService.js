@@ -7,7 +7,6 @@ import aiManagementService from './aiManagementService/index.js';
 import aiBrowserContextService from './browser/aiBrowserContextService.js';
 import LuxeeAccountModel from '../models/LuxeeAccountModel.js';
 import answeredChatService from './answeredChatService.js';
-import chatOpenService from './luxeeApi/chatOpenService.js';
 import pageHelpers from './browser/pageHelpers.js';
 
 // Хранилище активных процессов автоответов
@@ -279,17 +278,6 @@ const aiAutoResponseService = {
 						}
 
 						console.log(
-							`[AI Auto Response] Opening chat ${chat.chatId} to get full data...`
-						);
-
-						// ⭐ Открываем чат чтобы получить полные данные включая messageType
-						const chatData = await chatOpenService.openChat({
-							accountId,
-							profileUid: profile.profileUid,
-							chatId: chat.chatId,
-						});
-
-						console.log(
 							`[AI Auto Response] Generating response for chat ${chat.chatId}...`
 						);
 
@@ -305,46 +293,15 @@ const aiAutoResponseService = {
 								country: profile.profileCountry,
 								city: profile.profileCity,
 							},
-							manMessage: chatData.lastMessage?.body || chat.lastManMessage.body,
-							messageType: chatData.lastMessage?.type || 1,
-							conversationHistory: chatData.messages?.slice(0, -1) || [],
+							manMessage: chat.lastManMessage.body,
+							messageType: 1, // Всегда считаем текстом для auto-response
+							conversationHistory: [], // TODO: можно добавить историю если нужно
 						});
 
 						if (result.success) {
 							console.log(
 								`[AI Auto Response] Successfully sent response to chat ${chat.chatId}`
 							);
-
-							// Ждём 2 секунды перед проверкой статуса
-							await new Promise(resolve => setTimeout(resolve, 2000));
-
-							// Проверяем статус чата
-							const chatData = await chatOpenService.openChat({
-								accountId,
-								profileUid: profile.profileUid,
-								chatId: chat.chatId,
-							});
-
-							// Если чат теперь отвечен - сохраняем в MongoDB
-							if (chatData.unAnswered === false) {
-								await answeredChatService.saveAnsweredChat({
-									accountId,
-									profileUid: profile.profileUid,
-									chatData: {
-										chatId: chatData.chatId,
-										memberUid: chatData.man?.uid || chat.memberUid,
-										memberUsername: chatData.man?.username || chat.memberUsername,
-										memberAvatar: chatData.man?.avatar,
-										lastManMessage: chatData.lastManMessage,
-										lastWomanMessage: chatData.lastWomanMessage,
-										lastActivity: chatData.lastActivity,
-									},
-								});
-
-								console.log(
-									`[AI Auto Response] Chat ${chat.chatId} marked as answered in MongoDB`
-								);
-							}
 
 							// Задержка между ответами (чтобы не спамить)
 							await new Promise(resolve => setTimeout(resolve, 3000));

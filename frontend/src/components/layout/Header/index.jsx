@@ -3,7 +3,6 @@ import useAuthStore from '../../../stores/authStore';
 import AdminModal from '../../AdminModal';
 import MobileMenuButton from './MobileMenuButton';
 import NavigationButtons from './NavigationButtons';
-import AIToggleButton from './AIToggleButton';
 import UserMenu from './UserMenu';
 
 /**
@@ -33,7 +32,6 @@ const Header = () => {
         {/* Right Section */}
         <div className="flex items-center gap-1.5 lg:gap-3">
           <NavigationButtons />
-          <AIToggleButton />
           <UserMenu onOpenSettings={() => setShowAdminModal(true)} />
         </div>
       </header>

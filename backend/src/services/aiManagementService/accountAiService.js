@@ -64,12 +64,26 @@ export const setAccountAiByAdmin = async (accountId, enabled) => {
 			throw new Error('Account not found');
 		}
 
-		console.log(
-			`[AI Management Service] Admin set AI for account ${accountId} (${account.luxeeEmail}):`,
-			`aiEnabledByAdmin=${enabled}, aiEnabled=${enabled}`
-		);
+	console.log(
+		`[AI Management Service] Admin set AI for account ${accountId} (${account.luxeeEmail}):`,
+		`aiEnabledByAdmin=${enabled}, aiEnabled=${enabled}`
+	);
 
-		// Emit Socket.io событие для синхронизации
+	// ✅ FIX: Автоматически включаем AI для пользователя при включении аккаунта
+	if (enabled) {
+		const UserModel = (await import('../../models/UserModel.js')).default;
+		const user = await UserModel.findByIdAndUpdate(
+			account.user,
+			{
+				aiEnabledByAdmin: true,
+				aiEnabled: true
+			},
+			{ new: true }
+		);
+		console.log(`[AI Management Service] ✓ Auto-enabled AI for user ${account.user} (${user?.email || 'unknown'})`);
+	}
+
+	// Emit Socket.io событие для синхронизации
 		socketService.emitAccountAIChanged(
 			accountId,
 			account.user.toString(),
