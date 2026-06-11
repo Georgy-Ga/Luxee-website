@@ -31,7 +31,7 @@ export const socketAuthMiddleware = (socket, next) => {
 		}
 
 		// Проверяем токен
-		const decoded = jwt.verify(token, process.env.JWT_SECRET);
+		const decoded = jwt.verify(token, process.env.JWT_ACCESS_SECRET);
 		
 		if (!decoded || !decoded.id) {
 			console.log('[Socket Auth] Invalid token payload');
