@@ -20,7 +20,10 @@ let cleanupIntervalId = null;
 
 const browserService = {
 	// Запуск браузера (один на всё приложение)
-	launchBrowser: async ({ headless = browserConfig.headless, slowMo = browserConfig.slowMo } = {}) => {
+	launchBrowser: async ({
+		headless = browserConfig.headless,
+		slowMo = browserConfig.slowMo,
+	} = {}) => {
 		if (browserInstance && !browserCrashed) {
 			return browserInstance;
 		}
@@ -30,9 +33,9 @@ const browserService = {
 				headless,
 				slowMo, // Замедление действий в мс (чтобы видеть что происходит)
 				devtools: browserConfig.devtools, // Открывать DevTools
-				executablePath: '/usr/bin/chromium-browser', // Использовать системный Chromium
+				// executablePath: '/usr/bin/chromium-browser', // Использовать системный Chromium
 				args: [
-					'--no-sandbox', 
+					'--no-sandbox',
 					'--disable-setuid-sandbox',
 					'--disable-dev-shm-usage', // Для Docker
 					'--disable-gpu', // Для headless режима
@@ -45,18 +48,22 @@ const browserService = {
 
 			// Установить обработчик события disconnected
 			browserInstance.on('disconnected', async () => {
-				console.error('[Browser Service] ⚠️ Browser disconnected unexpectedly!');
+				console.error(
+					'[Browser Service] ⚠️ Browser disconnected unexpectedly!',
+				);
 				browserCrashed = true;
 				browserInstance = null;
-				
+
 				// Очистить все контексты из Map (они больше не валидны)
 				contexts.clear();
-				
+
 				// Запустить автоматическое восстановление
 				await browserService.handleBrowserCrash();
 			});
 
-			console.log(`[Browser Service] Browser launched (headless: ${headless}, slowMo: ${slowMo}ms, devtools: ${browserConfig.devtools})`);
+			console.log(
+				`[Browser Service] Browser launched (headless: ${headless}, slowMo: ${slowMo}ms, devtools: ${browserConfig.devtools})`,
+			);
 			return browserInstance;
 		} catch (error) {
 			console.error('[Browser Service] Error launching browser:', error);
@@ -71,7 +78,7 @@ const browserService = {
 			console.log('[Browser Service] Browser not available, launching...');
 			return await browserService.launchBrowser();
 		}
-		
+
 		// Проверить что браузер действительно работает
 		try {
 			await browserInstance.version();
@@ -88,31 +95,38 @@ const browserService = {
 	createContext: async ({ accountId, sessionData = null }) => {
 		try {
 			const browser = await browserService.getBrowser();
-			
+
 			// Если контекст уже существует, вернуть его
 			if (contexts.has(accountId)) {
-				console.log(`[Browser Service] Context for account ${accountId} already exists`);
+				console.log(
+					`[Browser Service] Context for account ${accountId} already exists`,
+				);
 				return contexts.get(accountId);
 			}
 
 			let context;
 			if (sessionData) {
 				// Восстанавливаем сессию
-				const storageState = typeof sessionData === 'string' 
-					? JSON.parse(sessionData) 
-					: sessionData;
-				
-				context = await browser.newContext({ 
+				const storageState =
+					typeof sessionData === 'string'
+						? JSON.parse(sessionData)
+						: sessionData;
+
+				context = await browser.newContext({
 					storageState,
 					viewport: { width: 1920, height: 1080 },
 				});
-				console.log(`[Browser Service] Context restored for account ${accountId}`);
+				console.log(
+					`[Browser Service] Context restored for account ${accountId}`,
+				);
 			} else {
 				// Новая сессия
 				context = await browser.newContext({
 					viewport: { width: 1920, height: 1080 },
 				});
-				console.log(`[Browser Service] New context created for account ${accountId}`);
+				console.log(
+					`[Browser Service] New context created for account ${accountId}`,
+				);
 			}
 
 			contexts.set(accountId, context);
@@ -153,7 +167,9 @@ const browserService = {
 		if (context) {
 			contexts.delete(oldAccountId);
 			contexts.set(newAccountId, context);
-			console.log(`[Browser Service] Context key updated: ${oldAccountId} -> ${newAccountId}`);
+			console.log(
+				`[Browser Service] Context key updated: ${oldAccountId} -> ${newAccountId}`,
+			);
 		}
 	},
 
@@ -177,7 +193,9 @@ const browserService = {
 				await context.close();
 				contexts.delete(accountId);
 				contextLastActivity.delete(accountId);
-				console.log(`[Browser Service] Context closed for account ${accountId}`);
+				console.log(
+					`[Browser Service] Context closed for account ${accountId}`,
+				);
 			}
 		} catch (error) {
 			console.error('[Browser Service] Error closing context:', error);
@@ -203,7 +221,9 @@ const browserService = {
 				return { cleaned: 0, total: contexts.size };
 			}
 
-			console.log(`[Browser Service] Found ${inactiveAccounts.length} inactive contexts (TTL: ${CONTEXT_TTL / 60000} minutes)`);
+			console.log(
+				`[Browser Service] Found ${inactiveAccounts.length} inactive contexts (TTL: ${CONTEXT_TTL / 60000} minutes)`,
+			);
 
 			// Закрыть неактивные контексты
 			let cleaned = 0;
@@ -211,14 +231,21 @@ const browserService = {
 				try {
 					await browserService.closeContext(accountId);
 					cleaned++;
-					console.log(`[Browser Service] Closed inactive context ${accountId} (inactive for ${Math.round(inactiveTime / 60000)} minutes)`);
+					console.log(
+						`[Browser Service] Closed inactive context ${accountId} (inactive for ${Math.round(inactiveTime / 60000)} minutes)`,
+					);
 				} catch (error) {
-					console.error(`[Browser Service] Error closing inactive context ${accountId}:`, error.message);
+					console.error(
+						`[Browser Service] Error closing inactive context ${accountId}:`,
+						error.message,
+					);
 				}
 			}
 
-			console.log(`[Browser Service] Cleanup complete: ${cleaned}/${inactiveAccounts.length} contexts closed. Remaining: ${contexts.size}`);
-			
+			console.log(
+				`[Browser Service] Cleanup complete: ${cleaned}/${inactiveAccounts.length} contexts closed. Remaining: ${contexts.size}`,
+			);
+
 			return { cleaned, total: contexts.size };
 		} catch (error) {
 			console.error('[Browser Service] Error during cleanup:', error);
@@ -233,8 +260,10 @@ const browserService = {
 			return;
 		}
 
-		console.log(`[Browser Service] Starting auto cleanup (interval: ${CLEANUP_INTERVAL / 60000} minutes, TTL: ${CONTEXT_TTL / 60000} minutes)`);
-		
+		console.log(
+			`[Browser Service] Starting auto cleanup (interval: ${CLEANUP_INTERVAL / 60000} minutes, TTL: ${CONTEXT_TTL / 60000} minutes)`,
+		);
+
 		cleanupIntervalId = setInterval(async () => {
 			await browserService.cleanupInactiveContexts();
 		}, CLEANUP_INTERVAL);
@@ -266,7 +295,7 @@ const browserService = {
 	closeBrowser: async () => {
 		try {
 			await browserService.closeAllContexts();
-			
+
 			if (browserInstance) {
 				await browserInstance.close();
 				browserInstance = null;
@@ -281,31 +310,43 @@ const browserService = {
 	handleBrowserCrash: async () => {
 		// Предотвратить множественные восстановления
 		if (isRecovering) {
-			console.log('[Browser Service] Recovery already in progress, skipping...');
+			console.log(
+				'[Browser Service] Recovery already in progress, skipping...',
+			);
 			return;
 		}
 
 		isRecovering = true;
 
 		try {
-			console.log('[Browser Service] 🔄 Starting automatic recovery after browser crash...');
-			
+			console.log(
+				'[Browser Service] 🔄 Starting automatic recovery after browser crash...',
+			);
+
 			// Подождать немного перед восстановлением
 			await new Promise(resolve => setTimeout(resolve, 2000));
-			
+
 			// Импортируем contextRecoveryService динамически чтобы избежать циклических зависимостей
-			const { default: contextRecoveryService } = await import('./contextRecoveryService.js');
-			
+			const { default: contextRecoveryService } =
+				await import('./contextRecoveryService.js');
+
 			// Восстановить все контексты
 			const result = await contextRecoveryService.recoverAllContexts();
-			
-			console.log(`[Browser Service] ✅ Recovery complete: ${result.recovered} contexts recovered, ${result.failed} failed`);
-			
+
+			console.log(
+				`[Browser Service] ✅ Recovery complete: ${result.recovered} contexts recovered, ${result.failed} failed`,
+			);
+
 			if (result.failed > 0) {
-				console.warn(`[Browser Service] ⚠️ Some contexts failed to recover. Check logs for details.`);
+				console.warn(
+					`[Browser Service] ⚠️ Some contexts failed to recover. Check logs for details.`,
+				);
 			}
 		} catch (error) {
-			console.error('[Browser Service] ❌ Error during automatic recovery:', error);
+			console.error(
+				'[Browser Service] ❌ Error during automatic recovery:',
+				error,
+			);
 		} finally {
 			isRecovering = false;
 		}

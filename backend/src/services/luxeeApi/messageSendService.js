@@ -135,26 +135,27 @@ const messageSendService = {
 					throw new Error(result.error || 'Failed to send message');
 				}
 
-				console.log(`[Message Send] Message sent successfully to chat ${chatId}`);
+			console.log(`[Message Send] Message sent successfully to chat ${chatId}`);
 
-				// Ждем 2 секунды чтобы Luxee обновил состояние
-				console.log('[Message Send] Waiting 2s for Luxee to update state...');
-				await new Promise(resolve => setTimeout(resolve, 2000));
-
-				// Проверяем статус unAnswered через chatOpenService
+			// ✅ ФОНОВАЯ обработка - НЕ ждём результата
+			// Проверяем статус и сохраняем в MongoDB БЕЗ блокировки
+			setImmediate(async () => {
 				try {
-					console.log('[Message Send] Checking unAnswered status...');
+					// Ждем 2 секунды чтобы Luxee обновил состояние
+					await new Promise(resolve => setTimeout(resolve, 2000));
+
+					console.log('[Message Send Background] Checking unAnswered status...');
 					const chatData = await chatOpenService.openChat({
 						accountId,
 						profileUid,
 						chatId,
 					});
 
-					console.log(`[Message Send] unAnswered: ${chatData.unAnswered}`);
+					console.log(`[Message Send Background] unAnswered: ${chatData.unAnswered}`);
 
 					// Если unAnswered === false (мы ответили), сохраняем в MongoDB
 					if (chatData.unAnswered === false) {
-						console.log('[Message Send] Chat is answered, saving to MongoDB...');
+						console.log('[Message Send Background] Chat is answered, saving to MongoDB...');
 						
 						await answeredChatService.saveAnsweredChat({
 							accountId,
@@ -170,16 +171,18 @@ const messageSendService = {
 							},
 						});
 
-						console.log('[Message Send] Chat saved to MongoDB successfully');
+						console.log('[Message Send Background] Chat saved to MongoDB successfully');
 					} else {
-						console.log('[Message Send] Chat still unanswered, not saving to MongoDB');
+						console.log('[Message Send Background] Chat still unanswered, not saving');
 					}
 				} catch (error) {
-					console.error('[Message Send] Error checking/saving answered chat:', error);
-					// Не бросаем ошибку, сообщение уже отправлено
+					console.error('[Message Send Background] Error checking/saving answered chat:', error);
+					// Не критично, сообщение уже отправлено
 				}
+			});
 
-				return {
+			// ✅ Возвращаем результат СРАЗУ (мгновенный ответ frontend)
+			return {
 					success: true,
 					chatId,
 					profileUid,

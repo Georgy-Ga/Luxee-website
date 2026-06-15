@@ -194,8 +194,10 @@ const aiAutoResponseService = {
 						// Проверяем что чат принадлежит одному из UID профиля
 						if (!allProfileUids.includes(chatProfileUid)) continue;
 
-						// Проверяем что есть неотвеченное сообщение
-						if (chat.unAnswered === true) {
+						// Проверяем что есть неотвеченное сообщение ИЛИ новые сообщения
+						// unAnswered=true - явно помечен как неотвеченный
+						// newMessages > 0 - есть новые сообщения (которые могут требовать ответа)
+						if (chat.unAnswered === true || (chat.newMessages && chat.newMessages > 0)) {
 							// Находим данные мужчины (type: 10)
 							const manMember = chat.members?.find(m => m.type === 10);
 							const memberUid = manMember?.uid || parseInt(chatId.split('_')[1]);

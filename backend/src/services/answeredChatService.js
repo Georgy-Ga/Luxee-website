@@ -47,14 +47,14 @@ const answeredChatService = {
 				answeredChat.chats.push(newChatData);
 				console.log(`[Answered Chat] Added new chat ${chatData.chatId}`);
 
-				// Сортируем по savedAt (новые сверху)
-				answeredChat.chats.sort((a, b) => b.savedAt - a.savedAt);
+			// Сортируем по savedAt (новые сверху)
+			answeredChat.chats.sort((a, b) => b.savedAt - a.savedAt);
 
-				// Ограничиваем до 5 чатов
-				if (answeredChat.chats.length > 5) {
-					const removed = answeredChat.chats.splice(5);
-					console.log(`[Answered Chat] Removed ${removed.length} old chats (limit 5)`);
-				}
+			// Ограничиваем до 10 чатов (история)
+			if (answeredChat.chats.length > 10) {
+				const removed = answeredChat.chats.splice(10);
+				console.log(`[Answered Chat] Removed ${removed.length} old chats (limit 10)`);
+			}
 			}
 
 			await answeredChat.save();

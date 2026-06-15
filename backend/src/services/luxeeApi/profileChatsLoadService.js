@@ -1,13 +1,14 @@
 // Сервис для загрузки чатов профиля при клике
 // ✅ Переключается на профиль через очередь
-// ✅ Загружает до 5 чатов
-// ✅ Неотвеченные сверху, отвеченные ниже
+// ✅ Загружает до 10 чатов (неотвеченные без лимита)
+// ✅ Неотвеченные сверху, отвеченные ниже (15 минут)
 // ✅ Сохраняет последнее сообщение от мужчины И от девушки
 
 import browserService from '../browser/browserService.js';
 import pageHelpers from '../browser/pageHelpers.js';
 import requestQueueService from '../browser/requestQueueService.js';
 import answeredChatService from '../answeredChatService.js';
+import chatHistoryService from '../chatHistoryService.js';
 
 const profileChatsLoadService = {
 	/**
@@ -164,42 +165,52 @@ const profileChatsLoadService = {
 					});
 				}
 
-				// Загружаем отвеченные чаты из MongoDB
-				const savedAnsweredChats = await answeredChatService.getAnsweredChats({
-					accountId,
-					profileUid,
-				});
+			// Загружаем отвеченные чаты из MongoDB
+			const savedAnsweredChats = await answeredChatService.getAnsweredChats({
+				accountId,
+				profileUid,
+			});
 
-				console.log('[Profile Chats Load] Saved answered chats from MongoDB:', savedAnsweredChats.length);
+			console.log('[Profile Chats Load] Saved answered chats from MongoDB:', savedAnsweredChats.length);
 
-				// Объединяем:
-				// 1. Неотвеченные из Luxee (сверху, без лимита)
-				// 2. Отвеченные из MongoDB (снизу, макс 5)
-				const finalChats = [
-					...unansweredChats,
-					...savedAnsweredChats.slice(0, 5).map(chat => ({
-						chatId: chat.chatId,
-						memberUid: chat.memberUid,
-						memberUsername: chat.memberUsername,
-						memberAvatar: chat.memberAvatar,
-						newMessages: 0,
-						unAnswered: false,
-						lastActivity: chat.lastActivity,
-						lastManMessage: chat.lastManMessage,
-						lastWomanMessage: chat.lastWomanMessage,
-					})),
-				];
+			// ✅ Используем chatHistoryService для merge с учётом 15 минут
+			const newMessagesChats = chatsData.chats.filter(c => c.newMessages > 0 && !c.unAnswered);
+			
+			const finalChats = chatHistoryService.mergeChatsWithHistory({
+				unansweredChats,
+				newMessagesChats,
+				answeredChats: savedAnsweredChats.map(chat => ({
+					chatId: chat.chatId,
+					memberUid: chat.memberUid,
+					memberUsername: chat.memberUsername,
+					memberAvatar: chat.memberAvatar,
+					newMessages: 0,
+					unAnswered: false,
+					lastActivity: chat.lastActivity,
+					lastManMessage: chat.lastManMessage,
+					lastWomanMessage: chat.lastWomanMessage,
+					savedAt: chat.savedAt, // Важно для проверки 15 минут
+				})),
+			});
 
-				console.log('[Profile Chats Load] Final result:');
-				console.log(`  - Unanswered: ${unansweredChats.length}`);
-				console.log(`  - Answered from MongoDB: ${Math.min(savedAnsweredChats.length, 5)}`);
-				console.log(`  - Total: ${finalChats.length}`);
+			// ✅ Очищаем старые answered чаты если total >= 10
+			await chatHistoryService.cleanupOldAnsweredChats({
+				accountId,
+				profileUid,
+				totalChats: finalChats.length,
+				answeredChats: savedAnsweredChats,
+			});
 
-				return {
-					chats: finalChats,
-					unansweredCount: unansweredChats.length,
-					totalChats: finalChats.length,
-				};
+			console.log('[Profile Chats Load] Final result:');
+			console.log(`  - Unanswered: ${unansweredChats.length}`);
+			console.log(`  - NewMessages: ${newMessagesChats.length}`);
+			console.log(`  - Total merged: ${finalChats.length}`);
+
+			return {
+				chats: finalChats,
+				unansweredCount: unansweredChats.length,
+				totalChats: finalChats.length,
+			};
 			} catch (error) {
 				console.error(`[Profile Chats Load] Error loading chats for profile ${profileUid}:`, error);
 				throw error;
