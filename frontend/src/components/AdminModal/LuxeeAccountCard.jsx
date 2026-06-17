@@ -4,13 +4,10 @@ import { Button } from '../ui';
  * Карточка Luxee аккаунта
  */
 const LuxeeAccountCard = ({ account, onRestore, onDelete, isRestoring, isDeleting }) => {
-  // Debug: логируем структуру аккаунта для проверки
-  console.log('LuxeeAccountCard account:', account);
-  
-  // Поддержка разных форматов API response
-  const email = account.email || account.accountEmail || account.luxeeEmail || account.login || 'Email не указан';
+  // Извлекаем данные из аккаунта
+  const email = account.luxeeEmail || 'Email не указан';
   const isActive = account.isActive ?? true;
-  const accountId = account._id || account.accountId;
+  const accountId = account._id;
 
   return (
     <div className="flex items-center justify-between p-3 bg-light-surface dark:bg-dark-surface rounded-lg border border-light-border dark:border-dark-border">

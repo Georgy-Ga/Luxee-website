@@ -130,7 +130,7 @@ const LuxeeTab = () => {
         <div className="space-y-2">
           {luxeeAccounts?.map((acc) => (
             <LuxeeAccountCard
-              key={acc._id || acc.accountId}
+              key={acc._id}
               account={acc}
               onRestore={(id) => restoreMutation.mutate(id)}
               onDelete={(id) => deleteLuxeeMutation.mutate(id)}

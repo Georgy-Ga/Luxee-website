@@ -13,7 +13,7 @@ export const getLuxeeAccounts = async ({ userId }) => {
 		const accounts = await LuxeeAccountModel.find({ user: userId });
 		return accounts.map(
 			({ _id, luxeeEmail, isActive, lastActivity, createdAt }) => ({
-				id: _id,
+				_id: _id.toString(), // Возвращаем _id вместо id для совместимости с фронтендом
 				luxeeEmail,
 				isActive,
 				lastActivity,
