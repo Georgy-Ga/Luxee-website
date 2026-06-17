@@ -76,6 +76,17 @@ const useChatStore = create((set) => ({
     }
   },
 
+  // Обновить AI статус конкретного аккаунта (используется в websocket синхронизации)
+  updateAccountAIStatus: (accountId, aiEnabled, aiEnabledByAdmin) => {
+    set((state) => ({
+      aiEnabledByAccount: {
+        ...state.aiEnabledByAccount,
+        // AI работает только если оба флага true
+        [accountId]: aiEnabled && aiEnabledByAdmin,
+      },
+    }));
+  },
+
   toggleSidebar: () => set((state) => ({ sidebarOpen: !state.sidebarOpen })),
   
   closeSidebar: () => set({ sidebarOpen: false }),
