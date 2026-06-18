@@ -12,6 +12,8 @@ import router from './src/routes/index.js';
 import browserService from './src/services/browser/browserService.js';
 import contextRecoveryService from './src/services/browser/contextRecoveryService.js';
 import socketService from './src/services/socketService.js';
+import aiAutoResponseService from './src/services/aiAutoResponseService.js';
+import LuxeeAccountModel from './src/models/LuxeeAccountModel.js';
 
 dotenv.config();
 
@@ -103,6 +105,48 @@ const start = async () => {
 				console.error('[Server] Error during context recovery:', error.message);
 			}
 		}, 3000); // Задержка 3 секунды после старта сервера
+
+		// Автовосстановление AI контекстов и автоответов
+		setTimeout(async () => {
+			try {
+				console.log('\n[Server] Starting AI auto-recovery...');
+				
+				// Находим все аккаунты с включённым AI
+				const aiAccounts = await LuxeeAccountModel.find({
+					isActive: true,
+					aiEnabled: true,
+					aiEnabledByAdmin: true
+				}).select('_id luxeeEmail user');
+
+				if (aiAccounts.length === 0) {
+					console.log('[Server] No accounts with AI enabled found');
+					console.log('[Server] AI recovery complete: 0 accounts\n');
+					return;
+				}
+
+				console.log(`[Server] Found ${aiAccounts.length} accounts with AI enabled`);
+
+				let recovered = 0;
+				let failed = 0;
+
+				// Запускаем AI автоответы для каждого аккаунта
+				for (const account of aiAccounts) {
+					try {
+						const accountId = account._id.toString();
+						await aiAutoResponseService.start(accountId);
+						console.log(`[Server] ✓ AI auto-response started for ${account.luxeeEmail}`);
+						recovered++;
+					} catch (error) {
+						console.error(`[Server] ✗ Failed to start AI for ${account.luxeeEmail}:`, error.message);
+						failed++;
+					}
+				}
+
+				console.log(`[Server] AI recovery complete: ${recovered} started, ${failed} failed\n`);
+			} catch (error) {
+				console.error('[Server] Error during AI recovery:', error);
+			}
+		}, 6000); // Задержка 6 секунд (после основного recovery)
 	} catch (error) {
 		console.log(error);
 	}
