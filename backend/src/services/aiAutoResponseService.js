@@ -2,12 +2,19 @@
 // Автоматические ответы AI на новые сообщения
 // Работает через отдельные AI контексты для каждого аккаунта
 
+// 🚨🚨🚨 MASTER KILL SWITCH - ГЛОБАЛЬНОЕ ОТКЛЮЧЕНИЕ AI АВТООТВЕТОВ 🚨🚨🚨
+// Установите в false для включения AI автоответов
+// Установите в true для полного отключения (РЕКОМЕНДУЕТСЯ во время разработки)
+// ⚠️ ВКЛЮЧЕНО ДЛЯ ТЕСТИРОВАНИЯ - отправка всё равно заблокирована AI_DEBUG_MODE
+const AI_AUTO_RESPONSE_GLOBALLY_DISABLED = false;
+
 import aiResponseService from './aiResponseService.js';
 import aiManagementService from './aiManagementService/index.js';
 import aiBrowserContextService from './browser/aiBrowserContextService.js';
 import LuxeeAccountModel from '../models/LuxeeAccountModel.js';
 import answeredChatService from './answeredChatService.js';
 import pageHelpers from './browser/pageHelpers.js';
+import chatNavigationService from './luxeeApi/chatNavigationService.js';
 
 // Хранилище активных процессов автоответов
 const activeAutoResponders = new Map(); // accountId -> { intervalId, isProcessing }
@@ -18,6 +25,12 @@ const aiAutoResponseService = {
 	 * @param {string} accountId - ID Luxee аккаунта
 	 */
 	start: async (accountId) => {
+		// 🚨 УРОВЕНЬ 1 ЗАЩИТЫ: Блокировка запуска
+		if (AI_AUTO_RESPONSE_GLOBALLY_DISABLED) {
+			console.log(`🛑 [AI Auto Response] GLOBALLY DISABLED - not starting for account ${accountId}`);
+			return;
+		}
+
 		try {
 			// Проверяем что автоответы ещё не запущены
 			if (activeAutoResponders.has(accountId)) {
@@ -128,85 +141,67 @@ const aiAutoResponseService = {
 	},
 
 	/**
-	 * Обработать сообщения для аккаунта
-	 * @param {string} accountId - ID Luxee аккаунта
+	 * Обработать профиль с повторными попытками
+	 * Использует правильную логику с allProfileUids (inner + outer)
+	 * @private
 	 */
-	processAccountMessages: async (accountId) => {
+	_processProfileWithRetries: async ({ accountId, userId, page, profile, maxAttempts = 5 }) => {
 		try {
-			const account = await LuxeeAccountModel.findById(accountId).populate('user');
-			if (!account) {
-				console.log(`[AI Auto Response] Account ${accountId} not found`);
-				return;
-			}
+			for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+				console.log(`[AI Auto] 🔄 Attempt ${attempt}/${maxAttempts} to find unanswered chats on ${profile.username}...`);
 
-			const userId = account.user._id.toString();
+				// ✅ ИСПРАВЛЕНИЕ: Получаем ВСЕ UIDs профиля (inner + outer) - как в profileDataExtractor
+				const profileData = await page.evaluate((pUid) => {
+					if (typeof modelsChat === 'undefined' || !modelsChat.getProfile) {
+						return null;
+					}
 
-			// Проверяем что AI всё ещё включен
-			const canUse = await aiManagementService.canAccountUseAi(userId, accountId);
-			if (!canUse) {
-				console.log(`[AI Auto Response] AI disabled for account ${accountId}, stopping...`);
-				await aiAutoResponseService.stop(accountId);
-				return;
-			}
+					const profile = modelsChat.getProfile.data?.[pUid];
+					if (!profile) return null;
 
-			// Получаем AI контекст
-			const aiContext = await aiBrowserContextService.getAiContext(accountId);
-			if (!aiContext) {
-				console.log(`[AI Auto Response] No AI context for account ${accountId}, recreating...`);
-				await aiBrowserContextService.getOrCreateAiContext(accountId);
-				return;
-			}
-
-			const page = await pageHelpers.getOrCreatePage(aiContext);
-
-			// Получаем список профилей и чатов через AI контекст
-			// ✅ ИСПОЛЬЗУЕМ ТУ ЖЕ ЛОГИКУ ЧТО И messageCheckService
-			const profilesData = await page.evaluate(() => {
-				if (typeof modelsChat === 'undefined' || !modelsChat.getProfile?.data) {
-					return [];
-				}
-
-				const profiles = [];
-				const profilesData = modelsChat.getProfile.data;
-				const chatsData = modelsChat.getChats?.list || {};
-
-				for (const uid in profilesData) {
-					const profile = profilesData[uid];
-					const profileUid = profile.inner.uid;
-
-					// Получаем все outer UIDs для этого профиля
-					const allProfileUids = [profile.inner.uid];
+					// Собираем ВСЕ UIDs профиля (inner + outer)
+					const allUids = [profile.inner.uid];
 					if (profile.outer) {
 						for (const outerUid in profile.outer) {
-							allProfileUids.push(profile.outer[outerUid].uid);
+							allUids.push(profile.outer[outerUid].uid);
 						}
 					}
 
-					// Собираем чаты с неотвеченными сообщениями
-					const unansweredChats = [];
+					return {
+						allUids: allUids,
+						hasOuter: profile.outer ? Object.keys(profile.outer).length : 0,
+					};
+				}, profile.uid);
 
-					for (const chatId in chatsData) {
-						const chat = chatsData[chatId];
+				if (!profileData) {
+					console.log(`[AI Auto] ⚠️ Profile ${profile.uid} not found in modelsChat`);
+					return;
+				}
 
-						// ✅ ПРАВИЛЬНО: парсим profileUid из chatId (формат: "profileUid_memberUid")
+				console.log(`[AI Auto] Profile ${profile.username} has ${profileData.allUids.length} UIDs (${profileData.hasOuter} outer)`);
+
+				// Получаем unanswered чаты используя ВСЕ UIDs
+				const unansweredChats = await page.evaluate((allUids) => {
+					if (typeof modelsChat === 'undefined' || !modelsChat.getChats) {
+						return [];
+					}
+
+					const chats = modelsChat.getChats.list || {};
+					const result = [];
+
+					for (const chatId in chats) {
+						const chat = chats[chatId];
 						const chatProfileUid = parseInt(chatId.split('_')[0]);
 
-						// Проверяем что чат принадлежит одному из UID профиля
-						if (!allProfileUids.includes(chatProfileUid)) continue;
+						// ✅ Проверяем что чат принадлежит ЛЮБОМУ из UIDs профиля
+						if (!allUids.includes(chatProfileUid)) continue;
 
-						// Проверяем что есть неотвеченное сообщение ИЛИ новые сообщения
-						// unAnswered=true - явно помечен как неотвеченный
-						// newMessages > 0 - есть новые сообщения (которые могут требовать ответа)
-						if (chat.unAnswered === true || (chat.newMessages && chat.newMessages > 0)) {
-							// Находим данные мужчины (type: 10)
-							const manMember = chat.members?.find(m => m.type === 10);
-							const memberUid = manMember?.uid || parseInt(chatId.split('_')[1]);
-
-							// Получаем последнее сообщение
+						// Проверяем unAnswered
+						if (chat.unAnswered === true) {
+							const manMember = chat.members?.find((m) => m.type === 10);
 							const messages = chat.message || [];
 							let lastManMessage = null;
 
-							// Ищем последнее сообщение от мужчины (uType: 2)
 							for (let i = messages.length - 1; i >= 0; i--) {
 								if (messages[i].uType === 2) {
 									lastManMessage = messages[i];
@@ -215,119 +210,431 @@ const aiAutoResponseService = {
 							}
 
 							if (lastManMessage && manMember) {
-								unansweredChats.push({
+								result.push({
 									chatId: chat.identity || chatId,
-									memberUid: memberUid,
+									memberUid: manMember.uid,
 									memberUsername: manMember.username || manMember.first_name,
 									lastManMessage: {
 										body: lastManMessage.body,
 										createdAt: lastManMessage.createdAt,
 									},
-									unAnswered: chat.unAnswered,
 								});
 							}
 						}
 					}
 
-					if (unansweredChats.length > 0) {
-						profiles.push({
-							profileUid: profileUid,
-							profileName: profile.inner.username,
-							profileAge: profile.inner.age,
-							profileCountry: profile.inner.country,
-							profileCity: profile.inner.city,
-							unansweredChats,
-						});
+					return result;
+				}, profileData.allUids);
+
+				// Если нашли - обрабатываем и выходим
+				if (unansweredChats.length > 0) {
+					console.log(`[AI Auto] ✅ Found ${unansweredChats.length} unanswered chats on ${profile.username} (attempt ${attempt})`);
+
+					// Обрабатываем каждый чат ПО ОДНОМУ
+					for (let i = 0; i < unansweredChats.length; i++) {
+						const chat = unansweredChats[i];
+
+						console.log(
+							`[AI Auto] Processing chat ${i + 1}/${unansweredChats.length}: ${chat.memberUsername} (${chat.chatId})`
+						);
+
+						try {
+							// Проверяем не отвечали ли уже
+							const answeredChats = await answeredChatService.getAnsweredChats({
+								accountId,
+								profileUid: profile.uid,
+							});
+
+							const isAlreadyAnswered = answeredChats.some((ac) => ac.chatId === chat.chatId);
+
+							if (isAlreadyAnswered) {
+								console.log(`[AI Auto] Chat ${chat.chatId} already answered, skipping`);
+								continue;
+							}
+
+							// 🐛 DEBUG: Детальные логи обнаруженного чата
+							console.log('');
+							console.log('🔍 [AI DEBUG] ===== UNANSWERED CHAT FOUND =====');
+							console.log('  👤 Profile:', profile.username, `(UID: ${profile.uid})`);
+							console.log('  💬 Chat ID:', chat.chatId);
+							console.log('  👨 Man:', chat.memberUsername, `(UID: ${chat.memberUid})`);
+							console.log('  📝 Last man message:', chat.lastManMessage.body);
+							console.log('  🕐 Message time:', new Date(chat.lastManMessage.createdAt).toLocaleString());
+							console.log('  📊 Profile data:', {
+								age: profile.age,
+								country: profile.country,
+								city: profile.city,
+							});
+							console.log('═'.repeat(80));
+							console.log('');
+
+							// Генерируем и отправляем ответ
+							const result = await aiResponseService.generateAndSend({
+								userId,
+								accountId,
+								profileUid: profile.uid,
+								chatId: chat.chatId,
+								profile: {
+									username: profile.username,
+									age: profile.age,
+									country: profile.country,
+									city: profile.city,
+								},
+								manMessage: chat.lastManMessage.body,
+								messageType: 1,
+								conversationHistory: [],
+							});
+
+							if (result.success) {
+								console.log(`[AI Auto] ✓ Sent to ${chat.memberUsername}`);
+							} else {
+								console.log(`[AI Auto] ✗ Failed to send: ${result.reason}`);
+							}
+
+							// ВАЖНО: Задержка 7 сек после каждого ответа (увеличено для безопасности)
+							console.log(`[AI Auto] ⏸️  Waiting 7 seconds before next check...`);
+							await new Promise((resolve) => setTimeout(resolve, 7000));
+						} catch (error) {
+							console.error(`[AI Auto] Error processing chat ${chat.chatId}:`, error.message);
+							// Продолжаем со следующим чатом
+						}
+					}
+
+					// Успешно обработали - выходим
+					return;
+				}
+
+				// Если НЕ нашли и это не последняя попытка - ждём 3 секунды
+				if (attempt < maxAttempts) {
+					console.log(`[AI Auto] ⏳ No unanswered found, waiting 3 sec before retry...`);
+					await new Promise((resolve) => setTimeout(resolve, 3000));
+				}
+			}
+
+			// После всех попыток ничего не нашли
+			console.log(`[AI Auto] ❌ No unanswered chats found on ${profile.username} after ${maxAttempts} attempts`);
+		} catch (error) {
+			console.error(`[AI Auto] Error in _processProfileWithRetries for ${profile.username}:`, error);
+		}
+	},
+
+	/**
+	 * Обработать unanswered чаты конкретного профиля
+	 * СТРОГО ПО ОДНОМУ
+	 * @private
+	 * @deprecated Используйте _processProfileWithRetries вместо этого
+	 */
+	_processProfileChats: async ({ accountId, userId, page, profile, isActiveProfile }) => {
+		try {
+			// Получаем unanswered чаты через page.evaluate
+			const unansweredChats = await page.evaluate((pUid) => {
+				if (typeof modelsChat === 'undefined' || !modelsChat.getChats) {
+					return [];
+				}
+
+				const chats = modelsChat.getChats.list || {};
+				const result = [];
+
+				for (const chatId in chats) {
+					const chat = chats[chatId];
+					const chatProfileUid = parseInt(chatId.split('_')[0]);
+
+					// Проверяем что чат принадлежит этому профилю
+					if (chatProfileUid !== pUid) continue;
+
+					// Проверяем unAnswered
+					if (chat.unAnswered === true) {
+						const manMember = chat.members?.find((m) => m.type === 10);
+						const messages = chat.message || [];
+						let lastManMessage = null;
+
+						for (let i = messages.length - 1; i >= 0; i--) {
+							if (messages[i].uType === 2) {
+								lastManMessage = messages[i];
+								break;
+							}
+						}
+
+						if (lastManMessage && manMember) {
+							result.push({
+								chatId: chat.identity || chatId,
+								memberUid: manMember.uid,
+								memberUsername: manMember.username || manMember.first_name,
+								lastManMessage: {
+									body: lastManMessage.body,
+									createdAt: lastManMessage.createdAt,
+								},
+							});
+						}
 					}
 				}
 
-				return profiles;
-			});
+				return result;
+			}, profile.uid);
 
-			if (profilesData.length === 0) {
-				console.log(`[AI Auto Response] No unanswered messages for account ${accountId}`);
+			if (unansweredChats.length === 0) {
+				console.log(
+					`[AI Auto] No unanswered chats on profile ${profile.username}${isActiveProfile ? ' (ACTIVE)' : ''}`
+				);
 				return;
 			}
 
 			console.log(
-				`[AI Auto Response] Found ${profilesData.length} profiles with unanswered messages for account ${accountId}`
+				`[AI Auto] Found ${unansweredChats.length} unanswered chats on ${profile.username}${isActiveProfile ? ' (ACTIVE)' : ''}`
 			);
 
-			// Обрабатываем каждый профиль
-			for (const profile of profilesData) {
+			// Обрабатываем каждый чат ПО ОДНОМУ
+			for (let i = 0; i < unansweredChats.length; i++) {
+				const chat = unansweredChats[i];
+
 				console.log(
-					`[AI Auto Response] Processing profile ${profile.profileUid} (${profile.unansweredChats.length} chats)`
+					`[AI Auto] Processing chat ${i + 1}/${unansweredChats.length}: ${chat.memberUsername} (${chat.chatId})`
 				);
 
-				// Обрабатываем каждый чат по очереди
-				for (const chat of profile.unansweredChats) {
-					try {
-						// Проверяем что мы ещё не отвечали на этот чат
-						const answeredChats = await answeredChatService.getAnsweredChats({
-							accountId,
-							profileUid: profile.profileUid,
-						});
+				try {
+					// Проверяем не отвечали ли уже
+					const answeredChats = await answeredChatService.getAnsweredChats({
+						accountId,
+						profileUid: profile.uid,
+					});
 
-						const isAlreadyAnswered = answeredChats.some(
-							ac => ac.chatId === chat.chatId
-						);
+					const isAlreadyAnswered = answeredChats.some((ac) => ac.chatId === chat.chatId);
 
-						if (isAlreadyAnswered) {
-							console.log(
-								`[AI Auto Response] Chat ${chat.chatId} already answered, skipping`
-							);
-							continue;
-						}
-
-						console.log(
-							`[AI Auto Response] Generating response for chat ${chat.chatId}...`
-						);
-
-						// Генерируем и отправляем ответ
-						const result = await aiResponseService.generateAndSend({
-							userId,
-							accountId,
-							profileUid: profile.profileUid,
-							chatId: chat.chatId,
-							profile: {
-								username: profile.profileName,
-								age: profile.profileAge,
-								country: profile.profileCountry,
-								city: profile.profileCity,
-							},
-							manMessage: chat.lastManMessage.body,
-							messageType: 1, // Всегда считаем текстом для auto-response
-							conversationHistory: [], // TODO: можно добавить историю если нужно
-						});
-
-						if (result.success) {
-							console.log(
-								`[AI Auto Response] Successfully sent response to chat ${chat.chatId}`
-							);
-
-							// Задержка между ответами (чтобы не спамить)
-							await new Promise(resolve => setTimeout(resolve, 3000));
-						} else {
-							console.log(
-								`[AI Auto Response] Failed to send response to chat ${chat.chatId}: ${result.reason}`
-							);
-						}
-					} catch (error) {
-						console.error(
-							`[AI Auto Response] Error processing chat ${chat.chatId}:`,
-							error.message
-						);
-						// Продолжаем со следующим чатом
+					if (isAlreadyAnswered) {
+						console.log(`[AI Auto] Chat ${chat.chatId} already answered, skipping`);
+						continue;
 					}
+
+					// 🐛 DEBUG: Детальные логи обнаруженного чата
+					console.log('');
+					console.log('🔍 [AI DEBUG] ===== UNANSWERED CHAT FOUND =====');
+					console.log('  👤 Profile:', profile.username, `(UID: ${profile.uid})`);
+					console.log('  💬 Chat ID:', chat.chatId);
+					console.log('  👨 Man:', chat.memberUsername, `(UID: ${chat.memberUid})`);
+					console.log('  📝 Last man message:', chat.lastManMessage.body);
+					console.log('  🕐 Message time:', new Date(chat.lastManMessage.createdAt).toLocaleString());
+					console.log('  📊 Profile data:', {
+						age: profile.age,
+						country: profile.country,
+						city: profile.city,
+					});
+					console.log('═'.repeat(80));
+					console.log('');
+
+					// Генерируем и отправляем ответ
+					const result = await aiResponseService.generateAndSend({
+						userId,
+						accountId,
+						profileUid: profile.uid,
+						chatId: chat.chatId,
+						profile: {
+							username: profile.username,
+							age: profile.age,
+							country: profile.country,
+							city: profile.city,
+						},
+						manMessage: chat.lastManMessage.body,
+						messageType: 1,
+						conversationHistory: [],
+					});
+
+					if (result.success) {
+						console.log(`[AI Auto] ✓ Sent to ${chat.memberUsername}`);
+					} else {
+						console.log(`[AI Auto] ✗ Failed to send: ${result.reason}`);
+					}
+
+					// ВАЖНО: Задержка 3 сек после каждого ответа
+					await new Promise((resolve) => setTimeout(resolve, 3000));
+				} catch (error) {
+					console.error(`[AI Auto] Error processing chat ${chat.chatId}:`, error.message);
+					// Продолжаем со следующим чатом
+				}
+			}
+		} catch (error) {
+			console.error(`[AI Auto] Error processing profile ${profile.uid}:`, error);
+		}
+	},
+
+	/**
+	 * Обработать сообщения для аккаунта
+	 * Новая логика: проверка about:blank, приоритет активному профилю, переключение профилей
+	 * @param {string} accountId - ID Luxee аккаунта
+	 */
+	processAccountMessages: async (accountId) => {
+		// 🚨 УРОВЕНЬ 2 ЗАЩИТЫ: Блокировка обработки сообщений
+		if (AI_AUTO_RESPONSE_GLOBALLY_DISABLED) {
+			console.log(`🛑 [AI Auto] GLOBALLY DISABLED - skipping message processing for account ${accountId}`);
+			return;
+		}
+
+		try {
+			const account = await LuxeeAccountModel.findById(accountId).populate('user');
+			if (!account) {
+				console.log(`[AI Auto] Account ${accountId} not found`);
+				return;
+			}
+
+			const userId = account.user._id.toString();
+			const accountEmail = account.luxeeEmail;
+
+			console.log(`[AI Auto] ========== Starting processing for ${accountEmail} ==========`);
+
+			// Проверяем что AI всё ещё включен
+			const canUse = await aiManagementService.canAccountUseAi(userId, accountId);
+			if (!canUse) {
+				console.log(`[AI Auto] AI disabled for account ${accountEmail}, stopping...`);
+				await aiAutoResponseService.stop(accountId);
+				return;
+			}
+
+			// Получаем AI контекст
+			const aiContext = await aiBrowserContextService.getAiContext(accountId);
+			if (!aiContext) {
+				console.log(`[AI Auto] No AI context for ${accountEmail}, recreating...`);
+				await aiBrowserContextService.getOrCreateAiContext(accountId);
+				return;
+			}
+
+			const page = await pageHelpers.getOrCreatePage(aiContext);
+
+			// ШАГ 1: Проверка URL (fix about:blank)
+			const currentUrl = page.url();
+			console.log(`[AI Auto] Current URL: ${currentUrl}`);
+
+			if (currentUrl === 'about:blank' || !currentUrl.includes('luxee.io')) {
+				console.log('[AI Auto] Page is about:blank, navigating to chats...');
+				await chatNavigationService.navigateToChats({ page });
+				await new Promise((resolve) => setTimeout(resolve, 3000));
+				console.log('[AI Auto] ✓ Navigated to chats page');
+			}
+
+			// ШАГ 2: Получить активный профиль через modelsChat.getProfile.active
+			const activeProfileData = await page.evaluate(() => {
+				if (
+					typeof modelsChat === 'undefined' ||
+					!modelsChat.getProfile ||
+					!modelsChat.getProfile.active
+				) {
+					return null;
+				}
+
+				const active = modelsChat.getProfile.active;
+				return {
+					uid: active.inner.uid,
+					username: active.inner.username,
+					age: active.inner.age,
+					country: active.inner.country,
+					city: active.inner.city,
+					newMessages: active.newMessages || 0,
+				};
+			});
+
+			if (!activeProfileData) {
+				console.log('[AI Auto] No active profile found');
+				return;
+			}
+
+		console.log(`[AI Auto] Active profile: ${activeProfileData.username} (${activeProfileData.uid})`);
+
+		// ШАГ 3: ПРИОРИТЕТ - Обработать ТЕКУЩИЙ активный профиль (1 попытка - он уже активен)
+		console.log('[AI Auto] ===== PRIORITY: Processing CURRENT active profile =====');
+		await aiAutoResponseService._processProfileWithRetries({
+			accountId,
+			userId,
+			page,
+			profile: activeProfileData,
+			maxAttempts: 1, // ← 1 попытка для текущего профиля
+		});
+
+		// ШАГ 4: Получить ДРУГИЕ профили с NEW MESSAGES (кроме текущего)
+		const otherProfilesWithNewMessages = await page.evaluate((currentUid) => {
+			if (
+				typeof modelsChat === 'undefined' ||
+				!modelsChat.getProfile ||
+				!modelsChat.getProfile.data
+			) {
+				return [];
+			}
+
+			const profilesData = modelsChat.getProfile.data;
+			const profiles = [];
+
+			for (const uid in profilesData) {
+				const profile = profilesData[uid];
+				const profileUid = profile.inner.uid;
+				const newMessages = profile.newMessages || 0;
+
+				// Пропускаем текущий профиль
+				if (profileUid === currentUid) {
+					continue;
+				}
+
+				if (newMessages > 0) {
+					profiles.push({
+						uid: profileUid,
+						username: profile.inner.username,
+						age: profile.inner.age,
+						country: profile.inner.country,
+						city: profile.inner.city,
+						newMessages: newMessages,
+					});
 				}
 			}
 
-			console.log(`[AI Auto Response] Finished processing account ${accountId}`);
+			return profiles;
+		}, activeProfileData.uid);
+
+		console.log(`[AI Auto] Total OTHER profiles with new messages: ${otherProfilesWithNewMessages.length}`);
+
+		// Выводим статистику
+		otherProfilesWithNewMessages.forEach((p) => {
+			console.log(`[AI Auto]   - ${p.username} (${p.uid}): ${p.newMessages} new`);
+		});
+
+		// ШАГ 5: Для каждого другого профиля - переключаемся и обрабатываем с 5 попытками
+		if (otherProfilesWithNewMessages.length === 0) {
+			console.log('[AI Auto] No other profiles with new messages found');
+		} else {
+			for (let i = 0; i < otherProfilesWithNewMessages.length; i++) {
+				const profile = otherProfilesWithNewMessages[i];
+				
+				console.log(`[AI Auto] ===== Processing profile ${i + 1}/${otherProfilesWithNewMessages.length}: ${profile.username} =====`);
+				console.log(`[AI Auto] Switching to ${profile.username} (${profile.newMessages} new)...`);
+
+				// Переключаемся на профиль
+				await page.evaluate((pUid) => {
+					if (modelsChat && modelsChat.selectProfile) {
+						modelsChat.selectProfile(pUid);
+					}
+				}, profile.uid);
+
+				// Ждем загрузки чатов
+				await new Promise((resolve) => setTimeout(resolve, 3000));
+				console.log(`[AI Auto] ✓ Switched, waiting for chats to load...`);
+
+				// Обрабатываем с 5 попытками
+				await aiAutoResponseService._processProfileWithRetries({
+					accountId,
+					userId,
+					page,
+					profile,
+					maxAttempts: 5,
+				});
+
+				// Задержка перед следующим профилем
+				if (i < otherProfilesWithNewMessages.length - 1) {
+					console.log('[AI Auto] Waiting 3 sec before next profile...');
+					await new Promise((resolve) => setTimeout(resolve, 3000));
+				}
+			}
+
+			console.log(`[AI Auto] ✓ Processed all ${otherProfilesWithNewMessages.length} other profiles with new messages`);
+		}
+
+			console.log(`[AI Auto] ========== Finished processing ${accountEmail} ==========`);
 		} catch (error) {
-			console.error(
-				`[AI Auto Response] Error in processAccountMessages for ${accountId}:`,
-				error
-			);
+			console.error(`[AI Auto] Error in processAccountMessages for ${accountId}:`, error);
 		}
 	},
 

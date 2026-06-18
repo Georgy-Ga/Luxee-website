@@ -16,7 +16,7 @@ export const testAI = async ({ manMessage, profile, conversationHistory = [] }) 
 			conversationHistory,
 			manMessage,
 			profile,
-			customRules: null, // Без кастомных правил для теста
+			customRules: [], // Без кастомных правил для теста (пустой массив вместо null)
 		});
 
 		// Отправляем запрос

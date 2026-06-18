@@ -69,19 +69,7 @@ export const setAccountAiByAdmin = async (accountId, enabled) => {
 		`aiEnabledByAdmin=${enabled}, aiEnabled=${enabled}`
 	);
 
-	// ✅ FIX: Автоматически включаем AI для пользователя при включении аккаунта
-	if (enabled) {
-		const UserModel = (await import('../../models/UserModel.js')).default;
-		const user = await UserModel.findByIdAndUpdate(
-			account.user,
-			{
-				aiEnabledByAdmin: true,
-				aiEnabled: true
-			},
-			{ new: true }
-		);
-		console.log(`[AI Management Service] ✓ Auto-enabled AI for user ${account.user} (${user?.email || 'unknown'})`);
-	}
+	// Админ управляет только аккаунтом, user управляется отдельно через userAiService
 
 	// Emit Socket.io событие для синхронизации
 		socketService.emitAccountAIChanged(
@@ -228,29 +216,46 @@ export const toggleAllMyAccountsAi = async (userId) => {
 			return { message: 'No accounts found', updated: 0 };
 		}
 		
-		// Определяем новый статус: если хотя бы один включен - выключаем все, иначе - включаем все
-		const anyEnabled = accounts.some(acc => acc.aiEnabled);
-		const newStatus = !anyEnabled;
+		// Определяем действие: если ВСЕ включены - выключаем все, иначе - включаем только выключенные
+		const allEnabled = accounts.every(acc => acc.aiEnabled);
 		
-		console.log(`[AI Management Service] User ${userId} toggling AI for ${accounts.length} accounts to ${newStatus}`);
+		console.log(`[AI Management Service] User ${userId} toggling AI for ${accounts.length} accounts. All enabled: ${allEnabled}`);
 		
 		let updated = 0;
 		const results = [];
 		const changedAccounts = [];
 		
 		for (const account of accounts) {
-			// Пользователь может ВЫКЛЮЧИТЬ любой аккаунт, но ВКЛЮЧИТЬ только если админ разрешил
-			if (newStatus === true && !account.aiEnabledByAdmin) {
-				console.log(`[AI Management Service] Skipping account ${account._id}: admin has not enabled AI`);
-				results.push({ accountId: account._id, status: 'skipped', reason: 'Admin has not enabled AI' });
-				continue;
-			}
-			
 			try {
+				let shouldChange = false;
+				let newStatus = account.aiEnabled;
+				
+				if (allEnabled) {
+					// ВСЕ включены → выключаем все
+					shouldChange = true;
+					newStatus = false;
+				} else {
+					// Не все включены → включаем только те что выключены
+					if (!account.aiEnabled && account.aiEnabledByAdmin) {
+						// Включаем только если выключен И админ разрешил
+						shouldChange = true;
+						newStatus = true;
+					}
+				}
+				
+				if (!shouldChange) {
+					console.log(`[AI Management Service] Skipping account ${account._id}: no change needed (aiEnabled=${account.aiEnabled}, aiEnabledByAdmin=${account.aiEnabledByAdmin})`);
+					results.push({ accountId: account._id, status: 'skipped', reason: 'No change needed' });
+					continue;
+				}
+				
 				account.aiEnabled = newStatus;
 				await account.save();
 				
-				if (newStatus && account.aiEnabledByAdmin) {
+				// ✅ FIX: Перезагружаем аккаунт из БД для получения актуальных данных
+				const freshAccount = await LuxeeAccountModel.findById(account._id).select('aiEnabled aiEnabledByAdmin');
+				
+				if (newStatus && freshAccount.aiEnabledByAdmin) {
 					// Включаем AI
 					await aiBrowserContextService.getOrCreateAiContext(account._id);
 					await aiAutoResponseService.start(account._id);
@@ -266,8 +271,8 @@ export const toggleAllMyAccountsAi = async (userId) => {
 				results.push({ accountId: account._id, status: 'success', aiEnabled: newStatus });
 				changedAccounts.push({
 					accountId: account._id.toString(),
-					aiEnabled: newStatus,
-					aiEnabledByAdmin: account.aiEnabledByAdmin
+					aiEnabled: freshAccount.aiEnabled,
+					aiEnabledByAdmin: freshAccount.aiEnabledByAdmin
 				});
 			} catch (error) {
 				console.error(`[AI Management Service] ✗ Failed to toggle AI for account ${account._id}:`, error);
@@ -281,7 +286,7 @@ export const toggleAllMyAccountsAi = async (userId) => {
 		}
 
 		return { 
-			message: `AI ${newStatus ? 'enabled' : 'disabled'} for accounts`,
+			message: allEnabled ? 'AI disabled for all accounts' : 'AI enabled for available accounts',
 			updated,
 			total: accounts.length,
 			results

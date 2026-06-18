@@ -25,34 +25,6 @@ export const extractAllProfilesData = () => {
 		// Активный профиль не определен
 	}
 
-	// 🔍 DEBUG: Возвращаем RAW данные для анализа
-	const firstChatId = Object.keys(chatsListData)[0];
-	const firstChat = chatsListData[firstChatId];
-	
-	// Извлекаем только нужные поля чата (без circular references)
-	const sampleChatSafe = firstChat ? {
-		chatId: firstChatId,
-		newMessages: firstChat.newMessages,
-		unAnswered: firstChat.unAnswered,
-		lastActivity: firstChat.lastActivity,
-		membersCount: firstChat.members?.length,
-		// Только базовые поля members без channel
-		membersBasic: firstChat.members?.map(m => ({
-			uid: m.uid,
-			username: m.username,
-			first_name: m.first_name,
-			type: m.type
-		}))
-	} : null;
-	
-	const debugInfo = {
-		activeProfileUid: activeProfileUid,
-		activeProfileFull: modelsChat.getProfile.active,
-		totalChats: Object.keys(chatsListData).length,
-		chatIds: Object.keys(chatsListData),
-		sampleChat: sampleChatSafe
-	};
-
 	const result = [];
 
 	for (const uid in profilesData) {
@@ -133,7 +105,7 @@ export const extractAllProfilesData = () => {
 		result.push(profileInfo);
 	}
 
-	return { profiles: result, debug: debugInfo };
+	return { profiles: result };
 };
 
 /**

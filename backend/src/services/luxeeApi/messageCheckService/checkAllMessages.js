@@ -58,11 +58,6 @@ export const checkAllMessages = async ({ userId }) => {
 				const result = await page.evaluate(extractAllProfilesData);
 				const profilesData = result.profiles;
 
-				// 🔍 DEBUG: Логируем данные профилей
-				console.log(`[DEBUG] Active profile UID:`, result.debug.activeProfileUid);
-				console.log(`[DEBUG] Total chats:`, result.debug.totalChats);
-				console.log(`[DEBUG] Sample chat:`, JSON.stringify(result.debug.sampleChat, null, 2));
-
 				// Подсчитываем статистику
 				const accountUnread = profilesData.reduce(
 					(sum, p) => sum + p.newMessages,

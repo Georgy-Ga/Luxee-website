@@ -4,6 +4,7 @@ import UserModel from '../../models/UserModel.js';
 import LuxeeAccountModel from '../../models/LuxeeAccountModel.js';
 import aiBrowserContextService from '../browser/aiBrowserContextService.js';
 import aiAutoResponseService from '../aiAutoResponseService.js';
+import socketService from '../socketService.js';
 
 export const getAllUsersAiStatus = async () => {
 	try {
@@ -214,6 +215,19 @@ export const setAllUserAccountsAiByAdmin = async (userId, enabled, adminId) => {
 			
 			await Promise.allSettled(stopPromises);
 		}
+		
+		// 🚀 WebSocket: Отправляем bulk событие всем подключенным клиентам
+		const updatedAccounts = await LuxeeAccountModel.find({ user: userId }).select('_id aiEnabled aiEnabledByAdmin');
+		socketService.emitBulkAIChanged(
+			userId,
+			updatedAccounts.map(acc => ({
+				accountId: acc._id.toString(),
+				aiEnabled: acc.aiEnabled,
+				aiEnabledByAdmin: acc.aiEnabledByAdmin
+			})),
+			'admin'
+		);
+		console.log(`[AI Management Service] 📡 WebSocket broadcast sent for ${updatedAccounts.length} accounts`);
 		
 		return { updated: accounts.length };
 	} catch (error) {

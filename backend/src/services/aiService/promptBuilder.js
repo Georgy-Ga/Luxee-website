@@ -27,8 +27,18 @@ export const buildProfileContext = (profile, customRules) => {
  * Построить массив сообщений для AI API
  */
 export const buildMessages = ({ conversationHistory, manMessage, messageType, profile, customRules }) => {
+	console.log('');
+	console.log('📝 [AI DEBUG] ===== BUILDING PROMPT FOR AI =====');
+	console.log('  👤 Profile:', profile?.username || 'N/A');
+	console.log('  📨 Man message:', manMessage);
+	console.log('  📊 Message type:', messageType);
+	console.log('  📜 Conversation history length:', conversationHistory?.length || 0);
+	console.log('  📋 Custom rules count:', customRules?.length || 0);
+	
 	const messages = [];
 	const profileContext = buildProfileContext(profile, customRules);
+
+	console.log('  🎭 Profile context:', profileContext);
 
 	// Добавляем историю переписки если есть
 	if (conversationHistory && conversationHistory.length > 0) {
@@ -38,6 +48,7 @@ export const buildMessages = ({ conversationHistory, manMessage, messageType, pr
 				content: msg.body,
 			});
 		});
+		console.log('  💬 Added', conversationHistory.length, 'history messages');
 	}
 
 	// Добавляем system message отдельно (лучше для AI)
@@ -50,6 +61,7 @@ export const buildMessages = ({ conversationHistory, manMessage, messageType, pr
 	let messageContext = '';
 	if (manMessage.includes('[Emoji]')) {
 		messageContext = '[The man sent you an emoji/sticker - respond warmly with emotion and ask a question]\n';
+		console.log('  😊 Detected emoji message - added emoji context');
 	}
 
 	// Добавляем текущее сообщение от мужчины
@@ -63,6 +75,15 @@ Generate a natural, friendly response as ${profile.username}. Write a complete m
 		role: 'user',
 		content: userMessage,
 	});
+
+	console.log('  📨 Total messages in array:', messages.length);
+	console.log('  📄 Messages structure:');
+	messages.forEach((msg, idx) => {
+		const preview = msg.content.substring(0, 100);
+		console.log(`    ${idx + 1}. [${msg.role}] ${preview}${msg.content.length > 100 ? '...' : ''}`);
+	});
+	console.log('═'.repeat(80));
+	console.log('');
 
 	return messages;
 };

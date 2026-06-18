@@ -2,6 +2,11 @@
 // Сервис для генерации и отправки AI ответов с проверками статуса
 // Работает через отдельный браузерный контекст для параллельной работы
 
+// 🐛🐛🐛 DEBUG MODE - РЕЖИМ ОТЛАДКИ БЕЗ ОТПРАВКИ СООБЩЕНИЙ 🐛🐛🐛
+// Установите в false для включения реальной отправки (после тестирования)
+// Установите в true для режима отладки (сообщения НЕ отправляются, только логи)
+const AI_DEBUG_MODE = true;
+
 import aiService from './aiService/index.js';
 import aiManagementService from './aiManagementService/index.js';
 import aiBrowserContextService from './browser/aiBrowserContextService.js';
@@ -85,14 +90,42 @@ const aiResponseService = {
 				throw new Error('AI disabled before send');
 			}
 
-			// 2. Получаем или создаём AI контекст
-			const aiContext = await aiBrowserContextService.getOrCreateAiContext(accountId);
-			const page = await pageHelpers.getOrCreatePage(aiContext);
+		// 2. Получаем или создаём AI контекст
+		const aiContext = await aiBrowserContextService.getOrCreateAiContext(accountId);
+		const page = await pageHelpers.getOrCreatePage(aiContext);
 
-			console.log('[AI Response Service] AI context ready, sending message...');
+		console.log('[AI Response Service] AI context ready, sending message...');
 
+		// 🐛 DEBUG MODE: Блокируем отправку и выводим детальные логи
+		let result;
+		
+		if (AI_DEBUG_MODE) {
+			// ========== DEBUG MODE: ОТПРАВКА ЗАБЛОКИРОВАНА ==========
+			console.log('');
+			console.log('🚫🚫🚫 [AI DEBUG] MESSAGE SEND BLOCKED - Debug Mode Enabled 🚫🚫🚫');
+			console.log('═'.repeat(80));
+			console.log('📨 [AI DEBUG] Message details:');
+			console.log('  - Chat ID:', chatId);
+			console.log('  - Profile UID:', profileUid);
+			console.log('  - Message text:', message);
+			console.log('  - Message length:', message.length, 'characters');
+			console.log('  - Account ID:', accountId);
+			console.log('  - User ID:', userId);
+			console.log('═'.repeat(80));
+			console.log('✅ [AI DEBUG] Message would be sent if AI_DEBUG_MODE = false');
+			console.log('🔧 [AI DEBUG] To enable real sending: Set AI_DEBUG_MODE = false in aiResponseService.js');
+			console.log('═'.repeat(80));
+			console.log('');
+			
+			// Симулируем успешную отправку
+			result = {
+				success: true,
+				message: 'DEBUG MODE: Send skipped',
+			};
+		} else {
+			// ========== PRODUCTION MODE: РЕАЛЬНАЯ ОТПРАВКА ==========
 			// 3. Отправляем сообщение через AI контекст
-			const result = await page.evaluate(
+			result = await page.evaluate(
 				async ({ pUid, cId, msg }) => {
 					try {
 						if (typeof modelsChat === 'undefined') {
@@ -156,6 +189,7 @@ const aiResponseService = {
 			}
 
 			console.log('[AI Response Service] AI message sent successfully');
+		}
 
 			return {
 				success: true,
@@ -216,17 +250,18 @@ const aiResponseService = {
 					success: false,
 					cancelled: true,
 					reason: 'AI disabled during generation',
-					generatedResponse: aiResponse,
+					generatedResponse: aiResponse.response, // ✅ FIX: Extract text from object
 				};
 			}
 
 			// 3. Отправляем ответ
+			// ✅ FIX: aiResponse is {response: string, retries: number}, extract .response
 			const sendResult = await aiResponseService.sendResponse({
 				userId,
 				accountId,
 				profileUid,
 				chatId,
-				message: aiResponse,
+				message: aiResponse.response, // ✅ FIX: Was sending [object Object]
 			});
 
 			console.log('[AI Response Service] Generate and send cycle completed successfully');

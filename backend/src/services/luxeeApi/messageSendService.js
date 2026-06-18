@@ -4,6 +4,11 @@
 // ✅ Открывает чат
 // ✅ Отправляет сообщение
 
+// 🚨🚨🚨 KILL SWITCH - БЛОКИРОВКА ОТПРАВКИ AI СООБЩЕНИЙ 🚨🚨🚨
+// Установите в false для разрешения отправки
+// Установите в true для блокировки (РЕКОМЕНДУЕТСЯ во время разработки)
+const AI_MESSAGE_SENDING_DISABLED = true;
+
 import browserService from '../browser/browserService.js';
 import pageHelpers from '../browser/pageHelpers.js';
 import requestQueueService from '../browser/requestQueueService.js';
@@ -16,6 +21,12 @@ const messageSendService = {
 	 * Отправить сообщение в чат
 	 */
 	sendMessage: async ({ userId, accountId, profileUid, memberUid, text, chatIdentity }) => {
+		// 🚨 УРОВЕНЬ 3 ЗАЩИТЫ: Финальная блокировка отправки сообщений
+		if (AI_MESSAGE_SENDING_DISABLED) {
+			console.log(`🛑 [Message Send] AI MESSAGE SENDING GLOBALLY DISABLED - blocking send to ${memberUid}`);
+			throw new Error('AI message sending is globally disabled for safety');
+		}
+
 		console.log(`[Message Send] Sending message from profile ${profileUid} to member ${memberUid}`);
 
 		// Проверяем что аккаунт принадлежит пользователю

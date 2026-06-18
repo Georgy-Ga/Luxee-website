@@ -17,15 +17,16 @@ export const generateResponse = async ({
 	conversationHistory = [],
 }) => {
 	try {
-		console.log('[AI Service] Generating response...');
-		console.log('[AI Service] Profile:', profile.username);
-		console.log('[AI Service] Man message:', manMessage);
-		console.log('[AI Service] Message type:', messageType);
-		console.log('[AI Service] History length:', conversationHistory.length);
+		console.log('');
+		console.log('🎨 [AI DEBUG] ===== GENERATING AI RESPONSE =====');
+		console.log('  👤 Profile:', profile.username);
+		console.log('  📨 Man message:', manMessage);
+		console.log('  📊 Message type:', messageType);
+		console.log('  📜 History length:', conversationHistory.length);
 
 		// Получаем активные кастомные правила
 		const customRules = await aiRuleService.getActiveRules();
-		console.log('[AI Service] Custom rules loaded:', customRules?.length || 0);
+		console.log('  📋 Custom rules loaded:', customRules?.length || 0);
 
 		// Строим сообщения для AI
 		const messages = buildMessages({
@@ -40,15 +41,21 @@ export const generateResponse = async ({
 		let aiResponse = null;
 		let retryCount = 0;
 
+		console.log('  🔁 Max retries allowed:', MAX_RETRIES);
+
 		while (retryCount < MAX_RETRIES) {
 			// Отправляем запрос к AI
 			aiResponse = await sendAIRequest(messages, retryCount);
 
 			// Проверяем на запрещенные фразы
-			if (containsForbiddenPhrases(aiResponse)) {
-				console.log(
-					`[AI Service] ⚠️ Response contains forbidden phrases. Retry ${retryCount + 1}/${MAX_RETRIES}`,
-				);
+			const hasForbidden = containsForbiddenPhrases(aiResponse);
+			
+			if (hasForbidden) {
+				console.log('');
+				console.log(`⚠️ [AI DEBUG] ===== RETRY ${retryCount + 1}/${MAX_RETRIES} - Forbidden Phrases Detected =====`);
+				console.log('  🚫 Response contains forbidden phrases!');
+				console.log('  📝 Bad response:', aiResponse);
+				console.log('  🔄 Adding correction message and retrying...');
 
 				// Добавляем предупреждение в историю
 				messages.push({
@@ -62,34 +69,52 @@ export const generateResponse = async ({
 				});
 
 				retryCount++;
+				console.log('═'.repeat(80));
+				console.log('');
 				continue;
 			}
 
 			// Ответ прошел проверку
+			console.log('  ✅ Response passed forbidden phrases check');
 			break;
 		}
 
 		// Если после всех попыток все еще содержит запрещенные фразы
 		if (containsForbiddenPhrases(aiResponse)) {
-			console.error(
-				'[AI Service] ❌ Failed to get valid response after all retries',
-			);
+			console.log('');
+			console.error('❌ [AI DEBUG] ===== FATAL ERROR =====');
+			console.error('  🚨 Failed to get valid response after', MAX_RETRIES, 'retries');
+			console.error('  📝 Final bad response:', aiResponse);
+			console.error('═'.repeat(80));
+			console.log('');
 			throw new Error(
 				'AI failed to generate appropriate response after multiple attempts',
 			);
 		}
 
 		// Очищаем ответ
-		aiResponse = cleanResponse(aiResponse);
-
-		console.log('[AI Service] ✅ Final response:', aiResponse);
+		const cleanedResponse = cleanResponse(aiResponse);
+		
+		console.log('  🧹 Response cleaned');
+		console.log('  📤 Final response:', cleanedResponse);
+		console.log('  📊 Stats:');
+		console.log('    - Original length:', aiResponse.length);
+		console.log('    - Cleaned length:', cleanedResponse.length);
+		console.log('    - Retries used:', retryCount);
+		console.log('═'.repeat(80));
+		console.log('');
 
 		return {
-			response: aiResponse,
+			response: cleanedResponse,
 			retries: retryCount,
 		};
 	} catch (error) {
-		console.error('[AI Service] Error generating response:', error);
+		console.log('');
+		console.error('❌ [AI DEBUG] ===== ERROR IN RESPONSE GENERATION =====');
+		console.error('  🚨 Error:', error.message);
+		console.error('  📚 Stack:', error.stack);
+		console.error('═'.repeat(80));
+		console.log('');
 		throw error;
 	}
 };
