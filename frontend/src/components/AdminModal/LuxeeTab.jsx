@@ -3,6 +3,7 @@ import { useMutation, useQuery } from '@tanstack/react-query';
 import { luxeeApi } from '../../api/luxeeApi';
 import { Button, Input } from '../ui';
 import LuxeeAccountCard from './LuxeeAccountCard';
+import useAiStateStore from '../../stores/aiStateStore';
 
 const LuxeeTab = () => {
   const [luxeeEmail, setLuxeeEmail] = useState('');
@@ -30,12 +31,25 @@ const LuxeeTab = () => {
     },
   });
 
+  // Импортируем функцию для локального удаления аккаунта из store
+  const removeUserAccount = useAiStateStore((state) => state.removeUserAccount);
+
   const deleteLuxeeMutation = useMutation({
     mutationFn: (accountId) => luxeeApi.deleteAccount(accountId),
-    onSuccess: () => {
+    onSuccess: (data, accountId) => {
+      // 1. Сразу удаляем из локального store (для быстрого обновления UI в Sidebar)
+      console.log('[LuxeeTab] Удаляем аккаунт из локального store:', accountId);
+      removeUserAccount(accountId);
+      
+      // 2. Обновляем список через API (для синхронизации)
       refetchLuxee();
+      
+      // 3. Показываем сообщение
       setLuxeeMessage({ type: 'success', text: '✅ Аккаунт удалён' });
       setTimeout(() => setLuxeeMessage({ type: '', text: '' }), 3000);
+      
+      // Примечание: AdminModal получит обновление через WebSocket событие 'luxee:account:deleted'
+      console.log('[LuxeeTab] ✓ Аккаунт удалён локально, WebSocket обновит админ-панель');
     },
     onError: (error) => {
       setLuxeeMessage({ type: 'error', text: `❌ ${error.response?.data?.message || 'Ошибка при удалении'}` });

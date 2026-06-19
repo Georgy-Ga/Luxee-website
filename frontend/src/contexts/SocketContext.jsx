@@ -17,6 +17,7 @@ export const SocketProvider = ({ children }) => {
 	const [socket, setSocket] = useState(null);
 	const [isConnected, setIsConnected] = useState(false);
 	const [connectionError, setConnectionError] = useState(null);
+	const [reconnectAttempt, setReconnectAttempt] = useState(0);
 
 	// Инициализация Socket соединения
 	const connectSocket = useCallback(() => {
@@ -41,8 +42,8 @@ export const SocketProvider = ({ children }) => {
 			transports: ['websocket', 'polling'],
 			reconnection: true,
 			reconnectionDelay: 1000,
-			reconnectionDelayMax: 5000,
-			reconnectionAttempts: 5,
+			reconnectionDelayMax: 10000, // Увеличен макс интервал до 10 сек
+			reconnectionAttempts: Infinity, // Бесконечные попытки переподключения
 		});
 
 		// Обработчики событий
@@ -50,17 +51,40 @@ export const SocketProvider = ({ children }) => {
 			console.log('[Socket] ✓ Connected:', newSocket.id);
 			setIsConnected(true);
 			setConnectionError(null);
+			setReconnectAttempt(0); // Сброс счётчика попыток при успешном подключении
 		});
 
 		newSocket.on('disconnect', (reason) => {
 			console.log('[Socket] ✗ Disconnected:', reason);
 			setIsConnected(false);
+			
+			// Показываем разные сообщения в зависимости от причины
+			if (reason === 'io server disconnect') {
+				console.log('[Socket] Server closed connection, will not reconnect automatically');
+			} else {
+				console.log('[Socket] Will attempt to reconnect...');
+			}
 		});
 
 		newSocket.on('connect_error', (error) => {
-			console.error('[Socket] Connection error:', error.message);
+			setReconnectAttempt((prev) => prev + 1);
+			const attemptNumber = reconnectAttempt + 1;
+			console.error(`[Socket] Connection error (attempt ${attemptNumber}):`, error.message);
 			setConnectionError(error.message);
 			setIsConnected(false);
+		});
+
+		newSocket.on('reconnect_attempt', (attemptNumber) => {
+			console.log(`[Socket] 🔄 Reconnect attempt ${attemptNumber}...`);
+		});
+
+		newSocket.on('reconnect', (attemptNumber) => {
+			console.log(`[Socket] ✓ Reconnected after ${attemptNumber} attempts`);
+			setReconnectAttempt(0);
+		});
+
+		newSocket.on('reconnect_failed', () => {
+			console.error('[Socket] ❌ Reconnection failed after all attempts');
 		});
 
 		newSocket.on('error', (error) => {
@@ -108,6 +132,7 @@ export const SocketProvider = ({ children }) => {
 		socket,
 		isConnected,
 		connectionError,
+		reconnectAttempt,
 		connectSocket,
 		disconnectSocket,
 	};
