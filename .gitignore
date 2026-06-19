@@ -48,3 +48,6 @@ volumes/
 analyze-*.js
 enable-*.js
 insert-*.js
+
+# Spambot (не для GitHub)
+spambot/
