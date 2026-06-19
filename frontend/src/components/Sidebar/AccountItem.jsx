@@ -9,9 +9,6 @@ const AccountItem = ({
   account, 
   isExpanded,
   onToggle,
-  aiEnabled,
-  onAIToggle,
-  onAIError,
   selectedProfile,
   selectedChat,
   onProfileClick,
@@ -33,12 +30,7 @@ const AccountItem = ({
         </div>
         
         {/* AI Toggle для аккаунта */}
-        <AccountAIButton
-          accountId={account.accountId}
-          isEnabled={aiEnabled}
-          onToggle={onAIToggle}
-          onError={onAIError}
-        />
+        <AccountAIButton accountId={account.accountId} />
       </div>
 
       {/* Список профилей */}
@@ -76,9 +68,6 @@ AccountItem.propTypes = {
   }).isRequired,
   isExpanded: PropTypes.bool,
   onToggle: PropTypes.func.isRequired,
-  aiEnabled: PropTypes.bool,
-  onAIToggle: PropTypes.func.isRequired,
-  onAIError: PropTypes.func.isRequired,
   selectedProfile: PropTypes.object,
   selectedChat: PropTypes.object,
   onProfileClick: PropTypes.func.isRequired,

@@ -1,128 +1,62 @@
-import { useState, useEffect, useCallback } from 'react';
-import { aiApi } from '../../../api/aiApi';
-import useChatStore from '../../../stores/chatStore';
+import { useState, useEffect, useCallback, useMemo } from 'react';
+import useAiStateStore from '../../../stores/aiStateStore';
 
 /**
- * Hook для управления AI статусом пользователей и аккаунтов
- * Содержит всю бизнес-логику управления AI
+ * Упрощённый хук для управления UI админ-панели
+ * Вся бизнес-логика теперь в специализированных хуках кнопок
+ * 
+ * ПРИМЕЧАНИЕ: WebSocket синхронизация аккаунтов подключена глобально в Dashboard.jsx,
+ * поэтому здесь не нужно дублировать useAccountCreatedSync()
  */
 export const useAiManagement = () => {
-  const [users, setUsers] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(null);
-  // Используем lazy initialization для Set объектов
-  const [processingUsers, setProcessingUsers] = useState(() => new Set());
-  const [processingAccounts, setProcessingAccounts] = useState(() => new Set());
-  
-  const { setAIForAccount } = useChatStore();
+  const [expandedUsers, setExpandedUsers] = useState(new Set());
 
-  // Загрузка данных
-  const loadData = useCallback(async () => {
-    try {
-      setLoading(true);
-      setError(null);
-      const data = await aiApi.getAllUsersAiStatus();
-      setUsers(data.users || []);
-    } catch (error) {
-      console.error('Failed to load AI status:', error);
-      setError('Не удалось загрузить данные AI. Попробуйте обновить страницу.');
-    } finally {
-      setLoading(false);
-    }
-  }, []);
+  const users = useAiStateStore((state) => state.adminData.users);
+  const loading = useAiStateStore((state) => state.adminData.loading);
+  const error = useAiStateStore((state) => state.adminData.error);
+  const loadAllUsersAiData = useAiStateStore((state) => state.loadAllUsersAiData);
 
+  // Загружаем данные только если store пуст (при первом открытии)
+  // Все последующие обновления приходят через WebSocket автоматически
   useEffect(() => {
-    loadData();
-  }, [loadData]);
+    const currentUsers = useAiStateStore.getState().adminData.users;
+    
+    if (currentUsers.length > 0) {
+      console.log('[useAiManagement] Data already loaded from WebSocket, skipping API call');
+      return;
+    }
 
-  // Определяем состояние всех аккаунтов пользователя
-  const getAccountsStatus = useCallback((accounts) => {
-    if (!accounts || accounts.length === 0) return 'none';
-    
-    const enabledCount = accounts.filter(acc => acc.aiEnabledByAdmin).length;
-    
-    if (enabledCount === accounts.length) return 'all';
-    if (enabledCount === 0) return 'none';
-    return 'partial';
+    console.log('[useAiManagement] 🚀 First load - fetching admin data from API...');
+    loadAllUsersAiData();
+  }, []); // Пустой массив зависимостей - только при монтировании
+
+  // Переключение развёрнутости пользователя
+  const toggleUserExpanded = useCallback((userId) => {
+    setExpandedUsers((prev) => {
+      const next = new Set(prev);
+      if (next.has(userId)) {
+        next.delete(userId);
+      } else {
+        next.add(userId);
+      }
+      return next;
+    });
   }, []);
 
-  // Переключение AI для всех аккаунтов пользователя
-  const toggleAllAccounts = useCallback(async (userId, accounts) => {
-    if (processingUsers.has(userId)) return false;
-    
-    try {
-      setProcessingUsers(prev => new Set(prev).add(userId));
-      setError(null);
-      
-      const status = getAccountsStatus(accounts);
-      const newStatus = status === 'all' ? false : true;
-      
-      await aiApi.setAllUserAccountsAiByAdmin(userId, newStatus);
-      await loadData();
-      
-      // Синхронизация с chatStore
-      accounts.forEach(account => {
-        setAIForAccount(account._id, newStatus);
-      });
-      
-      return true;
-    } catch (error) {
-      console.error('Failed to toggle all accounts AI:', error);
-      const action = getAccountsStatus(accounts) === 'all' ? 'выключить' : 'включить';
-      setError(`Не удалось ${action} AI для всех аккаунтов. ${error.response?.data?.error || error.message}`);
-      return false;
-    } finally {
-      setProcessingUsers(prev => {
-        const next = new Set(prev);
-        next.delete(userId);
-        return next;
-      });
-    }
-  }, [processingUsers, getAccountsStatus, loadData, setAIForAccount]);
-
-  // Переключение AI для одного аккаунта
-  const toggleAccountAi = useCallback(async (accountId, currentStatus) => {
-    if (processingAccounts.has(accountId)) return false;
-    
-    try {
-      setProcessingAccounts(prev => new Set(prev).add(accountId));
-      setError(null);
-      
-      const newStatus = !currentStatus;
-      await aiApi.setAccountAiByAdmin(accountId, newStatus);
-      await loadData();
-      
-      // Синхронизация с chatStore
-      setAIForAccount(accountId, newStatus);
-      
-      return true;
-    } catch (error) {
-      console.error('Failed to toggle account AI:', error);
-      const action = currentStatus ? 'выключить' : 'включить';
-      setError(`Не удалось ${action} AI для аккаунта. ${error.response?.data?.error || error.message}`);
-      return false;
-    } finally {
-      setProcessingAccounts(prev => {
-        const next = new Set(prev);
-        next.delete(accountId);
-        return next;
-      });
-    }
-  }, [processingAccounts, loadData, setAIForAccount]);
-
-  const clearError = useCallback(() => setError(null), []);
+  // Мемоизированные пропсы для UserAiCard
+  const getUserCardProps = useMemo(() => {
+    return users.map((user) => ({
+      user,
+      isExpanded: expandedUsers.has(user._id),
+      onToggleExpand: () => toggleUserExpanded(user._id),
+    }));
+  }, [users, expandedUsers, toggleUserExpanded]);
 
   return {
     users,
-    loading,
+    userCardProps: getUserCardProps,
+    isLoading: loading,
     error,
-    processingUsers,
-    processingAccounts,
-    loadData,
-    getAccountsStatus,
-    toggleAllAccounts,
-    toggleAccountAi,
-    clearError,
   };
 };
 

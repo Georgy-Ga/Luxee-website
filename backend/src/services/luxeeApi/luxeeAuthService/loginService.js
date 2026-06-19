@@ -7,6 +7,7 @@ import chatNavigationService from '../chatNavigationService.js';
 import keepAliveService from '../keepAliveService.js';
 import messageCheckIntervalService from '../messageCheckIntervalService.js';
 import profileActivationService from '../profileActivationService.js';
+import socketService from '../../socketService.js';
 
 /**
  * Авторизация на Luxee
@@ -150,6 +151,8 @@ export const login = async ({ userId, luxeeEmail, luxeePassword }) => {
 		});
 
 		// Сохраняем или обновляем аккаунт в БД
+		const isNewAccount = !luxeeAccount;
+		
 		if (luxeeAccount) {
 			luxeeAccount.sessionData = sessionData;
 			luxeeAccount.isActive = true;
@@ -166,6 +169,20 @@ export const login = async ({ userId, luxeeEmail, luxeePassword }) => {
 		}
 
 		const finalAccountId = luxeeAccount._id.toString();
+
+		// Если создан новый аккаунт, emit WebSocket событие для синхронизации
+		if (isNewAccount) {
+			console.log(`[Luxee Auth] Emitting account created event for ${luxeeEmail}`);
+			socketService.emitAccountCreated(userId, {
+				_id: finalAccountId,
+				luxeeEmail,
+				isActive: true,
+				lastActivity: luxeeAccount.lastActivity,
+				createdAt: luxeeAccount.createdAt,
+				aiEnabled: luxeeAccount.aiEnabled || false,
+				aiEnabledByAdmin: luxeeAccount.aiEnabledByAdmin || false,
+			});
+		}
 
 		// Если tempAccountId отличается от finalAccountId, обновляем ключ в Map
 		if (tempAccountId !== finalAccountId) {

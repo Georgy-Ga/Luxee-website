@@ -6,6 +6,7 @@ import PropTypes from 'prop-types';
  * @param {string} size - Размер: 'sm', 'md', 'lg'
  * @param {boolean} disabled - Отключена ли кнопка
  * @param {boolean} loading - Показывать индикатор загрузки
+ * @param {boolean} fullWidth - Кнопка на всю ширину
  * @param {string} className - Дополнительные CSS классы
  * @param {function} onClick - Обработчик клика
  * @param {node} children - Содержимое кнопки
@@ -15,6 +16,7 @@ const Button = ({
   size = 'md',
   disabled = false,
   loading = false,
+  fullWidth = false,
   className = '',
   onClick,
   type = 'button',
@@ -37,7 +39,9 @@ const Button = ({
     lg: 'px-4 lg:px-6 py-2 lg:py-3 text-base lg:text-lg',
   };
 
-  const classes = `${baseStyles} ${variantStyles[variant]} ${sizeStyles[size]} ${className}`;
+  const widthStyles = fullWidth ? 'w-full' : '';
+
+  const classes = `${baseStyles} ${variantStyles[variant]} ${sizeStyles[size]} ${widthStyles} ${className}`;
 
   return (
     <button
@@ -60,6 +64,7 @@ Button.propTypes = {
   size: PropTypes.oneOf(['sm', 'md', 'lg']),
   disabled: PropTypes.bool,
   loading: PropTypes.bool,
+  fullWidth: PropTypes.bool,
   className: PropTypes.string,
   onClick: PropTypes.func,
   type: PropTypes.string,

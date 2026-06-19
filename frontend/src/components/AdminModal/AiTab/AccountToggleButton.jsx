@@ -1,28 +1,37 @@
 import PropTypes from 'prop-types';
+import { useAdminAccountToggle } from '../../../hooks/ai/useAdminAccountToggle';
 
 /**
  * Кнопка переключения AI для всех аккаунтов пользователя
  */
-const AccountToggleButton = ({ status, isProcessing, onClick }) => {
+const AccountToggleButton = ({ userId }) => {
+  const { status, isProcessing, isDisabled, handleToggle } = useAdminAccountToggle(userId);
+
+  // Защита от множественных кликов
+  const handleClick = async (e) => {
+    e.stopPropagation(); // Останавливаем всплытие события
+    
+    if (isDisabled || isProcessing) {
+      return;
+    }
+    
+    await handleToggle();
+  };
+
   const getButtonConfig = () => {
     if (status === 'all') {
       return {
         className: 'bg-green-500 hover:bg-green-600',
-        text: '✅ Все включены',
+        text: '✅ ВКЛ',
         title: 'Все аккаунты включены. Нажмите чтобы выключить все',
       };
     }
-    if (status === 'partial') {
-      return {
-        className: 'bg-yellow-500 hover:bg-yellow-600',
-        text: '🟡 Частично',
-        title: 'Часть аккаунтов включена. Нажмите чтобы включить все',
-      };
-    }
+    
+    // status === 'none'
     return {
       className: 'bg-gray-400 hover:bg-gray-500',
-      text: '⚪ Все выключены',
-      title: 'Все аккаунты выключены. Нажмите чтобы включить все',
+      text: '⚪ ВЫКЛ',
+      title: 'Нажмите чтобы включить все аккаунты',
     };
   };
 
@@ -30,8 +39,8 @@ const AccountToggleButton = ({ status, isProcessing, onClick }) => {
 
   return (
     <button
-      onClick={onClick}
-      disabled={isProcessing}
+      onClick={handleClick}
+      disabled={isDisabled}
       className={`px-3 py-1 rounded text-sm font-medium text-white transition-colors ${
         config.className
       } ${isProcessing ? 'opacity-70 cursor-not-allowed' : ''}`}
@@ -50,9 +59,7 @@ const AccountToggleButton = ({ status, isProcessing, onClick }) => {
 };
 
 AccountToggleButton.propTypes = {
-  status: PropTypes.oneOf(['all', 'partial', 'none']).isRequired,
-  isProcessing: PropTypes.bool.isRequired,
-  onClick: PropTypes.func.isRequired,
+  userId: PropTypes.string.isRequired,
 };
 
 export default AccountToggleButton;

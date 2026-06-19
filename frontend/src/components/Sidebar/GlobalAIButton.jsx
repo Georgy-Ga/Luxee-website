@@ -1,71 +1,55 @@
-import { useState } from 'react';
-import useChatStore from '../../stores/chatStore';
+import { useGlobalAIButton } from '../../hooks/ai/useGlobalAIButton';
 
 /**
  * Глобальная кнопка переключения AI для всех аккаунтов
  * Показывает текущий статус: "Все включены" или "Все выключены"
  */
 const GlobalAIButton = ({ onSuccess, onError }) => {
-  const [isLoading, setIsLoading] = useState(false);
-  const { aiEnabledByAccount, loadAccountAIStatuses } = useChatStore();
+  const { 
+    status, 
+    isEnabled,
+    isDisabled,
+    isLoading, 
+    isButtonDisabled, 
+    handleToggle 
+  } = useGlobalAIButton();
 
-  // Вычисляем общий статус всех аккаунтов
-  const getStatus = () => {
-    const values = Object.values(aiEnabledByAccount);
-    if (values.length === 0) return 'none';
-    
-    const enabledCount = values.filter(Boolean).length;
-    
-    // Все включены или все выключены
-    if (enabledCount === values.length) return 'all';
-    return 'none';
-  };
-
-  const status = getStatus();
-
-  // Конфигурация кнопки в зависимости от статуса
+  // Конфигурация кнопки: только 2 состояния
   const getButtonConfig = () => {
-    if (status === 'all') {
+    if (status === 'on') {
       return {
-        className: 'bg-green-500 hover:bg-green-600 dark:bg-green-600 dark:hover:bg-green-700',
-        text: '✅ Все включены',
-        title: 'Все аккаунты включены. Нажмите чтобы выключить все',
+        className: 'bg-green-500 hover:bg-green-600 text-white cursor-pointer',
+        text: 'AI',
+        title: 'AI включен на всех аккаунтах. Нажмите чтобы выключить',
       };
     }
     
+    // status === 'off' - заблокирован
     return {
-      className: 'bg-gray-400 hover:bg-gray-500 dark:bg-gray-600 dark:hover:bg-gray-700',
-      text: '⚪ Все выключены',
-      title: 'Все аккаунты выключены. Нажмите чтобы включить все',
+      className: 'bg-gray-400 text-white cursor-not-allowed opacity-60',
+      text: 'AI',
+      title: 'AI выключен. Включить может только админ',
     };
   };
 
   const config = getButtonConfig();
 
   const handleClick = async () => {
-    if (isLoading) return;
+    if (isButtonDisabled || isDisabled) return;
     
-    setIsLoading(true);
-    try {
-      const { default: { aiApi } } = await import('../../api/aiApi');
-      await aiApi.toggleAllMyAccountsAi();
-      
-      // Обновляем статусы после переключения
-      await loadAccountAIStatuses();
-      
+    const result = await handleToggle();
+    
+    if (result.success) {
       onSuccess?.();
-    } catch (error) {
-      const errorMessage = error.response?.data?.error || 'Ошибка при переключении AI на всех аккаунтах';
-      onError?.(errorMessage);
-    } finally {
-      setIsLoading(false);
+    } else if (result.error) {
+      onError?.(result.error);
     }
   };
 
   return (
     <button
       onClick={handleClick}
-      disabled={isLoading}
+      disabled={isButtonDisabled}
       className={`px-2 lg:px-3 py-1 rounded text-xs lg:text-sm font-medium text-white transition-all flex items-center gap-1 disabled:opacity-50 disabled:cursor-not-allowed ${
         isLoading ? 'animate-pulse' : config.className
       }`}

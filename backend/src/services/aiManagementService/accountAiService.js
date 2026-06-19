@@ -51,14 +51,14 @@ export const setAccountAiByAdmin = async (accountId, enabled) => {
 	try {
 		// ВАЖНО: Когда админ разрешает AI, он автоматически включается (aiEnabled = true)
 		// Концепция: админ разрешил = сразу включено, пользователь НЕ может сам включить
-		const account = await LuxeeAccountModel.findByIdAndUpdate(
-			accountId,
-			{ 
-				aiEnabledByAdmin: enabled,
-				aiEnabled: enabled  // Админ контролирует ОБА флага
-			},
-			{ new: true },
-		).select('luxeeEmail aiEnabled aiEnabledByAdmin user');
+	const account = await LuxeeAccountModel.findByIdAndUpdate(
+		accountId,
+		{ 
+			aiEnabledByAdmin: enabled,
+			aiEnabled: enabled  // Админ контролирует ОБА флага
+		},
+		{ returnDocument: 'after' },
+	).select('luxeeEmail aiEnabled aiEnabledByAdmin user');
 
 		if (!account) {
 			throw new Error('Account not found');

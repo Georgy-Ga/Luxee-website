@@ -1,7 +1,24 @@
 import axios from 'axios';
 import Cookies from 'js-cookie';
 
-const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000/api';
+// Автоматическое определение API URL на основе hostname
+// localhost → http://localhost:5000/api
+// 192.168.0.41 → http://192.168.0.41:5000/api
+const getApiUrl = () => {
+  // Если задан в .env - используем его
+  if (import.meta.env.VITE_API_URL) {
+    return import.meta.env.VITE_API_URL;
+  }
+  
+  // Иначе определяем автоматически по hostname
+  const hostname = window.location.hostname;
+  return `http://${hostname}:5000/api`;
+};
+
+const API_URL = getApiUrl();
+
+// Логируем для отладки
+console.log('[API] Using API URL:', API_URL);
 
 // Создаём экземпляр axios
 const api = axios.create({

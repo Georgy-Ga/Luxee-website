@@ -10,11 +10,6 @@ const UserAiCard = ({
   user,
   isExpanded,
   onToggleExpand,
-  accountsStatus,
-  isProcessing,
-  onToggleAllAccounts,
-  processingAccounts,
-  onToggleAccountAi,
 }) => {
   const hasAccounts = user.accounts && user.accounts.length > 0;
 
@@ -28,7 +23,6 @@ const UserAiCard = ({
             <button
               onClick={onToggleExpand}
               className="text-gray-600 dark:text-gray-300 hover:text-purple dark:hover:text-accent-light transition-colors"
-              disabled={isProcessing}
               aria-label={isExpanded ? 'Свернуть' : 'Развернуть'}
             >
               {isExpanded ? '▼' : '▶'}
@@ -56,11 +50,7 @@ const UserAiCard = ({
                 <span>Аккаунтов: {user.accounts.length}</span>
               </div>
 
-              <AccountToggleButton
-                status={accountsStatus}
-                isProcessing={isProcessing}
-                onClick={() => onToggleAllAccounts(user._id, user.accounts)}
-              />
+              <AccountToggleButton userId={user._id} />
             </>
           )}
         </div>
@@ -68,11 +58,7 @@ const UserAiCard = ({
 
       {/* Раскрывающийся список Luxee аккаунтов */}
       {isExpanded && hasAccounts && (
-        <AccountsList
-          accounts={user.accounts}
-          processingAccounts={processingAccounts}
-          onToggleAccountAi={onToggleAccountAi}
-        />
+        <AccountsList accounts={user.accounts} />
       )}
     </div>
   );
@@ -87,11 +73,6 @@ UserAiCard.propTypes = {
   }).isRequired,
   isExpanded: PropTypes.bool.isRequired,
   onToggleExpand: PropTypes.func.isRequired,
-  accountsStatus: PropTypes.oneOf(['all', 'partial', 'none']).isRequired,
-  isProcessing: PropTypes.bool.isRequired,
-  onToggleAllAccounts: PropTypes.func.isRequired,
-  processingAccounts: PropTypes.instanceOf(Set).isRequired,
-  onToggleAccountAi: PropTypes.func.isRequired,
 };
 
 export default UserAiCard;

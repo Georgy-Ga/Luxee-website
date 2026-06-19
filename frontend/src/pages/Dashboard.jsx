@@ -6,6 +6,7 @@ import ChatWindow from '../components/ChatWindow';
 import Header from '../components/layout/Header';
 import useChatStore from '../stores/chatStore';
 import { useAiSync } from '../hooks/useAiSync';
+import { useAccountCreatedSync } from '../hooks/useAccountCreatedSync';
 
 const Dashboard = () => {
   const selectedChat = useChatStore((state) => state.selectedChat);
@@ -14,6 +15,9 @@ const Dashboard = () => {
 
   // Подключаем real-time синхронизацию AI статусов
   const { isSyncing } = useAiSync();
+
+  // Подключаем real-time синхронизацию создания/удаления Luxee аккаунтов
+  useAccountCreatedSync();
 
   // Получаем сообщения каждые 10 секунд
   const { data: messagesData, refetch } = useQuery({

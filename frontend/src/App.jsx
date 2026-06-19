@@ -5,6 +5,7 @@ import { authApi } from './api/authApi';
 import useAuthStore from './stores/authStore';
 import useThemeStore from './stores/themeStore';
 import useChatStore from './stores/chatStore';
+import useAiStateStore from './stores/aiStateStore';
 import { SocketProvider } from './contexts/SocketContext';
 import Login from './pages/Login';
 import Dashboard from './pages/Dashboard';
@@ -38,7 +39,7 @@ const ProtectedRoute = ({ children }) => {
 function App() {
   const { setUser, setLoading } = useAuthStore();
   const { isDark, setTheme } = useThemeStore();
-  const { setAIStatus, loadAccountAIStatuses } = useChatStore();
+  const loadUserAiData = useAiStateStore((state) => state.loadUserAiData);
 
   // Проверяем авторизацию при загрузке
   useEffect(() => {
@@ -47,11 +48,9 @@ function App() {
         const { user } = await authApi.getCurrentUser();
         setUser(user);
         
-        // Загружаем AI статус из user данных
+        // Загружаем AI статусы всех аккаунтов пользователя
         if (user) {
-          setAIStatus(user.aiEnabled || false, user.aiEnabledByAdmin || false);
-          // Загружаем AI статусы всех аккаунтов пользователя
-          await loadAccountAIStatuses();
+          await loadUserAiData();
         }
       } catch (error) {
         console.log('Not authenticated');
@@ -60,7 +59,7 @@ function App() {
     };
 
     checkAuth();
-  }, [setUser, setLoading, setAIStatus, loadAccountAIStatuses]);
+  }, [setUser, setLoading, loadUserAiData]);
 
   // Применяем тему при загрузке
   useEffect(() => {

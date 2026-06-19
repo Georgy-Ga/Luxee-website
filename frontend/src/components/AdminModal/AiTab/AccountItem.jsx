@@ -1,9 +1,10 @@
 import PropTypes from 'prop-types';
+import AccountAIToggleButton from './AccountAIToggleButton';
 
 /**
  * Отдельный Luxee аккаунт с кнопкой управления AI
  */
-const AccountItem = ({ account, isProcessing, onToggle }) => {
+const AccountItem = ({ account }) => {
   return (
     <div className="border border-light-border dark:border-dark-border rounded p-2 bg-light-surface dark:bg-dark-surface flex items-center justify-between">
       <div className="flex-1">
@@ -17,31 +18,7 @@ const AccountItem = ({ account, isProcessing, onToggle }) => {
         </div>
       </div>
 
-      <button
-        onClick={onToggle}
-        disabled={isProcessing}
-        className={`px-2 py-1 rounded text-xs font-medium transition-colors ${
-          account.aiEnabledByAdmin
-            ? 'bg-green-500 hover:bg-green-600 text-white'
-            : 'bg-gray-400 hover:bg-gray-500 text-white'
-        } ${isProcessing ? 'opacity-70 cursor-not-allowed' : ''}`}
-        title={
-          isProcessing
-            ? 'Обработка...'
-            : account.aiEnabledByAdmin
-            ? 'Нажмите чтобы выключить'
-            : 'Нажмите чтобы включить'
-        }
-      >
-        {isProcessing ? (
-          <span className="flex items-center gap-1">
-            <span className="inline-block w-2 h-2 border border-white border-t-transparent rounded-full animate-spin"></span>
-            ...
-          </span>
-        ) : (
-          <>{account.aiEnabledByAdmin ? '✅ Вкл' : '⚪ Выкл'}</>
-        )}
-      </button>
+      <AccountAIToggleButton accountId={account._id} />
     </div>
   );
 };
@@ -53,8 +30,6 @@ AccountItem.propTypes = {
     aiEnabled: PropTypes.bool,
     aiEnabledByAdmin: PropTypes.bool,
   }).isRequired,
-  isProcessing: PropTypes.bool.isRequired,
-  onToggle: PropTypes.func.isRequired,
 };
 
 export default AccountItem;

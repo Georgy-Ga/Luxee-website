@@ -20,8 +20,6 @@ const Sidebar = ({ messagesData, refetch }) => {
     selectedChat, 
     setSelectedProfile, 
     setSelectedChat, 
-    aiEnabledByAccount, 
-    toggleAIForAccount, 
     closeSidebar 
   } = useChatStore();
   
@@ -72,9 +70,6 @@ const Sidebar = ({ messagesData, refetch }) => {
               account={account}
               isExpanded={expandedAccounts[account.accountId]}
               onToggle={() => toggleAccount(account.accountId)}
-              aiEnabled={aiEnabledByAccount[account.accountId] === true}
-              onAIToggle={toggleAIForAccount}
-              onAIError={(message) => showToast(message, 'error')}
               selectedProfile={selectedProfile}
               selectedChat={selectedChat}
               onProfileClick={handleProfileClick}

@@ -163,11 +163,55 @@ class SocketService {
 	}
 
 	/**
-	 * Получить количество подключенных пользователей
+	 * Emit события создания нового Luxee аккаунта
+	 * Используется для динамического обновления списка аккаунтов в админ-панели
 	 */
-	getConnectedUsersCount() {
-		return this.connectedUsers.size;
+	emitAccountCreated(userId, accountData) {
+		if (!this.ensureInitialized()) return;
+
+		const event = 'luxee:account:created';
+
+		// Broadcast всем для синхронизации (админы видят все аккаунты)
+		this.broadcastToAll(event, {
+			userId,
+			account: accountData,
+			timestamp: new Date().toISOString()
+		});
+
+	console.log(`[Socket Service] Emitted account created: userId=${userId}, accountId=${accountData._id}`);
+}
+
+/**
+ * Emit события удаления Luxee аккаунта для синхронизации с админ-панелью
+ * @param {string} userId - ID пользователя
+ * @param {string} accountId - ID удалённого аккаунта
+ */
+emitAccountDeleted(userId, accountId) {
+	if (!this.io) {
+		console.error('[Socket Service] Socket.io not initialized');
+		return;
 	}
+
+	const eventData = {
+		userId,
+		accountId,
+		timestamp: new Date().toISOString(),
+	};
+
+	console.log(`[Socket Service] Broadcast to all: luxee:account:deleted`, eventData);
+
+	// Broadcast всем подключенным клиентам
+	this.io.emit('luxee:account:deleted', eventData);
+
+	console.log(`[Socket Service] Emitted account deleted: userId=${userId}, accountId=${accountId}`);
+}
+
+/**
+ * Получить количество подключенных пользователей
+ */
+getConnectedUsersCount() {
+	return this.connectedUsers.size;
+}
 
 	/**
 	 * Получить количество всех соединений

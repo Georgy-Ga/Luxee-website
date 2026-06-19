@@ -26,7 +26,23 @@ const Login = () => {
       setUser(user);
       navigate('/dashboard');
     } catch (err) {
-      setError(err.response?.data?.message || 'Ошибка входа');
+      console.error('Login error:', err);
+      
+      // Обработка разных типов ошибок
+      let errorMessage = 'Ошибка входа';
+      
+      if (err.code === 'ERR_NETWORK' || err.message === 'Network Error') {
+        errorMessage = 'Не удалось подключиться к серверу. Проверьте подключение к сети.';
+      } else if (err.response) {
+        // Сервер ответил с ошибкой
+        const data = err.response.data;
+        errorMessage = data.message || data.error || `Ошибка ${err.response.status}`;
+      } else if (err.request) {
+        // Запрос был отправлен, но ответа не получено
+        errorMessage = 'Сервер не отвечает. Проверьте что backend запущен.';
+      }
+      
+      setError(errorMessage);
     } finally {
       setIsLoading(false);
     }
