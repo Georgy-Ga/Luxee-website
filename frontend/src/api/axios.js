@@ -92,9 +92,12 @@ api.interceptors.response.use(
 
       try {
         // Пытаемся обновить токен
-        const response = await axios.get(`${API_URL}/refresh`, {
+        // Используем отдельный экземпляр axios чтобы избежать рекурсии interceptor'ов
+        const refreshInstance = axios.create({
+          baseURL: API_URL,
           withCredentials: true,
         });
+        const response = await refreshInstance.get('/refresh');
 
         const { accessToken } = response.data;
         
