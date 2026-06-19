@@ -131,9 +131,22 @@ export const canUserUseAi = async (userId) => {
 	try {
 		const user = await UserModel.findById(userId).select('aiEnabled aiEnabledByAdmin');
 		if (!user) {
+			console.log(`[AI Management Service] canUserUseAi(${userId}): User not found`);
 			return false;
 		}
-		return user.aiEnabledByAdmin && user.aiEnabled;
+		
+		// ✅ FIX: Проверяем наличие хотя бы одного активного аккаунта
+		// Вместо проверки User флагов (которые могут не синхронизироваться)
+		// проверяем реальное состояние аккаунтов в базе данных
+		const hasActiveAccount = await LuxeeAccountModel.exists({
+			user: userId,
+			aiEnabled: true,
+			aiEnabledByAdmin: true
+		});
+		
+		const result = !!hasActiveAccount;
+		console.log(`[AI Management Service] canUserUseAi(${userId}): hasActiveAccount=${result}`);
+		return result;
 	} catch (error) {
 		console.error('[AI Management Service] Error checking if user can use AI:', error);
 		return false;
@@ -165,7 +178,7 @@ export const setAllUserAccountsAiByAdmin = async (userId, enabled, adminId) => {
 		const accounts = await LuxeeAccountModel.find({ user: userId });
 		console.log(`[AI Management Service] Admin ${adminId} setting AI to ${enabled} for ${accounts.length} accounts of user ${userId}`);
 		
-		// ✅ FIX: Обновляем User тоже, иначе canUserUseAi вернёт false!
+		// Обновляем User флаги для консистентности (хотя canUserUseAi теперь проверяет аккаунты)
 		await UserModel.findByIdAndUpdate(userId, {
 			aiEnabledByAdmin: enabled,
 			aiEnabled: enabled
