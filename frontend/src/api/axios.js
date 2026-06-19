@@ -12,7 +12,15 @@ const getApiUrl = () => {
   
   // Иначе определяем автоматически по hostname
   const hostname = window.location.hostname;
-  return `http://${hostname}:5000/api`;
+  const protocol = window.location.protocol;  // http: или https:
+
+  // Если локальная разработка - используем :5000
+  if (hostname === 'localhost' || hostname.startsWith('192.168')) {
+    return `${protocol}//${hostname}:5000/api`;
+  }
+
+  // Production - используем nginx (без порта)
+  return `${protocol}//${hostname}/api`;
 };
 
 const API_URL = getApiUrl();

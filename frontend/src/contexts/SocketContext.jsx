@@ -33,7 +33,24 @@ export const SocketProvider = ({ children }) => {
 			return;
 		}
 
-		const serverUrl = import.meta.env.VITE_API_URL?.replace('/api', '') || 'http://localhost:5000';
+		const getSocketUrl = () => {
+  		if (import.meta.env.VITE_API_URL) {
+    			return import.meta.env.VITE_API_URL.replace('/api', '');
+		}
+  
+		const hostname = window.location.hostname;
+  		const protocol = window.location.protocol;
+  
+  		// Локальная разработка
+  		if (hostname === 'localhost' || hostname.startsWith('192.168')) {
+    			return `${protocol}//${hostname}:5000`;
+  		}
+  
+  		// Production
+  		return `${protocol}//${hostname}`;
+	};
+
+	const serverUrl = getSocketUrl();
 
 		console.log('[Socket] Connecting to:', serverUrl);
 

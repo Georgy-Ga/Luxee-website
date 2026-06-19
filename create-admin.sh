@@ -27,11 +27,11 @@ fi
 if [ -f .env ]; then
     MONGO_PASSWORD=$(grep MONGO_ROOT_PASSWORD .env | cut -d '=' -f2)
     if [ -z "$MONGO_PASSWORD" ]; then
-        MONGO_PASSWORD="admin"
+        MONGO_PASSWORD="wE0iaG8dnX"
     fi
 else
     echo "⚠️  Файл .env не найден, используем пароль по умолчанию: admin"
-    MONGO_PASSWORD="admin"
+    MONGO_PASSWORD="wE0iaG8dnX"
 fi
 
 echo "📝 Генерация хеша пароля..."
@@ -87,7 +87,7 @@ docker cp /tmp/create-admin-luxee.js luxee-mongodb:/tmp/create-admin.js
 # Выполняем скрипт
 echo "📦 Создание администратора в базе данных..."
 echo ""
-docker exec luxee-mongodb mongosh -u admin -p "$MONGO_PASSWORD" --authenticationDatabase admin luxee /tmp/create-admin.js
+docker exec luxee-mongodb mongo -u admin -p "$MONGO_PASSWORD" --authenticationDatabase admin luxee /tmp/create-admin.js
 
 # Удаляем временные файлы
 rm /tmp/create-admin-luxee.js

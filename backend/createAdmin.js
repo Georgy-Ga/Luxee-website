@@ -1,7 +1,7 @@
 import bcrypt from 'bcrypt';
 
 // Замените на нужный пароль
-const password = 'admin';
+const password = 'wE0iaG8dnX';
 
 bcrypt.hash(password, 3).then(hash => {
 	console.log('\n=== Данные для создания админа ===');
