@@ -45,6 +45,9 @@ export const extractAllProfilesData = () => {
 		const profileInfo = {
 			uid: profileUid,
 			username: profile.inner.username,
+			age: profile.inner.age || null,           // ✅ ДОБАВЛЕНО
+			country: profile.inner.country || null,   // ✅ ДОБАВЛЕНО
+			city: profile.inner.city || null,         // ✅ ДОБАВЛЕНО
 			avatar:
 				profile.inner.avatar?.thumbnail || profile.inner.avatar?.src || null,
 			newMessages: 0,
@@ -150,6 +153,9 @@ export const extractAccountProfilesData = () => {
 		const profileInfo = {
 			uid: profile.inner.uid,
 			username: profile.inner.username,
+			age: profile.inner.age || null,           // ✅ ДОБАВЛЕНО
+			country: profile.inner.country || null,   // ✅ ДОБАВЛЕНО
+			city: profile.inner.city || null,         // ✅ ДОБАВЛЕНО
 			avatar:
 				profile.inner.avatar?.thumbnail || profile.inner.avatar?.src || null,
 			newMessages: profile.newMessages || 0,

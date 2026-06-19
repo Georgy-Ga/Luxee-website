@@ -8,7 +8,8 @@ RUN apk add --no-cache \
     freetype \
     harfbuzz \
     ca-certificates \
-    ttf-freefont
+    ttf-freefont \
+    font-noto-emoji
 
 # Установка переменных окружения для Playwright
 ENV PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1 \

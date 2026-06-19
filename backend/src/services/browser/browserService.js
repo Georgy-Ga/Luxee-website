@@ -29,11 +29,11 @@ const browserService = {
 		}
 
 		try {
-			browserInstance = await chromium.launch({
+			// Настройки запуска браузера
+			const launchOptions = {
 				headless,
 				slowMo, // Замедление действий в мс (чтобы видеть что происходит)
 				devtools: browserConfig.devtools, // Открывать DevTools
-				// executablePath: '/usr/bin/chromium-browser', // Использовать системный Chromium
 				args: [
 					'--no-sandbox',
 					'--disable-setuid-sandbox',
@@ -41,7 +41,15 @@ const browserService = {
 					'--disable-gpu', // Для headless режима
 					'--start-maximized', // Открывать на весь экран
 				],
-			});
+			};
+
+			// В Docker используем системный Chromium
+			if (process.env.DOCKER === 'true') {
+				launchOptions.executablePath = '/usr/bin/chromium-browser';
+				console.log('[Browser Service] Using system Chromium in Docker');
+			}
+
+			browserInstance = await chromium.launch(launchOptions);
 
 			// Сбросить флаг краша
 			browserCrashed = false;
