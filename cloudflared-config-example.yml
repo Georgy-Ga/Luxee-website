@@ -1,0 +1,28 @@
+# ============================================
+# Cloudflare Tunnel Configuration Example
+# ============================================
+# Скопируй этот файл в C:\Users\user\.cloudflared\config.yml
+# Замени YOUR_TUNNEL_ID на реальный ID из команды: cloudflared tunnel create luxee-demo
+
+# TUNNEL ID (получишь после создания туннеля)
+tunnel: YOUR_TUNNEL_ID_HERE
+
+# Путь к credentials file (создаётся автоматически)
+credentials-file: C:\Users\user\.cloudflared\YOUR_TUNNEL_ID_HERE.json
+
+# Маршрутизация трафика
+ingress:
+  # Твой домен → nginx на localhost:80 → Docker
+  - hostname: luxee-demo.your-domain.com
+    service: http://localhost:80
+  
+  # Можно добавить несколько доменов:
+  # - hostname: another-subdomain.your-domain.com
+  #   service: http://localhost:80
+  
+  # Fallback для всех остальных запросов (обязательно!)
+  - service: http_status:404
+
+# Дополнительные настройки (опционально)
+# logfile: C:\Users\user\.cloudflared\tunnel.log
+# loglevel: info

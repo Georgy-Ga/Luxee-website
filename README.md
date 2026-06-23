@@ -395,13 +395,45 @@ docker compose up -d --build backend
 
 ---
 
-## 📖 Дополнительная документация
+## 📖 Документация
 
-- [Docker развертывание](DOCKER_DEPLOYMENT.md)
-- [API эндпоинты](docs/backend/01-api-endpoints.md)
-- [Архитектура backend](docs/backend/02-architecture.md)
-- [AI система](docs/backend/04-ai-system.md)
-- [Модели базы данных](docs/backend/07-database-models.md)
+### 🚀 Быстрый старт
+- **[QUICK_START.md](QUICK_START.md)** - Запуск проекта локально для новичков
+- **[QUICK_DEPLOY.md](QUICK_DEPLOY.md)** - Быстрый деплой на production (5 минут)
+
+### 🐳 Production деплой
+- **[PRODUCTION_DEPLOYMENT_GUIDE.md](PRODUCTION_DEPLOYMENT_GUIDE.md)** - ⭐ **ГЛАВНОЕ РУКОВОДСТВО**
+  - Полная инструкция по развёртыванию на сервере
+  - Настройка HTTPS с Let's Encrypt
+  - Автоматические бэкапы MongoDB
+  - Мониторинг и логи
+  - Troubleshooting всех проблем
+
+### 📚 Полный индекс документации
+- **[DOCUMENTATION_INDEX.md](DOCUMENTATION_INDEX.md)** - Индекс всей документации проекта
+
+### 🏗️ Архитектура
+- **[PROJECT_STRUCTURE_EXPLANATION.md](PROJECT_STRUCTURE_EXPLANATION.md)** - Подробное объяснение структуры
+- **[DEVELOPMENT_ENVIRONMENTS.md](DEVELOPMENT_ENVIRONMENTS.md)** - Настройка окружений
+
+### 🤖 AI функционал
+- **[ai_settings.md](ai_settings.md)** - Настройка AI (DeepSeek/OpenAI)
+- **[AI_FIXES_SUMMARY.md](AI_FIXES_SUMMARY.md)** - Сводка исправлений AI
+
+### 🔌 WebSocket
+- **[docs/WEBSOCKET_SYNC.md](docs/WEBSOCKET_SYNC.md)** - WebSocket синхронизация
+- **[WEBSOCKET_IMPLEMENTATION.md](WEBSOCKET_IMPLEMENTATION.md)** - Реализация
+
+### 🐳 Docker
+- **[DOCKER_FILES_SUMMARY.md](DOCKER_FILES_SUMMARY.md)** - Описание Docker файлов
+- **[DOCKER_DEPLOYMENT.md](DOCKER_DEPLOYMENT.md)** - Docker развертывание
+- **[PLAYWRIGHT_DOCKER_FIX.md](PLAYWRIGHT_DOCKER_FIX.md)** - Fix Playwright в Docker
+
+### 🔧 Backend API
+- **[docs/backend/01-api-endpoints.md](docs/backend/01-api-endpoints.md)** - API эндпоинты
+- **[docs/backend/02-architecture.md](docs/backend/02-architecture.md)** - Архитектура backend
+- **[docs/backend/04-ai-system.md](docs/backend/04-ai-system.md)** - AI система
+- **[docs/backend/07-database-models.md](docs/backend/07-database-models.md)** - Модели БД
 
 ---
 
