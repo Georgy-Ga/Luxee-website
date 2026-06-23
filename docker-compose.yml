@@ -63,7 +63,7 @@ services:
       context: ./frontend
       dockerfile: Dockerfile
       args:
-        VITE_API_URL: ${VITE_API_URL:-http://localhost:5001/api}
+        VITE_API_URL: ${VITE_API_URL:-}
     container_name: luxee-frontend
     restart: unless-stopped
     ports:
