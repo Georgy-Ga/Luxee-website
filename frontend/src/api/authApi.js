@@ -1,8 +1,5 @@
 import api from './axios';
-import axios from 'axios';
 import Cookies from 'js-cookie';
-
-const API_URL = 'http://localhost:5000/api';
 
 export const authApi = {
   // Вход
@@ -25,11 +22,9 @@ export const authApi = {
     Cookies.remove('accessToken');
   },
 
-  // Получить текущего пользователя (используем прямой axios, чтобы избежать interceptor)
+  // Получить текущего пользователя
   getCurrentUser: async () => {
-    const response = await axios.get(`${API_URL}/refresh`, {
-      withCredentials: true,
-    });
+    const response = await api.get('/refresh');
     const { accessToken, user } = response.data;
     
     Cookies.set('accessToken', accessToken, {
