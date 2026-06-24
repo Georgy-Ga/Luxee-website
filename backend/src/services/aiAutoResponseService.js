@@ -15,6 +15,7 @@ import LuxeeAccountModel from '../models/LuxeeAccountModel.js';
 import answeredChatService from './answeredChatService.js';
 import pageHelpers from './browser/pageHelpers.js';
 import chatNavigationService from './luxeeApi/chatNavigationService.js';
+import pendingResponseService from './pendingResponseService.js';
 
 // Хранилище активных процессов автоответов
 const activeAutoResponders = new Map(); // accountId -> { intervalId, isProcessing }
@@ -268,32 +269,32 @@ const aiAutoResponseService = {
 							console.log('═'.repeat(80));
 							console.log('');
 
-							// Генерируем и отправляем ответ
-							const result = await aiResponseService.generateAndSend({
-								userId,
+							// ⏰ НОВАЯ ЛОГИКА: Создаём отложенный ответ с рандомной задержкой 23-30 сек
+							const randomDelay = Math.floor(Math.random() * (30000 - 23000 + 1)) + 23000; // 23-30 секунд
+							
+							const scheduled = await pendingResponseService.schedule({
 								accountId,
+								userId,
 								profileUid: profile.uid,
 								chatId: chat.chatId,
+								chat: chat,
 								profile: {
 									username: profile.username,
 									age: profile.age,
 									country: profile.country,
 									city: profile.city,
-								},
-								manMessage: chat.lastManMessage.body,
-								messageType: 1,
-								conversationHistory: [],
-							});
+								}
+							}, randomDelay); // Рандомная задержка 23-30 сек
 
-							if (result.success) {
-								console.log(`[AI Auto] ✓ Sent to ${chat.memberUsername}`);
+							if (scheduled.scheduled) {
+								console.log(`[AI Auto] ⏰ Response scheduled for ${chat.memberUsername} in ${Math.round(randomDelay / 1000)} seconds`);
 							} else {
-								console.log(`[AI Auto] ✗ Failed to send: ${result.reason}`);
+								console.log(`[AI Auto] ⚠️  Could not schedule response: ${scheduled.reason}`);
 							}
 
-							// ВАЖНО: Задержка 7 сек после каждого ответа (увеличено для безопасности)
-							console.log(`[AI Auto] ⏸️  Waiting 7 seconds before next check...`);
-							await new Promise((resolve) => setTimeout(resolve, 7000));
+							// ВАЖНО: Задержка 3 сек перед следующим чатом
+							console.log(`[AI Auto] ⏸️  Waiting 3 seconds before next chat...`);
+							await new Promise((resolve) => setTimeout(resolve, 3000));
 						} catch (error) {
 							console.error(`[AI Auto] Error processing chat ${chat.chatId}:`, error.message);
 							// Продолжаем со следующим чатом

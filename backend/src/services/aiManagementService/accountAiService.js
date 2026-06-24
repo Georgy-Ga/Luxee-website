@@ -4,6 +4,7 @@ import LuxeeAccountModel from '../../models/LuxeeAccountModel.js';
 import aiBrowserContextService from '../browser/aiBrowserContextService.js';
 import aiAutoResponseService from '../aiAutoResponseService.js';
 import socketService from '../socketService.js';
+import pendingResponseService from '../pendingResponseService.js';
 
 export const getAllAccountsAiStatus = async () => {
 	try {
@@ -97,6 +98,13 @@ export const setAccountAiByAdmin = async (accountId, enabled) => {
 		} else {
 			// Останавливаем автоответы и закрываем AI контекст при выключении
 			console.log(`[AI Management Service] Stopping AI for account ${accountId}...`);
+			
+			// ⏰ Отменяем все отложенные ответы
+			const cancelledCount = pendingResponseService.cancelAllForAccount(accountId);
+			if (cancelledCount > 0) {
+				console.log(`[AI Management Service] ✓ Cancelled ${cancelledCount} pending response(s)`);
+			}
+			
 			await aiAutoResponseService.stop(accountId);
 			console.log(`[AI Management Service] ✓ Auto-response stopped for account ${accountId}`);
 			await aiBrowserContextService.closeAiContext(accountId);
@@ -157,6 +165,13 @@ export const toggleAccountAi = async (userId, accountId) => {
 		} else {
 			// Останавливаем автоответы если AI выключен
 			console.log(`[AI Management Service] Stopping auto-response for account ${accountId}...`);
+			
+			// ⏰ Отменяем все отложенные ответы
+			const cancelledCount = pendingResponseService.cancelAllForAccount(accountId);
+			if (cancelledCount > 0) {
+				console.log(`[AI Management Service] ✓ Cancelled ${cancelledCount} pending response(s)`);
+			}
+			
 			await aiAutoResponseService.stop(accountId);
 			// Небольшая задержка перед закрытием контекста чтобы избежать race condition
 			await new Promise(resolve => setTimeout(resolve, 100));
@@ -262,6 +277,12 @@ export const toggleAllMyAccountsAi = async (userId) => {
 					console.log(`[AI Management Service] ✓ AI started for account ${account._id}`);
 				} else {
 					// Выключаем AI
+					// ⏰ Отменяем все отложенные ответы
+					const cancelledCount = pendingResponseService.cancelAllForAccount(account._id.toString());
+					if (cancelledCount > 0) {
+						console.log(`[AI Management Service] ✓ Cancelled ${cancelledCount} pending response(s) for account ${account._id}`);
+					}
+					
 					await aiAutoResponseService.stop(account._id);
 					await aiBrowserContextService.closeAiContext(account._id);
 					console.log(`[AI Management Service] ✓ AI stopped for account ${account._id}`);
