@@ -99,26 +99,35 @@ const aiAutoResponseService = {
 
 	/**
 	 * Найти и обработать unanswered чат на текущем профиле
-	 * Использует modelsChat.getChats.list (текущий активный профиль)
+	 * Использует modelsChat.getChats.data[profileUid] (чаты КОНКРЕТНОГО профиля)
 	 * @returns {boolean} true если нашёл и запланировал ответ
 	 * @private
 	 */
 	_findAndProcessUnanswered: async ({ accountId, userId, page, profile, maxAttempts = 1 }) => {
 		try {
 			for (let attempt = 1; attempt <= maxAttempts; attempt++) {
-				console.log(`[AI Auto] 🔄 Attempt ${attempt}/${maxAttempts} to find unanswered on ${profile.username}...`);
+				console.log(`[AI Auto] 🔄 Attempt ${attempt}/${maxAttempts} to find unanswered on ${profile.username} (UID: ${profile.uid})...`);
 
-				// ✅ Используем .list - чаты ТЕКУЩЕГО активного профиля (после selectProfile)
-				const unansweredChats = await page.evaluate(() => {
-					if (typeof modelsChat === 'undefined' || !modelsChat.getChats || !modelsChat.getChats.list) {
+				// ✅ Используем .data[profileUid] - чаты ТОЛЬКО этого профиля
+				const unansweredChats = await page.evaluate((profileUid) => {
+					if (typeof modelsChat === 'undefined' || !modelsChat.getChats || !modelsChat.getChats.data) {
+						console.warn('[AI Auto] modelsChat.getChats.data not available');
 						return [];
 					}
 
-					const chats = modelsChat.getChats.list;
+					// Берём чаты ТОЛЬКО этого профиля
+					const profileChats = modelsChat.getChats.data[profileUid];
+					if (!profileChats) {
+						console.warn('[AI Auto] No chats found for profile:', profileUid);
+						return [];
+					}
+
+					console.log('[AI Auto] Profile', profileUid, 'has', Object.keys(profileChats).length, 'chats');
+
 					const result = [];
 
-					for (const chatId in chats) {
-						const chat = chats[chatId];
+					for (const chatId in profileChats) {
+						const chat = profileChats[chatId];
 
 						if (chat.unAnswered === true) {
 							const manMember = chat.members?.find(m => m.type === 10);
@@ -147,7 +156,7 @@ const aiAutoResponseService = {
 					}
 
 					return result;
-				});
+				}, profile.uid); // ← Передаём profileUid в evaluate
 
 				// Если нашли - планируем ответ и возвращаем true
 				if (unansweredChats.length > 0) {
