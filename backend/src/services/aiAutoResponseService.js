@@ -220,9 +220,14 @@ const aiAutoResponseService = {
 							hasManMember: !!chat.members?.find((m) => m.type === 10),
 						});
 
-						// Проверяем unAnswered
-						if (chat.unAnswered === true) {
-							debug.hasUnAnswered++;
+						// ✅ ИСПРАВЛЕНО: Проверяем новые сообщения ИЛИ неотвечен (как в profileDataExtractor)
+						const hasNewMessages = (chat.newMessages || 0) > 0;
+						const isUnAnswered = chat.unAnswered === true;
+						
+						if (hasNewMessages || isUnAnswered) {
+							if (isUnAnswered) {
+								debug.hasUnAnswered++;
+							}
 							
 							const manMember = chat.members?.find((m) => m.type === 10);
 							const messages = chat.message || [];
@@ -238,7 +243,8 @@ const aiAutoResponseService = {
 							if (!manMember) debug.missingManMember++;
 							if (!lastManMessage) debug.missingManMessage++;
 
-							if (lastManMessage && manMember) {
+							// ✅ ГЛАВНОЕ УСЛОВИЕ: добавляем только если это unanswered И есть сообщение от мужчины
+							if (isUnAnswered && lastManMessage && manMember) {
 								debug.found++;
 								result.push({
 									chatId: chat.identity || chatId,
