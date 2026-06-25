@@ -19,7 +19,140 @@ import chatNavigationService from './luxeeApi/chatNavigationService.js';
 // Хранилище активных процессов автоответов
 const activeAutoResponders = new Map(); // accountId -> { intervalId, isProcessing }
 
+// 🕐 Хранилище отложенных ответов (pending responses)
+// chatId -> { timeoutId, accountId, userId, profileUid, chatId, chat, profile, scheduledTime }
+const pendingResponses = new Map();
+
 const aiAutoResponseService = {
+	/**
+	 * 🕐 Запланировать отложенный ответ с задержкой 23-30 секунд
+	 * @param {Object} params - Параметры ответа
+	 * @param {number} delay - Задержка в миллисекундах
+	 * @returns {Object} - { scheduled: boolean, scheduledTime: number }
+	 */
+	_schedulePendingResponse: async (params, delay) => {
+		const { accountId, userId, profileUid, chatId, chat, profile } = params;
+
+		try {
+			// Проверяем что уже не запланирован
+			if (pendingResponses.has(chatId)) {
+				console.log(`[Pending] ⚠️  Response already scheduled for ${chatId}`);
+				return { scheduled: false, reason: 'Already scheduled' };
+			}
+
+			const scheduledTime = Date.now() + delay;
+			console.log(
+				`[Pending] 📅 Scheduling response for ${chat.memberUsername} in ${Math.round(delay / 1000)} seconds...`
+			);
+
+			// Создаём timeout
+			const timeoutId = setTimeout(async () => {
+				console.log(
+					`[Pending] ⏰ Time's up! Executing scheduled response for ${chat.memberUsername}...`
+				);
+
+				try {
+					// 🛡️ КРИТИЧНО: Проверяем AI статус ПЕРЕД выполнением
+					const canUse = await aiManagementService.canAccountUseAi(userId, accountId);
+
+					if (!canUse) {
+						console.log(
+							`[Pending] ❌ AI disabled for account, cancelling response for ${chatId}`
+						);
+						pendingResponses.delete(chatId);
+						return;
+					}
+
+					// Проверяем не ответил ли оператор за это время
+					const answeredChats = await answeredChatService.getAnsweredChats({
+						accountId,
+						profileUid,
+					});
+
+					const isAnswered = answeredChats.some((ac) => ac.chatId === chatId);
+
+					if (isAnswered) {
+						console.log(
+							`[Pending] ℹ️  Operator already answered ${chatId}, cancelling AI response`
+						);
+						pendingResponses.delete(chatId);
+						return;
+					}
+
+					console.log(`[Pending] ✅ All checks passed, generating and sending response...`);
+
+					// Генерируем и отправляем
+					const result = await aiResponseService.generateAndSend({
+						userId,
+						accountId,
+						profileUid,
+						chatId,
+						profile,
+						manMessage: chat.lastManMessage.body,
+						messageType: 1,
+						conversationHistory: [],
+					});
+
+					if (result.success) {
+						console.log(`[Pending] ✅ Successfully sent AI response to ${chat.memberUsername}`);
+					} else {
+						console.log(
+							`[Pending] ✗ Failed to send: ${result.reason || 'Unknown error'}`
+						);
+					}
+
+					// Удаляем из очереди
+					pendingResponses.delete(chatId);
+				} catch (error) {
+					console.error(`[Pending] ❌ Error executing response for ${chatId}:`, error);
+					pendingResponses.delete(chatId);
+				}
+			}, delay);
+
+			// Сохраняем в Map
+			pendingResponses.set(chatId, {
+				timeoutId,
+				accountId,
+				userId,
+				profileUid,
+				chatId,
+				chat,
+				profile,
+				scheduledTime,
+			});
+
+			console.log(
+				`[Pending] ✅ Response scheduled for ${chat.memberUsername} at ${new Date(scheduledTime).toLocaleTimeString()}`
+			);
+
+			return { scheduled: true, scheduledTime };
+		} catch (error) {
+			console.error(`[Pending] ❌ Error scheduling response:`, error);
+			return { scheduled: false, error: error.message };
+		}
+	},
+
+	/**
+	 * 🚫 Отменить все отложенные ответы для аккаунта
+	 * @param {string} accountId - ID аккаунта
+	 */
+	_cancelAllPendingForAccount: (accountId) => {
+		let cancelledCount = 0;
+
+		for (const [chatId, pending] of pendingResponses.entries()) {
+			if (pending.accountId === accountId) {
+				clearTimeout(pending.timeoutId);
+				pendingResponses.delete(chatId);
+				cancelledCount++;
+				console.log(`[Pending] ❌ Cancelled pending response for chat ${chatId}`);
+			}
+		}
+
+		if (cancelledCount > 0) {
+			console.log(`[Pending] 🚫 Cancelled ${cancelledCount} pending responses for account ${accountId}`);
+		}
+	},
+
 	/**
 	 * Запустить автоответы для аккаунта
 	 * @param {string} accountId - ID Luxee аккаунта
@@ -127,6 +260,9 @@ const aiAutoResponseService = {
 
 			// Останавливаем интервал
 			clearInterval(state.intervalId);
+
+			// 🚫 КРИТИЧНО: Отменяем все pending ответы для этого аккаунта
+			aiAutoResponseService._cancelAllPendingForAccount(accountId);
 
 			// Удаляем из Map
 			activeAutoResponders.delete(accountId);
@@ -268,30 +404,33 @@ const aiAutoResponseService = {
 							console.log('═'.repeat(80));
 							console.log('');
 
-							// Генерируем и отправляем ответ
-							const result = await aiResponseService.generateAndSend({
-								userId,
-								accountId,
-								profileUid: profile.uid,
-								chatId: chat.chatId,
-								profile: {
-									username: profile.username,
-									age: profile.age,
-									country: profile.country,
-									city: profile.city,
+							// 🕐 НОВАЯ ЛОГИКА: Планируем ответ с задержкой 23-30 секунд
+							const randomDelay = Math.floor(Math.random() * (30000 - 23000 + 1)) + 23000;
+							
+							const scheduled = await aiAutoResponseService._schedulePendingResponse(
+								{
+									accountId,
+									userId,
+									profileUid: profile.uid,
+									chatId: chat.chatId,
+									chat,
+									profile: {
+										username: profile.username,
+										age: profile.age,
+										country: profile.country,
+										city: profile.city,
+									},
 								},
-								manMessage: chat.lastManMessage.body,
-								messageType: 1,
-								conversationHistory: [],
-							});
+								randomDelay
+							);
 
-							if (result.success) {
-								console.log(`[AI Auto] ✓ Sent to ${chat.memberUsername}`);
+							if (scheduled.scheduled) {
+								console.log(`[AI Auto] ✅ Response scheduled for ${chat.memberUsername} in ${Math.round(randomDelay / 1000)} seconds`);
 							} else {
-								console.log(`[AI Auto] ✗ Failed to send: ${result.reason}`);
+								console.log(`[AI Auto] ⚠️  Failed to schedule: ${scheduled.reason}`);
 							}
 
-							// ВАЖНО: Задержка 7 сек после каждого ответа (увеличено для безопасности)
+							// ВАЖНО: Задержка 7 сек после планирования перед следующим чатом
 							console.log(`[AI Auto] ⏸️  Waiting 7 seconds before next check...`);
 							await new Promise((resolve) => setTimeout(resolve, 7000));
 						} catch (error) {

@@ -4,6 +4,7 @@ import UserModel from '../models/UserModel.js';
 import LuxeeAccountModel from '../models/LuxeeAccountModel.js';
 import tokenService from './tokenService.js';
 import aiBrowserContextService from './browser/aiBrowserContextService.js';
+import aiAutoResponseService from './aiAutoResponseService.js';
 import ApiError from '../exceptions/apiError.js';
 
 const userService = {
@@ -112,11 +113,42 @@ const userService = {
 			throw ApiError.BadRequest('Нельзя удалить свой аккаунт');
 		}
 		
+		console.log(`[User Service] Starting deletion process for user ${userId}`);
+		
+		// 🔥 КРИТИЧНО: Останавливаем AI auto-response для ВСЕХ аккаунтов пользователя
+		try {
+			console.log(`[User Service] Stopping AI auto-response for all accounts of user ${userId}`);
+			await aiAutoResponseService.stopForUser(userId);
+			console.log(`[User Service] ✓ AI auto-response stopped for user ${userId}`);
+		} catch (error) {
+			console.error(`[User Service] Failed to stop AI for user ${userId}:`, error);
+		}
+		
+		// Получаем все Luxee аккаунты пользователя
+		const luxeeAccounts = await LuxeeAccountModel.find({ user: userId });
+		console.log(`[User Service] Found ${luxeeAccounts.length} Luxee accounts for user ${userId}`);
+		
+		// Закрываем AI контексты для всех аккаунтов
+		for (const account of luxeeAccounts) {
+			try {
+				await aiBrowserContextService.closeAiContext(account._id.toString());
+				console.log(`[User Service] ✓ AI context closed for account ${account._id}`);
+			} catch (error) {
+				console.error(`[User Service] Failed to close AI context for account ${account._id}:`, error);
+			}
+		}
+		
+		// Удаляем все Luxee аккаунты пользователя
+		await LuxeeAccountModel.deleteMany({ user: userId });
+		console.log(`[User Service] ✓ Deleted ${luxeeAccounts.length} Luxee accounts for user ${userId}`);
+		
 		// Удаляем токены пользователя
 		await tokenService.removeTokenByUserId(userId);
+		console.log(`[User Service] ✓ Tokens removed for user ${userId}`);
 		
 		// Удаляем пользователя
 		await UserModel.findByIdAndDelete(userId);
+		console.log(`[User Service] ✓ User ${userId} deleted from DB`);
 		
 		return { success: true, message: 'Пользователь удалён' };
 	}
