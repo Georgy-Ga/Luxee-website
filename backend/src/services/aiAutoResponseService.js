@@ -610,7 +610,15 @@ const aiAutoResponseService = {
 		try {
 			const account = await LuxeeAccountModel.findById(accountId).populate('user');
 			if (!account) {
-				console.log(`[AI Auto] Account ${accountId} not found`);
+				console.log(`[AI Auto] Account ${accountId} not found, stopping...`);
+				await aiAutoResponseService.stop(accountId);
+				return;
+			}
+
+			// 🛡️ Проверка: User может быть удалён (race condition при deleteUser)
+			if (!account.user) {
+				console.log(`[AI Auto] User deleted for account ${accountId}, stopping AI...`);
+				await aiAutoResponseService.stop(accountId);
 				return;
 			}
 
