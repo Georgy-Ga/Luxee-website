@@ -187,7 +187,8 @@ const aiAutoResponseService = {
 						return [];
 					}
 
-					const chats = modelsChat.getChats.list || {};
+					// ✅ FIX: Используем .data вместо .list!
+					const chats = modelsChat.getChats.data || {};
 					const result = [];
 
 					for (const chatId in chats) {
@@ -317,7 +318,8 @@ const aiAutoResponseService = {
 					return [];
 				}
 
-				const chats = modelsChat.getChats.list || {};
+				// ✅ FIX: Используем .data вместо .list!
+				const chats = modelsChat.getChats.data || {};
 				const result = [];
 
 				for (const chatId in chats) {
@@ -597,17 +599,21 @@ const aiAutoResponseService = {
 					}
 				}, profile.uid);
 
-				// Ждем загрузки чатов
-				await new Promise((resolve) => setTimeout(resolve, 3000));
-				console.log(`[AI Auto] ✓ Switched, waiting for chats to load...`);
+				// Ждем загрузки чатов (2-3 секунды)
+				const loadDelay = Math.floor(Math.random() * (3000 - 2000 + 1)) + 2000;
+				await new Promise((resolve) => setTimeout(resolve, loadDelay));
+				console.log(`[AI Auto] ✓ Switched, waiting ${Math.round(loadDelay / 1000)}s for chats to load...`);
 
-				// Обрабатываем с 5 попытками
+				// Если есть new messages - 5 попыток, если нет - 1 попытка
+				const attempts = profile.newMessages > 0 ? 5 : 1;
+				console.log(`[AI Auto] Profile has ${profile.newMessages} new messages, will try ${attempts} times`);
+				
 				await aiAutoResponseService._processProfileWithRetries({
 					accountId,
 					userId,
 					page,
 					profile,
-					maxAttempts: 5,
+					maxAttempts: attempts,
 				});
 
 				// Задержка перед следующим профилем
