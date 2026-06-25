@@ -181,24 +181,49 @@ const aiAutoResponseService = {
 
 				console.log(`[AI Auto] Profile ${profile.username} has ${profileData.allUids.length} UIDs (${profileData.hasOuter} outer)`);
 
-				// Получаем unanswered чаты используя ВСЕ UIDs
+				// Получаем unanswered чаты используя ВСЕ UIDs + DEBUG + RAW DATA
 				const unansweredChats = await page.evaluate((allUids) => {
 					if (typeof modelsChat === 'undefined' || !modelsChat.getChats) {
-						return [];
+						return { chats: [], debug: 'modelsChat не найден', rawChats: [] };
 					}
 
 					const chats = modelsChat.getChats.list || {};
 					const result = [];
+					const rawChatsForDebug = []; // ← Полные данные чатов для дебага
+					const debug = {
+						totalChats: Object.keys(chats).length,
+						profileUids: allUids,
+						checked: 0,
+						matchedByUid: 0,
+						hasUnAnswered: 0,
+						missingManMember: 0,
+						missingManMessage: 0,
+						found: 0,
+					};
 
 					for (const chatId in chats) {
 						const chat = chats[chatId];
 						const chatProfileUid = parseInt(chatId.split('_')[0]);
+						debug.checked++;
 
 						// ✅ Проверяем что чат принадлежит ЛЮБОМУ из UIDs профиля
 						if (!allUids.includes(chatProfileUid)) continue;
+						debug.matchedByUid++;
+
+						// 🐛 DEBUG: Сохраняем все matched чаты для анализа
+						rawChatsForDebug.push({
+							chatId: chatId,
+							identity: chat.identity,
+							unAnswered: chat.unAnswered,
+							membersCount: chat.members?.length || 0,
+							messagesCount: chat.message?.length || 0,
+							hasManMember: !!chat.members?.find((m) => m.type === 10),
+						});
 
 						// Проверяем unAnswered
 						if (chat.unAnswered === true) {
+							debug.hasUnAnswered++;
+							
 							const manMember = chat.members?.find((m) => m.type === 10);
 							const messages = chat.message || [];
 							let lastManMessage = null;
@@ -210,7 +235,11 @@ const aiAutoResponseService = {
 								}
 							}
 
+							if (!manMember) debug.missingManMember++;
+							if (!lastManMessage) debug.missingManMessage++;
+
 							if (lastManMessage && manMember) {
+								debug.found++;
 								result.push({
 									chatId: chat.identity || chatId,
 									memberUid: manMember.uid,
@@ -224,19 +253,30 @@ const aiAutoResponseService = {
 						}
 					}
 
-					return result;
+					return { chats: result, debug, rawChats: rawChatsForDebug };
 				}, profileData.allUids);
 
+				// 🐛 DEBUG: Выводим детальную статистику поиска
+				console.log(`[AI Auto] 🔍 DEBUG Stats: ${JSON.stringify(unansweredChats.debug)}`);
+				
+				// 🐛 DEBUG: Выводим ВСЕ найденные чаты профиля
+				if (unansweredChats.rawChats.length > 0) {
+					console.log(`[AI Auto] 🔍 DEBUG Raw Chats (${unansweredChats.rawChats.length} total):`);
+					unansweredChats.rawChats.forEach((rc, idx) => {
+						console.log(`  ${idx + 1}. ${rc.chatId} | unAnswered:${rc.unAnswered} | members:${rc.membersCount} | msgs:${rc.messagesCount} | hasMan:${rc.hasManMember}`);
+					});
+				}
+
 				// Если нашли - обрабатываем и выходим
-				if (unansweredChats.length > 0) {
-					console.log(`[AI Auto] ✅ Found ${unansweredChats.length} unanswered chats on ${profile.username} (attempt ${attempt})`);
+				if (unansweredChats.chats.length > 0) {
+					console.log(`[AI Auto] ✅ Found ${unansweredChats.chats.length} unanswered chats on ${profile.username} (attempt ${attempt})`);
 
 					// Обрабатываем каждый чат ПО ОДНОМУ
-					for (let i = 0; i < unansweredChats.length; i++) {
-						const chat = unansweredChats[i];
+					for (let i = 0; i < unansweredChats.chats.length; i++) {
+						const chat = unansweredChats.chats[i];
 
 						console.log(
-							`[AI Auto] Processing chat ${i + 1}/${unansweredChats.length}: ${chat.memberUsername} (${chat.chatId})`
+							`[AI Auto] Processing chat ${i + 1}/${unansweredChats.chats.length}: ${chat.memberUsername} (${chat.chatId})`
 						);
 
 						try {
