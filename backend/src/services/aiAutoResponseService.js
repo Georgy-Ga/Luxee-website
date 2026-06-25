@@ -572,31 +572,33 @@ const aiAutoResponseService = {
 					continue;
 				}
 
-				if (newMessages > 0) {
-					profiles.push({
-						uid: profileUid,
-						username: profile.inner.username,
-						age: profile.inner.age,
-						country: profile.inner.country,
-						city: profile.inner.city,
-						newMessages: newMessages,
-					});
-				}
+				// ✅ FIX: Проверяем ВСЕ профили, не только с newMessages > 0
+				// Потому что чат может быть unanswered, но уже прочитан (newMessages=0)
+				profiles.push({
+					uid: profileUid,
+					username: profile.inner.username,
+					age: profile.inner.age,
+					country: profile.inner.country,
+					city: profile.inner.city,
+					newMessages: newMessages,
+				});
 			}
 
 			return profiles;
 		}, activeProfileData.uid);
 
-		console.log(`[AI Auto] Total OTHER profiles with new messages: ${otherProfilesWithNewMessages.length}`);
+		console.log(`[AI Auto] Total OTHER profiles to check: ${otherProfilesWithNewMessages.length}`);
 
 		// Выводим статистику
-		otherProfilesWithNewMessages.forEach((p) => {
-			console.log(`[AI Auto]   - ${p.username} (${p.uid}): ${p.newMessages} new`);
-		});
+		if (otherProfilesWithNewMessages.length > 0) {
+			otherProfilesWithNewMessages.forEach((p) => {
+				console.log(`[AI Auto]   - ${p.username} (${p.uid}): ${p.newMessages} new (will check for unanswered)`);
+			});
+		}
 
 		// ШАГ 5: Для каждого другого профиля - переключаемся и обрабатываем с 5 попытками
 		if (otherProfilesWithNewMessages.length === 0) {
-			console.log('[AI Auto] No other profiles with new messages found');
+			console.log('[AI Auto] No other profiles to check');
 		} else {
 			for (let i = 0; i < otherProfilesWithNewMessages.length; i++) {
 				const profile = otherProfilesWithNewMessages[i];
