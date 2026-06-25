@@ -181,54 +181,24 @@ const aiAutoResponseService = {
 
 				console.log(`[AI Auto] Profile ${profile.username} has ${profileData.allUids.length} UIDs (${profileData.hasOuter} outer)`);
 
-				// Получаем unanswered чаты используя ВСЕ UIDs + DEBUG + RAW DATA
+				// Получаем unanswered чаты используя ВСЕ UIDs
 				const unansweredChats = await page.evaluate((allUids) => {
 					if (typeof modelsChat === 'undefined' || !modelsChat.getChats) {
-						return { chats: [], debug: 'modelsChat не найден', rawChats: [] };
+						return [];
 					}
 
 					const chats = modelsChat.getChats.list || {};
 					const result = [];
-					const rawChatsForDebug = []; // ← Полные данные чатов для дебага
-					const debug = {
-						totalChats: Object.keys(chats).length,
-						profileUids: allUids,
-						checked: 0,
-						matchedByUid: 0,
-						hasUnAnswered: 0,
-						missingManMember: 0,
-						missingManMessage: 0,
-						found: 0,
-					};
 
 					for (const chatId in chats) {
 						const chat = chats[chatId];
 						const chatProfileUid = parseInt(chatId.split('_')[0]);
-						debug.checked++;
 
-						// ✅ Проверяем что чат принадлежит ЛЮБОМУ из UIDs профиля
+						// Проверяем что чат принадлежит ЛЮБОМУ из UIDs профиля
 						if (!allUids.includes(chatProfileUid)) continue;
-						debug.matchedByUid++;
 
-						// 🐛 DEBUG: Сохраняем все matched чаты для анализа
-						rawChatsForDebug.push({
-							chatId: chatId,
-							identity: chat.identity,
-							unAnswered: chat.unAnswered,
-							membersCount: chat.members?.length || 0,
-							messagesCount: chat.message?.length || 0,
-							hasManMember: !!chat.members?.find((m) => m.type === 10),
-						});
-
-						// ✅ ИСПРАВЛЕНО: Проверяем новые сообщения ИЛИ неотвечен (как в profileDataExtractor)
-						const hasNewMessages = (chat.newMessages || 0) > 0;
-						const isUnAnswered = chat.unAnswered === true;
-						
-						if (hasNewMessages || isUnAnswered) {
-							if (isUnAnswered) {
-								debug.hasUnAnswered++;
-							}
-							
+						// Простая проверка как в рабочей версии
+						if (chat.unAnswered === true) {
 							const manMember = chat.members?.find((m) => m.type === 10);
 							const messages = chat.message || [];
 							let lastManMessage = null;
@@ -240,12 +210,7 @@ const aiAutoResponseService = {
 								}
 							}
 
-							if (!manMember) debug.missingManMember++;
-							if (!lastManMessage) debug.missingManMessage++;
-
-							// ✅ ГЛАВНОЕ УСЛОВИЕ: добавляем только если это unanswered И есть сообщение от мужчины
-							if (isUnAnswered && lastManMessage && manMember) {
-								debug.found++;
+							if (lastManMessage && manMember) {
 								result.push({
 									chatId: chat.identity || chatId,
 									memberUid: manMember.uid,
@@ -259,30 +224,19 @@ const aiAutoResponseService = {
 						}
 					}
 
-					return { chats: result, debug, rawChats: rawChatsForDebug };
+					return result;
 				}, profileData.allUids);
 
-				// 🐛 DEBUG: Выводим детальную статистику поиска
-				console.log(`[AI Auto] 🔍 DEBUG Stats: ${JSON.stringify(unansweredChats.debug)}`);
-				
-				// 🐛 DEBUG: Выводим ВСЕ найденные чаты профиля
-				if (unansweredChats.rawChats.length > 0) {
-					console.log(`[AI Auto] 🔍 DEBUG Raw Chats (${unansweredChats.rawChats.length} total):`);
-					unansweredChats.rawChats.forEach((rc, idx) => {
-						console.log(`  ${idx + 1}. ${rc.chatId} | unAnswered:${rc.unAnswered} | members:${rc.membersCount} | msgs:${rc.messagesCount} | hasMan:${rc.hasManMember}`);
-					});
-				}
-
 				// Если нашли - обрабатываем и выходим
-				if (unansweredChats.chats.length > 0) {
-					console.log(`[AI Auto] ✅ Found ${unansweredChats.chats.length} unanswered chats on ${profile.username} (attempt ${attempt})`);
+				if (unansweredChats.length > 0) {
+					console.log(`[AI Auto] ✅ Found ${unansweredChats.length} unanswered chats on ${profile.username} (attempt ${attempt})`);
 
 					// Обрабатываем каждый чат ПО ОДНОМУ
-					for (let i = 0; i < unansweredChats.chats.length; i++) {
-						const chat = unansweredChats.chats[i];
+					for (let i = 0; i < unansweredChats.length; i++) {
+						const chat = unansweredChats[i];
 
 						console.log(
-							`[AI Auto] Processing chat ${i + 1}/${unansweredChats.chats.length}: ${chat.memberUsername} (${chat.chatId})`
+							`[AI Auto] Processing chat ${i + 1}/${unansweredChats.length}: ${chat.memberUsername} (${chat.chatId})`
 						);
 
 						try {
@@ -299,23 +253,7 @@ const aiAutoResponseService = {
 								continue;
 							}
 
-							// 🐛 DEBUG: Детальные логи обнаруженного чата
-							console.log('');
-							console.log('🔍 [AI DEBUG] ===== UNANSWERED CHAT FOUND =====');
-							console.log('  👤 Profile:', profile.username, `(UID: ${profile.uid})`);
-							console.log('  💬 Chat ID:', chat.chatId);
-							console.log('  👨 Man:', chat.memberUsername, `(UID: ${chat.memberUid})`);
-							console.log('  📝 Last man message:', chat.lastManMessage.body);
-							console.log('  🕐 Message time:', new Date(chat.lastManMessage.createdAt).toLocaleString());
-							console.log('  📊 Profile data:', {
-								age: profile.age,
-								country: profile.country,
-								city: profile.city,
-							});
-							console.log('═'.repeat(80));
-							console.log('');
-
-							// ⏰ НОВАЯ ЛОГИКА: Создаём отложенный ответ с рандомной задержкой 23-30 сек
+							// ⏰ Создаём отложенный ответ с рандомной задержкой 23-30 сек
 							const randomDelay = Math.floor(Math.random() * (30000 - 23000 + 1)) + 23000; // 23-30 секунд
 							
 							const scheduled = await pendingResponseService.schedule({
