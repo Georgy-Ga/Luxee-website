@@ -32,6 +32,19 @@ const contextRecoveryService = {
 				try {
 					const accountId = account._id.toString();
 					
+					// ✅ FIX: Проверяем что у аккаунта есть user
+					if (!account.user) {
+						console.error(`[Context Recovery] Account ${accountId} has no user, skipping`);
+						results.push({
+							accountId,
+							email: account.luxeeEmail,
+							status: 'failed',
+							error: 'No user associated with account',
+						});
+						failed++;
+						continue;
+					}
+					
 					// Проверяем есть ли уже контекст
 					const existingContext = browserService.getContext(accountId);
 					

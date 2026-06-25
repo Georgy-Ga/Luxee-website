@@ -470,13 +470,14 @@ const aiAutoResponseService = {
 		}
 
 		try {
-			const account = await LuxeeAccountModel.findById(accountId).populate('user');
+			const account = await LuxeeAccountModel.findById(accountId);
 			if (!account) {
 				console.log(`[AI Auto] Account ${accountId} not found`);
 				return;
 			}
 
-			const userId = account.user._id.toString();
+			// ✅ FIX: Используем ObjectId напрямую без populate
+			const userId = account.user.toString();
 			const accountEmail = account.luxeeEmail;
 
 			console.log(`[AI Auto] ========== Starting processing for ${accountEmail} ==========`);
