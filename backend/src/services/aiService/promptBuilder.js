@@ -7,10 +7,18 @@ import { SYSTEM_PROMPT } from './config.js';
  */
 export const buildProfileContext = (profile, customRules) => {
 	let profileContext = `My profile information:
-- Name: ${profile?.username || 'not specified'}
-- Age: ${profile?.age || 'not specified'}
-- Country: ${profile?.country || 'not specified'}
-- City: ${profile?.city || 'not specified'}`;
+- Name: ${profile?.username || 'not specified'}`;
+
+	// ✅ Добавляем только если есть данные
+	if (profile?.age) {
+		profileContext += `\n- Age: ${profile.age}`;
+	}
+	if (profile?.country) {
+		profileContext += `\n- Country: ${profile.country}`;
+	}
+	if (profile?.city) {
+		profileContext += `\n- City: ${profile.city}`;
+	}
 
 	// Добавляем кастомные правила если есть (customRules это массив объектов)
 	if (customRules && Array.isArray(customRules) && customRules.length > 0) {
