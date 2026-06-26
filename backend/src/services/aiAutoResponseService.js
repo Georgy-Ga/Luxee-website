@@ -439,86 +439,79 @@ const aiAutoResponseService = {
 					return result;
 				}, profileData.allUids);
 
-				// Если нашли - обрабатываем и выходим
-				if (unansweredChats.length > 0) {
-					console.log(`[AI Auto] ✅ Found ${unansweredChats.length} unanswered chats on ${profile.username} (attempt ${attempt})`);
+			// Если нашли - обрабатываем ТОЛЬКО ПЕРВЫЙ и выходим
+			if (unansweredChats.length > 0) {
+				console.log(`[AI Auto] ✅ Found ${unansweredChats.length} unanswered chats on ${profile.username} (attempt ${attempt})`);
 
-					// Обрабатываем каждый чат ПО ОДНОМУ
-					for (let i = 0; i < unansweredChats.length; i++) {
-						const chat = unansweredChats[i];
+				// 🔒 SINGLE-THREAD: Обрабатываем ТОЛЬКО ПЕРВЫЙ чат
+				const chat = unansweredChats[0];
 
-						console.log(
-							`[AI Auto] Processing chat ${i + 1}/${unansweredChats.length}: ${chat.memberUsername} (${chat.chatId})`
-						);
+				console.log(
+					`[AI Auto] Processing FIRST chat: ${chat.memberUsername} (${chat.chatId})`
+				);
 
-						try {
-							// Проверяем не отвечали ли уже
-							const answeredChats = await answeredChatService.getAnsweredChats({
-								accountId,
-								profileUid: profile.uid,
-							});
+				try {
+					// Проверяем не отвечали ли уже
+					const answeredChats = await answeredChatService.getAnsweredChats({
+						accountId,
+						profileUid: profile.uid,
+					});
 
-							const isAlreadyAnswered = answeredChats.some((ac) => ac.chatId === chat.chatId);
+					const isAlreadyAnswered = answeredChats.some((ac) => ac.chatId === chat.chatId);
 
-							if (isAlreadyAnswered) {
-								console.log(`[AI Auto] Chat ${chat.chatId} already answered, skipping`);
-								continue;
-							}
+					if (isAlreadyAnswered) {
+						console.log(`[AI Auto] Chat ${chat.chatId} already answered, skipping`);
+						return { scheduled: false, reason: 'Already answered' };
+					}
 
-							// 🐛 DEBUG: Детальные логи обнаруженного чата
-							console.log('');
-							console.log('🔍 [AI DEBUG] ===== UNANSWERED CHAT FOUND =====');
-							console.log('  👤 Profile:', profile.username, `(UID: ${profile.uid})`);
-							console.log('  💬 Chat ID:', chat.chatId);
-							console.log('  👨 Man:', chat.memberUsername, `(UID: ${chat.memberUid})`);
-							console.log('  📝 Last man message:', chat.lastManMessage.body);
-							console.log('  🕐 Message time:', new Date(chat.lastManMessage.createdAt).toLocaleString());
-							console.log('  📊 Profile data:', {
+					// 🐛 DEBUG: Детальные логи обнаруженного чата
+					console.log('');
+					console.log('🔍 [AI DEBUG] ===== UNANSWERED CHAT FOUND =====');
+					console.log('  👤 Profile:', profile.username, `(UID: ${profile.uid})`);
+					console.log('  💬 Chat ID:', chat.chatId);
+					console.log('  👨 Man:', chat.memberUsername, `(UID: ${chat.memberUid})`);
+					console.log('  📝 Last man message:', chat.lastManMessage.body);
+					console.log('  🕐 Message time:', new Date(chat.lastManMessage.createdAt).toLocaleString());
+					console.log('  📊 Profile data:', {
+						age: profile.age,
+						country: profile.country,
+						city: profile.city,
+					});
+					console.log('═'.repeat(80));
+					console.log('');
+
+					// 🕐 НОВАЯ ЛОГИКА: Планируем ответ с задержкой 10-15 секунд
+					const randomDelay = Math.floor(Math.random() * (10000 - 5000 + 1)) + 10000;
+					
+					const scheduled = await aiAutoResponseService._schedulePendingResponse(
+						{
+							accountId,
+							userId,
+							profileUid: profile.uid,
+							chatId: chat.chatId,
+							chat,
+							profile: {
+								username: profile.username,
 								age: profile.age,
 								country: profile.country,
 								city: profile.city,
-							});
-							console.log('═'.repeat(80));
-							console.log('');
+							},
+						},
+						randomDelay
+					);
 
-							// 🕐 НОВАЯ ЛОГИКА: Планируем ответ с задержкой 2-5 секунд
-							const randomDelay = Math.floor(Math.random() * (5000 - 2000 + 1)) + 2000;
-							
-							const scheduled = await aiAutoResponseService._schedulePendingResponse(
-								{
-									accountId,
-									userId,
-									profileUid: profile.uid,
-									chatId: chat.chatId,
-									chat,
-									profile: {
-										username: profile.username,
-										age: profile.age,
-										country: profile.country,
-										city: profile.city,
-									},
-								},
-								randomDelay
-							);
-
-							if (scheduled.scheduled) {
-								console.log(`[AI Auto] ✅ Response scheduled for ${chat.memberUsername} in ${Math.round(randomDelay / 1000)} seconds`);
-							} else {
-								console.log(`[AI Auto] ⚠️  Failed to schedule: ${scheduled.reason}`);
-							}
-
-							// ВАЖНО: Задержка 7 сек после планирования перед следующим чатом
-							console.log(`[AI Auto] ⏸️  Waiting 7 seconds before next check...`);
-							await new Promise((resolve) => setTimeout(resolve, 7000));
-						} catch (error) {
-							console.error(`[AI Auto] Error processing chat ${chat.chatId}:`, error.message);
-							// Продолжаем со следующим чатом
-						}
+					if (scheduled.scheduled) {
+						console.log(`[AI Auto] ✅ Response scheduled for ${chat.memberUsername} in ${Math.round(randomDelay / 1000)} seconds`);
+						return { scheduled: true }; // ← ВОЗВРАТ: успешно запланировано
+					} else {
+						console.log(`[AI Auto] ⚠️  Failed to schedule: ${scheduled.reason}`);
+						return { scheduled: false, reason: scheduled.reason };
 					}
-
-					// Успешно обработали - выходим
-					return;
+				} catch (error) {
+					console.error(`[AI Auto] Error processing chat ${chat.chatId}:`, error.message);
+					return { scheduled: false, reason: error.message };
 				}
+			}
 
 				// Если НЕ нашли и это не последняя попытка - ждём 3 секунды
 				if (attempt < maxAttempts) {
@@ -742,6 +735,12 @@ const aiAutoResponseService = {
 			return;
 		}
 
+		// 🔒 SINGLE-THREAD PROTECTION: Если есть активные pending - пропускаем цикл
+		if (pendingResponses.size > 0) {
+			console.log(`[AI Auto] ⏸️  ${pendingResponses.size} response(s) pending, skipping cycle for safety`);
+			return;
+		}
+
 		try {
 			const account = await LuxeeAccountModel.findById(accountId).populate('user');
 			if (!account) {
@@ -821,13 +820,20 @@ const aiAutoResponseService = {
 
 		// ШАГ 3: ПРИОРИТЕТ - Обработать ТЕКУЩИЙ активный профиль (1 попытка - он уже активен)
 		console.log('[AI Auto] ===== PRIORITY: Processing CURRENT active profile =====');
-		await aiAutoResponseService._processProfileWithRetries({
+		const activeResult = await aiAutoResponseService._processProfileWithRetries({
 			accountId,
 			userId,
 			page,
 			profile: activeProfileData,
 			maxAttempts: 1, // ← 1 попытка для текущего профиля
 		});
+
+		// 🔒 SINGLE-THREAD: Если запланировали ответ - ОСТАНАВЛИВАЕМСЯ
+		if (activeResult && activeResult.scheduled) {
+			console.log('[AI Auto] ✅ Response scheduled on active profile, STOPPING cycle');
+			console.log(`[AI Auto] ========== Finished processing ${accountEmail} ==========`);
+			return;
+		}
 
 		// ШАГ 4: Получить ДРУГИЕ профили с NEW MESSAGES (кроме текущего)
 		const otherProfilesWithNewMessages = await page.evaluate((currentUid) => {
@@ -895,20 +901,27 @@ const aiAutoResponseService = {
 				await new Promise((resolve) => setTimeout(resolve, 3000));
 				console.log(`[AI Auto] ✓ Switched, waiting for chats to load...`);
 
-				// Обрабатываем с 5 попытками
-				await aiAutoResponseService._processProfileWithRetries({
-					accountId,
-					userId,
-					page,
-					profile,
-					maxAttempts: 5,
-				});
+			// Обрабатываем с 5 попытками
+			const profileResult = await aiAutoResponseService._processProfileWithRetries({
+				accountId,
+				userId,
+				page,
+				profile,
+				maxAttempts: 5,
+			});
 
-				// Задержка перед следующим профилем
-				if (i < otherProfilesWithNewMessages.length - 1) {
-					console.log('[AI Auto] Waiting 3 sec before next profile...');
-					await new Promise((resolve) => setTimeout(resolve, 3000));
-				}
+			// 🔒 SINGLE-THREAD: Если запланировали ответ - ОСТАНАВЛИВАЕМСЯ
+			if (profileResult && profileResult.scheduled) {
+				console.log(`[AI Auto] ✅ Response scheduled on ${profile.username}, STOPPING cycle`);
+				console.log(`[AI Auto] ========== Finished processing ${accountEmail} ==========`);
+				return;
+			}
+
+			// Задержка перед следующим профилем (если продолжаем)
+			if (i < otherProfilesWithNewMessages.length - 1) {
+				console.log('[AI Auto] Waiting 3 sec before next profile...');
+				await new Promise((resolve) => setTimeout(resolve, 3000));
+			}
 			}
 
 			console.log(`[AI Auto] ✓ Processed all ${otherProfilesWithNewMessages.length} other profiles with new messages`);
