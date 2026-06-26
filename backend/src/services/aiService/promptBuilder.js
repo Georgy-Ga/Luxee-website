@@ -25,23 +25,54 @@ export const buildProfileContext = (profile, customRules) => {
 
 /**
  * Построить массив сообщений для AI API
+ * 📜 НОВОЕ: Поддержка formattedHistory и typeInstructions из chatMessagesExtractorService
  */
-export const buildMessages = ({ conversationHistory, manMessage, messageType, profile, customRules }) => {
+export const buildMessages = ({ 
+	conversationHistory, 
+	manMessage, 
+	messageType, 
+	profile, 
+	customRules,
+	formattedHistory = '',
+	typeInstructions = '',
+	profileName = '',
+	manName = ''
+}) => {
 	console.log('');
 	console.log('📝 [AI DEBUG] ===== BUILDING PROMPT FOR AI =====');
-	console.log('  👤 Profile:', profile?.username || 'N/A');
-	console.log('  📨 Man message:', manMessage);
+	console.log('  👤 Profile:', profile?.username || profileName || 'N/A');
+	console.log('  👨 Man name:', manName || 'N/A');
+	console.log('  � Man message:', manMessage);
 	console.log('  📊 Message type:', messageType);
 	console.log('  📜 Conversation history length:', conversationHistory?.length || 0);
 	console.log('  📋 Custom rules count:', customRules?.length || 0);
+	console.log('  🆕 Using formatted history:', formattedHistory ? 'YES' : 'NO');
+	console.log('  🆕 Using type instructions:', typeInstructions ? 'YES' : 'NO');
 	
 	const messages = [];
 	const profileContext = buildProfileContext(profile, customRules);
 
 	console.log('  🎭 Profile context:', profileContext);
 
-	// Добавляем историю переписки если есть
-	if (conversationHistory && conversationHistory.length > 0) {
+	// Добавляем system message отдельно (лучше для AI)
+	messages.push({
+		role: 'system',
+		content: SYSTEM_PROMPT,
+	});
+
+	// 📜 НОВОЕ: Если есть отформатированная история - используем её
+	if (formattedHistory) {
+		console.log('  📜 Using NEW formatted history from chatMessagesExtractorService');
+		
+		// Добавляем историю как контекст
+		messages.push({
+			role: 'user',
+			content: formattedHistory,
+		});
+		console.log('  💬 Added formatted history as context');
+	} else if (conversationHistory && conversationHistory.length > 0) {
+		// Fallback - старый метод
+		console.log('  📜 Using OLD conversation history format (fallback)');
 		conversationHistory.forEach(msg => {
 			messages.push({
 				role: msg.from === 'man' ? 'user' : 'assistant',
@@ -51,25 +82,26 @@ export const buildMessages = ({ conversationHistory, manMessage, messageType, pr
 		console.log('  💬 Added', conversationHistory.length, 'history messages');
 	}
 
-	// Добавляем system message отдельно (лучше для AI)
-	messages.unshift({
-		role: 'system',
-		content: SYSTEM_PROMPT,
-	});
-
-	// ⭐ Определяем контекст для эмодзи
+	// ⭐ Определяем контекст для типа сообщения
 	let messageContext = '';
-	if (manMessage.includes('[Emoji]')) {
+	
+	// НОВОЕ: Если есть typeInstructions - используем их
+	if (typeInstructions) {
+		messageContext = typeInstructions + '\n';
+		console.log('  🎯 Using type instructions from chatMessagesExtractorService');
+	} else if (manMessage.includes('[Emoji]')) {
+		// Fallback - старый метод для эмодзи
 		messageContext = '[The man sent you an emoji/sticker - respond warmly with emotion and ask a question]\n';
-		console.log('  😊 Detected emoji message - added emoji context');
+		console.log('  😊 Detected emoji message - added emoji context (fallback)');
 	}
 
 	// Добавляем текущее сообщение от мужчины
+	const userName = profileName || profile?.username || 'yourself';
 	const userMessage = `${profileContext}
 
 ${messageContext}Man's message: "${manMessage}"
 
-Generate a natural, friendly response as ${profile.username}. Write a complete message (1-3 sentences).`;
+Generate a natural, friendly response as ${userName}. Write a complete message (1-3 sentences).`;
 
 	messages.push({
 		role: 'user',

@@ -16,6 +16,7 @@ import answeredChatService from './answeredChatService.js';
 import pageHelpers from './browser/pageHelpers.js';
 import chatNavigationService from './luxeeApi/chatNavigationService.js';
 import keepAliveService from './luxeeApi/keepAliveService.js';
+import chatMessagesExtractorService from './luxeeApi/chatMessagesExtractorService.js';
 
 // Хранилище активных процессов автоответов
 const activeAutoResponders = new Map(); // accountId -> { intervalId, isProcessing }
@@ -80,18 +81,81 @@ const aiAutoResponseService = {
 						return;
 					}
 
-					console.log(`[Pending] ✅ All checks passed, generating and sending response...`);
+					console.log(`[Pending] ✅ All checks passed, extracting chat history...`);
 
-					// Генерируем и отправляем
+					// 📜 НОВОЕ: Извлекаем историю сообщений из активного чата
+					const aiContext = await aiBrowserContextService.getAiContext(accountId);
+					const historyPage = await pageHelpers.getOrCreatePage(aiContext);
+					
+					// Получаем историю
+					const history = await chatMessagesExtractorService.getChatHistory(historyPage, 10);
+					
+					if (history.error) {
+						console.log(`[Pending] ⚠️  Could not get chat history: ${history.error}`);
+						console.log(`[Pending] Falling back to old method...`);
+						
+						// Fallback - используем старый метод
+						const result = await aiResponseService.generateAndSend({
+							userId,
+							accountId,
+							profileUid,
+							chatId,
+							profile,
+							manMessage: chat.lastManMessage.body,
+							messageType: 1,
+							conversationHistory: [],
+						});
+						
+						if (result.success) {
+							console.log(`[Pending] ✅ Successfully sent AI response to ${chat.memberUsername}`);
+						} else {
+							console.log(`[Pending] ✗ Failed to send: ${result.reason || 'Unknown error'}`);
+						}
+						pendingResponses.delete(chatId);
+						return;
+					}
+					
+					// 🔍 Проверяем последнее сообщение - нужно ли отвечать?
+					const shouldReply = chatMessagesExtractorService.shouldReplyToChat(history.lastMessage);
+					
+					if (!shouldReply.shouldReply) {
+						console.log(`[Pending] ⏭️  Skipping: ${shouldReply.reason}`);
+						pendingResponses.delete(chatId);
+						return;
+					}
+					
+					console.log(`[Pending] ✅ Should reply: ${shouldReply.reason}`);
+					console.log(`[Pending] 📊 History: ${history.messages.length} messages, last from: ${history.lastMessage.author}`);
+					
+					// Форматируем историю для AI
+					const formattedHistory = chatMessagesExtractorService.formatHistoryForAI(
+						history.messages,
+						profile.username,
+						history.manName
+					);
+					
+					// Получаем инструкции для типа сообщения
+					const typeInstructions = chatMessagesExtractorService.getAIInstructionsForMessageType(
+						history.lastMessage.messageType
+					);
+					
+					console.log(`[Pending] 📝 Message type: ${history.lastMessage.messageType}`);
+					console.log(`[Pending] 💬 Generating AI response...`);
+
+					// Генерируем и отправляем с историей
 					const result = await aiResponseService.generateAndSend({
 						userId,
 						accountId,
 						profileUid,
 						chatId,
 						profile,
-						manMessage: chat.lastManMessage.body,
+						manMessage: history.lastMessage.text,
 						messageType: 1,
-						conversationHistory: [],
+						conversationHistory: history.messages,
+						formattedHistory,
+						typeInstructions,
+						profileName: profile.username,
+						manName: history.manName,
 					});
 
 					if (result.success) {
@@ -573,7 +637,61 @@ const aiAutoResponseService = {
 					console.log('═'.repeat(80));
 					console.log('');
 
-					// Генерируем и отправляем ответ
+					// 📜 НОВОЕ: Извлекаем историю сообщений (для deprecated функции тоже)
+					const history = await chatMessagesExtractorService.getChatHistory(page, 10);
+					
+					if (history.error) {
+						console.log(`[AI Auto] ⚠️  Could not get chat history: ${history.error}, using fallback...`);
+						
+						// Fallback - используем старый метод
+						const result = await aiResponseService.generateAndSend({
+							userId,
+							accountId,
+							profileUid: profile.uid,
+							chatId: chat.chatId,
+							profile: {
+								username: profile.username,
+								age: profile.age,
+								country: profile.country,
+								city: profile.city,
+							},
+							manMessage: chat.lastManMessage.body,
+							messageType: 1,
+							conversationHistory: [],
+						});
+
+						if (result.success) {
+							console.log(`[AI Auto] ✓ Sent to ${chat.memberUsername}`);
+						} else {
+							console.log(`[AI Auto] ✗ Failed to send: ${result.reason}`);
+						}
+						
+						await new Promise((resolve) => setTimeout(resolve, 3000));
+						continue;
+					}
+					
+					// Проверяем последнее сообщение
+					const shouldReply = chatMessagesExtractorService.shouldReplyToChat(history.lastMessage);
+					
+					if (!shouldReply.shouldReply) {
+						console.log(`[AI Auto] ⏭️  Skipping: ${shouldReply.reason}`);
+						continue;
+					}
+					
+					// Форматируем историю для AI
+					const formattedHistory = chatMessagesExtractorService.formatHistoryForAI(
+						history.messages,
+						profile.username,
+						history.manName
+					);
+					
+					const typeInstructions = chatMessagesExtractorService.getAIInstructionsForMessageType(
+						history.lastMessage.messageType
+					);
+					
+					console.log(`[AI Auto] 📝 Message type: ${history.lastMessage.messageType}`);
+
+					// Генерируем и отправляем ответ с историей
 					const result = await aiResponseService.generateAndSend({
 						userId,
 						accountId,
@@ -585,9 +703,13 @@ const aiAutoResponseService = {
 							country: profile.country,
 							city: profile.city,
 						},
-						manMessage: chat.lastManMessage.body,
+						manMessage: history.lastMessage.text,
 						messageType: 1,
-						conversationHistory: [],
+						conversationHistory: history.messages,
+						formattedHistory,
+						typeInstructions,
+						profileName: profile.username,
+						manName: history.manName,
 					});
 
 					if (result.success) {

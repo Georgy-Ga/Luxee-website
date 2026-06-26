@@ -9,32 +9,44 @@ const MAX_RETRIES = 3;
 
 /**
  * Генерировать ответ AI на сообщение мужчины
+ * 📜 НОВОЕ: Поддержка formattedHistory и typeInstructions
  */
 export const generateResponse = async ({
 	manMessage,
 	messageType,
 	profile,
 	conversationHistory = [],
+	formattedHistory = '',
+	typeInstructions = '',
+	profileName = '',
+	manName = '',
 }) => {
 	try {
 		console.log('');
 		console.log('🎨 [AI DEBUG] ===== GENERATING AI RESPONSE =====');
-		console.log('  👤 Profile:', profile.username);
-		console.log('  📨 Man message:', manMessage);
+		console.log('  👤 Profile:', profile.username || profileName);
+		console.log('  👨 Man:', manName || 'N/A');
+		console.log('   Man message:', manMessage);
 		console.log('  📊 Message type:', messageType);
 		console.log('  📜 History length:', conversationHistory.length);
+		console.log('  🆕 Has formatted history:', formattedHistory ? 'YES' : 'NO');
+		console.log('  🆕 Has type instructions:', typeInstructions ? 'YES' : 'NO');
 
 		// Получаем активные кастомные правила
 		const customRules = await aiRuleService.getActiveRules();
 		console.log('  📋 Custom rules loaded:', customRules?.length || 0);
 
-		// Строим сообщения для AI
+		// Строим сообщения для AI с новыми параметрами
 		const messages = buildMessages({
 			conversationHistory,
 			manMessage,
 			messageType,
 			profile,
 			customRules,
+			formattedHistory,
+			typeInstructions,
+			profileName,
+			manName,
 		});
 
 		// Пытаемся получить ответ (с повторами если AI призналась что она бот)

@@ -22,6 +22,10 @@ const aiResponseService = {
 	 * @param {string} params.manMessage - Сообщение от мужчины
 	 * @param {number} params.messageType - Тип сообщения (1 = текст, другие = эмодзи/медиа)
 	 * @param {Array} params.conversationHistory - История переписки (опционально)
+	 * @param {string} params.formattedHistory - Отформатированная история для промпта (опционально)
+	 * @param {string} params.typeInstructions - Инструкции для типа сообщения (опционально)
+	 * @param {string} params.profileName - Имя профиля девушки (опционально)
+	 * @param {string} params.manName - Имя мужчины (опционально)
 	 * @returns {Promise<string>} - Ответ AI
 	 */
 	generateResponse: async ({
@@ -31,6 +35,10 @@ const aiResponseService = {
 		manMessage,
 		messageType = 1,
 		conversationHistory = [],
+		formattedHistory = '',
+		typeInstructions = '',
+		profileName = '',
+		manName = '',
 	}) => {
 		try {
 			console.log('[AI Response Service] Generating response...');
@@ -55,12 +63,16 @@ const aiResponseService = {
 				'[AI Response Service] AI checks passed, generating response...',
 			);
 
-			// 3. Генерируем ответ через aiService
+			// 3. Генерируем ответ через aiService с историей
 			const response = await aiService.generateResponse({
 				profile,
 				manMessage,
 				messageType,
 				conversationHistory,
+				formattedHistory,
+				typeInstructions,
+				profileName,
+				manName,
 			});
 
 			console.log('[AI Response Service] Response generated successfully');
@@ -277,11 +289,15 @@ const aiResponseService = {
 		manMessage,
 		messageType = 1,
 		conversationHistory = [],
+		formattedHistory = '',
+		typeInstructions = '',
+		profileName = '',
+		manName = '',
 	}) => {
 		try {
 			console.log('[AI Response Service] Starting generate and send cycle...');
 
-			// 1. Генерируем ответ
+			// 1. Генерируем ответ с новыми параметрами
 			const aiResponse = await aiResponseService.generateResponse({
 				userId,
 				accountId,
@@ -289,6 +305,10 @@ const aiResponseService = {
 				manMessage,
 				messageType,
 				conversationHistory,
+				formattedHistory,
+				typeInstructions,
+				profileName,
+				manName,
 			});
 
 			console.log('[AI Response Service] AI response:', aiResponse);
