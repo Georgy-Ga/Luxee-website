@@ -5,6 +5,7 @@ import LuxeeAccountModel from '../models/LuxeeAccountModel.js';
 import tokenService from './tokenService.js';
 import aiBrowserContextService from './browser/aiBrowserContextService.js';
 import aiAutoResponseService from './aiAutoResponseService.js';
+import keepAliveService from './luxeeApi/keepAliveService.js';
 import ApiError from '../exceptions/apiError.js';
 
 const userService = {
@@ -56,11 +57,14 @@ const userService = {
 							console.log(`[User Service] AI disabled for account ${account._id}`);
 						}
 						
-						// Закрываем AI контекст если есть
-						if (account.aiContext) {
-							await aiBrowserContextService.closeAiContext(account._id.toString());
-							console.log(`[User Service] AI context closed for account ${account._id}`);
-						}
+					// Закрываем AI контекст если есть
+					if (account.aiContext) {
+						// 🛡️ Останавливаем keep-alive для AI контекста
+						keepAliveService.stop(`${account._id}_ai`);
+						
+						await aiBrowserContextService.closeAiContext(account._id.toString());
+						console.log(`[User Service] AI context closed for account ${account._id}`);
+					}
 					} catch (error) {
 						console.error(`[User Service] Error disabling AI for account ${account._id}:`, error);
 						// Продолжаем с другими аккаунтами
@@ -128,11 +132,14 @@ const userService = {
 		const luxeeAccounts = await LuxeeAccountModel.find({ user: userId });
 		console.log(`[User Service] Found ${luxeeAccounts.length} Luxee accounts for user ${userId}`);
 		
-		// Закрываем AI контексты для всех аккаунтов
+		// Закрываем AI контексты и keep-alive для всех аккаунтов
 		for (const account of luxeeAccounts) {
 			try {
+				// 🛡️ Останавливаем keep-alive для AI контекста
+				keepAliveService.stop(`${account._id}_ai`);
+				
 				await aiBrowserContextService.closeAiContext(account._id.toString());
-				console.log(`[User Service] ✓ AI context closed for account ${account._id}`);
+				console.log(`[User Service] ✓ AI context and keep-alive closed for account ${account._id}`);
 			} catch (error) {
 				console.error(`[User Service] Failed to close AI context for account ${account._id}:`, error);
 			}

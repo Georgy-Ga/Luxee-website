@@ -15,6 +15,7 @@ import LuxeeAccountModel from '../models/LuxeeAccountModel.js';
 import answeredChatService from './answeredChatService.js';
 import pageHelpers from './browser/pageHelpers.js';
 import chatNavigationService from './luxeeApi/chatNavigationService.js';
+import keepAliveService from './luxeeApi/keepAliveService.js';
 
 // Хранилище активных процессов автоответов
 const activeAutoResponders = new Map(); // accountId -> { intervalId, isProcessing }
@@ -195,6 +196,14 @@ const aiAutoResponseService = {
 			await aiBrowserContextService.getOrCreateAiContext(accountId);
 			console.log(`[AI Auto Response] AI context ready for account ${accountId}`);
 
+			// 🛡️ Запускаем keep-alive для AI контекста (защита от AFK popup)
+			const aiContext = await aiBrowserContextService.getAiContext(accountId);
+			await keepAliveService.start({
+				accountId: `${accountId}_ai`,
+				context: aiContext
+			});
+			console.log(`[AI Auto Response] Keep-alive started for AI context ${accountId}`);
+
 			// Функция обработки сообщений
 			const processMessages = async () => {
 				const state = activeAutoResponders.get(accountId);
@@ -266,6 +275,10 @@ const aiAutoResponseService = {
 
 			// Удаляем из Map
 			activeAutoResponders.delete(accountId);
+
+			// 🛡️ Останавливаем keep-alive для AI контекста
+			keepAliveService.stop(`${accountId}_ai`);
+			console.log(`[AI Auto Response] Keep-alive stopped for AI context ${accountId}`);
 
 			// Закрываем AI контекст
 			await aiBrowserContextService.closeAiContext(accountId);
