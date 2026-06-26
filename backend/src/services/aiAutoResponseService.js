@@ -237,8 +237,8 @@ const aiAutoResponseService = {
 			// Первая обработка сразу
 			processMessages();
 
-			// Запускаем интервал каждые 10 секунд
-			const intervalId = setInterval(processMessages, 10000);
+			// Запускаем интервал каждые 5 секунд (быстрее обнаружение новых сообщений)
+			const intervalId = setInterval(processMessages, 5000);
 
 			// Сохраняем в Map
 			activeAutoResponders.set(accountId, {
@@ -246,7 +246,7 @@ const aiAutoResponseService = {
 				isProcessing: false,
 			});
 
-			console.log(`[AI Auto Response] Started for account ${accountId} (every 10 seconds)`);
+			console.log(`[AI Auto Response] Started for account ${accountId} (every 5 seconds)`);
 		} catch (error) {
 			console.error(`[AI Auto Response] Error starting for account ${accountId}:`, error);
 			throw error;
@@ -417,8 +417,8 @@ const aiAutoResponseService = {
 							console.log('═'.repeat(80));
 							console.log('');
 
-							// 🕐 НОВАЯ ЛОГИКА: Планируем ответ с задержкой 23-30 секунд
-							const randomDelay = Math.floor(Math.random() * (30000 - 23000 + 1)) + 23000;
+							// 🕐 НОВАЯ ЛОГИКА: Планируем ответ с задержкой 2-5 секунд
+							const randomDelay = Math.floor(Math.random() * (5000 - 2000 + 1)) + 2000;
 							
 							const scheduled = await aiAutoResponseService._schedulePendingResponse(
 								{
