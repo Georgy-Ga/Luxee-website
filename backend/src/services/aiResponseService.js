@@ -149,109 +149,191 @@ const aiResponseService = {
 					message: 'DEBUG MODE: Send skipped',
 				};
 			} else {
-				// ========== PRODUCTION MODE: РЕАЛЬНАЯ ОТПРАВКА ==========
-				// 3. Отправляем сообщение через AI контекст
-				result = await page.evaluate(
-					async ({ pUid, cId, msg }) => {
-						try {
-							if (typeof modelsChat === 'undefined') {
-								throw new Error('modelsChat API not available');
-							}
+				// ========== PRODUCTION MODE: РЕАЛЬНАЯ ОТПРАВКА С ПРОВЕРКОЙ ДОСТАВКИ ==========
+				console.log('[AI Response Service] 📤 Starting message send with delivery verification...');
+				
+				// 3. Отправляем сообщение через AI контекст с retry механизмом
+				const MAX_SEND_ATTEMPTS = 3;
+				let sendAttempt = 0;
+				let messageSent = false;
+				
+				while (sendAttempt < MAX_SEND_ATTEMPTS && !messageSent) {
+					sendAttempt++;
+					console.log(`[AI Response Service] 🔄 Send attempt ${sendAttempt}/${MAX_SEND_ATTEMPTS}...`);
+					
+					result = await page.evaluate(
+						async ({ pUid, cId, msg, attempt }) => {
+							try {
+								if (typeof modelsChat === 'undefined') {
+									throw new Error('modelsChat API not available');
+								}
 
-							// Переключаемся на профиль
-							modelsChat.selectProfile(pUid);
-							await new Promise(resolve => setTimeout(resolve, 500));
+								// 📍 ЛОГ: В каком чате мы находимся СЕЙЧАС
+								const currentChat = modelsChat.getChats?.active?.identity || 'unknown';
+								console.log(`[AI Response] 📍 Current chat BEFORE navigation: ${currentChat}`);
 
-							// Открываем чат
-							modelsChat.selectChat(cId);
-							await new Promise(resolve => setTimeout(resolve, 800));
+								// Переключаемся на профиль
+								console.log(`[AI Response] 👤 Switching to profile ${pUid}...`);
+								modelsChat.selectProfile(pUid);
+								await new Promise(resolve => setTimeout(resolve, 500));
 
-							// Находим editor
-							const editor = document.querySelector('.emojionearea-editor');
-							if (!editor) {
-								throw new Error('Message input editor not found');
-							}
+								// Открываем чат
+								console.log(`[AI Response] 💬 Opening chat ${cId}...`);
+								modelsChat.selectChat(cId);
+								await new Promise(resolve => setTimeout(resolve, 800));
 
-							// Очищаем editor
-							editor.textContent = '';
-							editor.innerHTML = '';
-							await new Promise(resolve => setTimeout(resolve, 300));
+								// 📍 ЛОГ: В каком чате мы находимся ПОСЛЕ навигации
+								const targetChat = modelsChat.getChats?.active?.identity || 'unknown';
+								console.log(`[AI Response] 📍 Current chat AFTER navigation: ${targetChat}`);
+								
+								// Проверяем что мы в правильном чате
+								if (targetChat !== cId) {
+									console.error(`[AI Response] ❌ Chat mismatch! Expected: ${cId}, Got: ${targetChat}`);
+									throw new Error(`Failed to navigate to chat ${cId}`);
+								}
+								
+								console.log(`[AI Response] ✅ Successfully navigated to chat ${cId}`);
 
-							// 🔍 КРИТИЧЕСКАЯ ПРОВЕРКА: msg должен быть строкой
-							console.log('[AI Response] 🔍 Validating AI message...');
-							console.log('[AI Response] 🔍 AI Message type:', typeof msg);
-							console.log('[AI Response] 🔍 AI Message value:', msg);
-							console.log('[AI Response] 🔍 AI Message length:', msg?.length);
+								// Находим editor
+								const editor = document.querySelector('.emojionearea-editor');
+								if (!editor) {
+									throw new Error('Message input editor not found');
+								}
 
-							if (typeof msg !== 'string') {
-								console.error('❌ [CRITICAL] AI Message is not a string!');
-								console.error('❌ Type:', typeof msg);
-								console.error('❌ Value:', msg);
-								throw new Error(`AI Message must be string, got ${typeof msg}`);
-							}
+								// Очищаем editor
+								editor.textContent = '';
+								editor.innerHTML = '';
+								await new Promise(resolve => setTimeout(resolve, 300));
 
-							if (!msg || msg.trim() === '') {
-								console.error('❌ [CRITICAL] AI Message is empty!');
-								throw new Error('AI Message is empty');
-							}
+								// 🔍 КРИТИЧЕСКАЯ ПРОВЕРКА: msg должен быть строкой
+								console.log('[AI Response] 🔍 Validating AI message...');
+								console.log('[AI Response] 🔍 AI Message type:', typeof msg);
+								console.log('[AI Response] 🔍 AI Message value:', msg);
+								console.log('[AI Response] 🔍 AI Message length:', msg?.length);
 
-							if (msg === '[object Object]' || msg.includes('[object')) {
-								console.error('❌ [CRITICAL] AI Message is serialized object!');
-								throw new Error('AI Message contains serialized object');
-							}
+								if (typeof msg !== 'string') {
+									console.error('❌ [CRITICAL] AI Message is not a string!');
+									console.error('❌ Type:', typeof msg);
+									console.error('❌ Value:', msg);
+									throw new Error(`AI Message must be string, got ${typeof msg}`);
+								}
 
-							console.log('[AI Response] ✅ AI Message validation passed');
+								if (!msg || msg.trim() === '') {
+									console.error('❌ [CRITICAL] AI Message is empty!');
+									throw new Error('AI Message is empty');
+								}
 
-							// Устанавливаем текст
-							editor.textContent = msg;
-							editor.innerHTML = msg;
-							editor.focus();
+								if (msg === '[object Object]' || msg.includes('[object')) {
+									console.error('❌ [CRITICAL] AI Message is serialized object!');
+									throw new Error('AI Message contains serialized object');
+								}
 
-							// Триггерим события
-							const events = ['input', 'change', 'keyup', 'keydown', 'focus'];
-							events.forEach(eventType => {
-								const event = new Event(eventType, {
-									bubbles: true,
-									cancelable: true,
+								console.log('[AI Response] ✅ AI Message validation passed');
+
+								// Устанавливаем текст
+								editor.textContent = msg;
+								editor.innerHTML = msg;
+								editor.focus();
+
+								// Триггерим события
+								const events = ['input', 'change', 'keyup', 'keydown', 'focus'];
+								events.forEach(eventType => {
+									const event = new Event(eventType, {
+										bubbles: true,
+										cancelable: true,
+									});
+									editor.dispatchEvent(event);
 								});
-								editor.dispatchEvent(event);
-							});
 
-							// Ждём перед отправкой
-							await new Promise(resolve => setTimeout(resolve, 700));
+								// Ждём перед отправкой
+								await new Promise(resolve => setTimeout(resolve, 700));
 
-							// Отправляем
-							modelsChat.sendMessage();
+								// 📍 ЛОГ: Статус ПЕРЕД отправкой
+								const unAnsweredBefore = modelsChat.getChats?.active?.unAnswered;
+								console.log(`[AI Response] 📊 unAnswered BEFORE send: ${unAnsweredBefore}`);
 
-							// Ждём отправки И остаёмся в чате 2 секунды
-							console.log(
-								'[AI Response] ⏳ Waiting 2 seconds for AI message delivery...',
-							);
-							await new Promise(resolve => setTimeout(resolve, 2000));
+								// Отправляем
+								console.log(`[AI Response] 📤 Calling modelsChat.sendMessage()... (attempt ${attempt})`);
+								modelsChat.sendMessage();
 
-							console.log(
-								'[AI Response] ✅ 2 seconds passed, AI message should be delivered',
-							);
+								// ⏱️ Ждём 300ms для WebSocket обновления
+								console.log('[AI Response] ⏳ Waiting 300ms for WebSocket update...');
+								await new Promise(resolve => setTimeout(resolve, 300));
 
-							return {
-								success: true,
-								message: 'AI message sent successfully',
-							};
-						} catch (error) {
-							return {
-								success: false,
-								error: error.message,
-							};
-						}
-					},
-					{ pUid: profileUid, cId: chatId, msg: message },
-				);
+								// 🔍 ПРОВЕРКА ДОСТАВКИ #1: unAnswered должен стать false
+								const unAnsweredAfter = modelsChat.getChats?.active?.unAnswered;
+								console.log(`[AI Response] 📊 unAnswered AFTER send: ${unAnsweredAfter}`);
 
-				if (!result.success) {
-					throw new Error(result.error || 'Failed to send AI message');
+								if (unAnsweredAfter === false) {
+									console.log('[AI Response] ✅ Message delivered successfully (unAnswered=false)');
+									return {
+										success: true,
+										delivered: true,
+										message: 'Message sent and delivered',
+										chatId: cId,
+									};
+								}
+
+								// Если ещё true - даём второй шанс (3 секунды)
+								console.log('[AI Response] ⚠️  unAnswered still true, waiting 3 seconds...');
+								await new Promise(resolve => setTimeout(resolve, 3000));
+
+								// 🔍 ПРОВЕРКА ДОСТАВКИ #2: Финальная проверка
+								const unAnsweredFinal = modelsChat.getChats?.active?.unAnswered;
+								console.log(`[AI Response] 📊 unAnswered FINAL check: ${unAnsweredFinal}`);
+
+								if (unAnsweredFinal === false) {
+									console.log('[AI Response] ✅ Message delivered after delay (unAnswered=false)');
+									return {
+										success: true,
+										delivered: true,
+										message: 'Message sent and delivered after delay',
+										chatId: cId,
+									};
+								}
+
+								// Сообщение НЕ доставлено
+								console.error('[AI Response] ❌ Message NOT delivered (unAnswered still true)');
+								return {
+									success: false,
+									delivered: false,
+									error: 'Message not delivered - unAnswered still true',
+									chatId: cId,
+								};
+							} catch (error) {
+								console.error('[AI Response] ❌ Error during send:', error.message);
+								return {
+									success: false,
+									delivered: false,
+									error: error.message,
+								};
+							}
+						},
+						{ pUid: profileUid, cId: chatId, msg: message, attempt: sendAttempt },
+					);
+
+					// Проверяем результат
+					if (result.success && result.delivered) {
+						console.log(`[AI Response Service] ✅ Message delivered on attempt ${sendAttempt}`);
+						messageSent = true;
+						break;
+					}
+
+					// Если не доставлено и есть ещё попытки
+					if (sendAttempt < MAX_SEND_ATTEMPTS) {
+						console.log(`[AI Response Service] ⚠️  Delivery failed, retrying in 2 seconds...`);
+						console.log(`[AI Response Service] 📝 Reason: ${result.error || 'Unknown'}`);
+						await new Promise(resolve => setTimeout(resolve, 2000));
+					}
 				}
 
-				console.log('[AI Response Service] ✅ AI message sent successfully');
+				// Проверяем финальный результат
+				if (!messageSent) {
+					console.error(`[AI Response Service] ❌ Failed to deliver message after ${MAX_SEND_ATTEMPTS} attempts`);
+					throw new Error(`Message not delivered after ${MAX_SEND_ATTEMPTS} attempts: ${result.error || 'Unknown reason'}`);
+				}
+
+				console.log('[AI Response Service] ✅ AI message sent and delivered successfully');
 			}
 
 			return {
