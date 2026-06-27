@@ -35,8 +35,8 @@ const getChatHistory = async (page, limit = 10) => {
 					}
 
 					// Определяем участников
-					const profileMember = chat.members.find((m) => m.type === 2); // Девушка
-					const manMember = chat.members.find((m) => m.type === 10); // Мужчина
+					const profileMember = chat.members.find(m => m.type === 2); // Девушка
+					const manMember = chat.members.find(m => m.type === 10); // Мужчина
 
 					if (!profileMember || !manMember) {
 						return {
@@ -74,8 +74,7 @@ const getChatHistory = async (page, limit = 10) => {
 							textEl && textEl.querySelector('.chat-member__wink');
 						const hasVideo = textEl && textEl.querySelector('video');
 						const hasImage = msgEl.querySelector('.message_media img');
-						const hasEmojione =
-							textEl && textEl.querySelector('img.emojione');
+						const hasEmojione = textEl && textEl.querySelector('img.emojione');
 
 						let text = textEl ? textEl.textContent.trim() : '';
 						let messageType = 'text';
@@ -180,7 +179,7 @@ const formatHistoryForAI = (messages, profileName, manName) => {
 
 	let formatted = '=== CONVERSATION HISTORY (recent messages) ===\n\n';
 
-	messages.forEach((msg) => {
+	messages.forEach(msg => {
 		const authorName = msg.isFromProfile ? profileName : manName;
 		const typeLabel =
 			msg.messageType !== 'text' && msg.messageType !== 'text_with_emoji'
@@ -200,7 +199,7 @@ const formatHistoryForAI = (messages, profileName, manName) => {
  * @param {Object} lastMessage - Последнее сообщение в чате
  * @returns {Object} - { shouldReply: boolean, reason: string }
  */
-const shouldReplyToChat = (lastMessage) => {
+const shouldReplyToChat = lastMessage => {
 	if (!lastMessage) {
 		return {
 			shouldReply: false,
@@ -236,7 +235,7 @@ const shouldReplyToChat = (lastMessage) => {
  * @param {string} messageType - Тип сообщения (text, wink, video, image, emoji)
  * @returns {string} - Дополнительные инструкции для AI
  */
-const getAIInstructionsForMessageType = (messageType) => {
+const getAIInstructionsForMessageType = messageType => {
 	switch (messageType) {
 		case 'wink':
 			return `

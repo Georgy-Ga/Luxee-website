@@ -1,9 +1,12 @@
 // Модуль для генерации ответов AI
 
 import aiRuleService from '../aiRuleService.js';
-import { buildMessages } from './promptBuilder.js';
 import { sendAIRequest } from './apiClient.js';
-import { containsForbiddenPhrases, cleanResponse } from './responseValidator.js';
+import { buildMessages } from './promptBuilder.js';
+import {
+	cleanResponse,
+	containsForbiddenPhrases,
+} from './responseValidator.js';
 
 const MAX_RETRIES = 3;
 
@@ -61,10 +64,12 @@ export const generateResponse = async ({
 
 			// Проверяем на запрещенные фразы
 			const hasForbidden = containsForbiddenPhrases(aiResponse);
-			
+
 			if (hasForbidden) {
 				console.log('');
-				console.log(`⚠️ [AI DEBUG] ===== RETRY ${retryCount + 1}/${MAX_RETRIES} - Forbidden Phrases Detected =====`);
+				console.log(
+					`⚠️ [AI DEBUG] ===== RETRY ${retryCount + 1}/${MAX_RETRIES} - Forbidden Phrases Detected =====`,
+				);
 				console.log('  🚫 Response contains forbidden phrases!');
 				console.log('  📝 Bad response:', aiResponse);
 				console.log('  🔄 Adding correction message and retrying...');
@@ -95,7 +100,11 @@ export const generateResponse = async ({
 		if (containsForbiddenPhrases(aiResponse)) {
 			console.log('');
 			console.error('❌ [AI DEBUG] ===== FATAL ERROR =====');
-			console.error('  🚨 Failed to get valid response after', MAX_RETRIES, 'retries');
+			console.error(
+				'  🚨 Failed to get valid response after',
+				MAX_RETRIES,
+				'retries',
+			);
 			console.error('  📝 Final bad response:', aiResponse);
 			console.error('═'.repeat(80));
 			console.log('');
@@ -106,7 +115,7 @@ export const generateResponse = async ({
 
 		// Очищаем ответ
 		const cleanedResponse = cleanResponse(aiResponse);
-		
+
 		console.log('  🧹 Response cleaned');
 		console.log('  📤 Final response:', cleanedResponse);
 		console.log('  📊 Stats:');

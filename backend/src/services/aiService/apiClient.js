@@ -46,19 +46,26 @@ export const sendAIRequest = async (messages, retryCount = 0) => {
 		);
 		const duration = Date.now() - startTime;
 
-		const aiResponse = response.data.choices[0].message.content.trim();
+	const aiResponse = response.data.choices[0].message.content.trim();
+	
+	// ⚠️ Проверка на пустой ответ (может быть из-за content filter DeepSeek)
+	if (!aiResponse || aiResponse.length === 0) {
+		console.log('');
+		console.error('❌ [AI DEBUG] ===== EMPTY RESPONSE FROM AI =====');
+		console.error('  🚨 DeepSeek returned empty response!');
+		console.error('  💡 Likely reason: Content filter blocked the response');
+		console.error('  🔄 Attempt:', retryCount + 1);
+		console.error('  📊 Tokens used:', response.data.usage?.total_tokens || 'N/A');
+		console.error('  📋 Response data:', JSON.stringify(response.data, null, 2));
+		console.error('═'.repeat(80));
+		console.log('');
 		
-		// ⚠️ Проверка на пустой ответ
-		if (!aiResponse || aiResponse.length === 0) {
-			console.log('');
-			console.error('❌ [AI DEBUG] ===== EMPTY RESPONSE FROM AI =====');
-			console.error('  🚨 DeepSeek returned empty response!');
-			console.error('  🔄 Attempt:', retryCount + 1);
-			console.error('  📊 Tokens used:', response.data.usage?.total_tokens || 'N/A');
-			console.error('═'.repeat(80));
-			console.log('');
-			throw new Error('Empty response from DeepSeek AI');
-		}
+		// Создаём специальную ошибку с информацией о фильтре
+		const error = new Error('Empty response from DeepSeek AI - likely content filter');
+		error.isContentFilter = true;
+		error.usage = response.data.usage;
+		throw error;
+	}
 		
 		console.log('  ✅ Response received in', duration, 'ms');
 		console.log('  📥 Raw AI response:', aiResponse);
