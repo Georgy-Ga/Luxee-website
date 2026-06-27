@@ -84,20 +84,58 @@ const aiAutoResponseService = {
 						return;
 					}
 
-					console.log(
-						`[Pending] ✅ All checks passed, extracting chat history...`,
-					);
+				console.log(
+					`[Pending] ✅ All checks passed, navigating to chat...`,
+				);
 
-					// 📜 НОВОЕ: Извлекаем историю сообщений из активного чата
-					const aiContext =
-						await aiBrowserContextService.getAiContext(accountId);
-					const historyPage = await pageHelpers.getOrCreatePage(aiContext);
+				// 📜 НОВОЕ: Извлекаем историю сообщений из активного чата
+				const aiContext =
+					await aiBrowserContextService.getAiContext(accountId);
+				const historyPage = await pageHelpers.getOrCreatePage(aiContext);
 
-					// Получаем историю
-					const history = await chatMessagesExtractorService.getChatHistory(
-						historyPage,
-						10,
-					);
+				// 🔄 КРИТИЧЕСКИЙ ФИКС: Навигация к нужному чату ПЕРЕД извлечением истории
+				console.log(`[Pending] 📍 Current chat: ${await historyPage.evaluate(() => {
+					return window.modelsChat?.getChats?.active?.identity || 'unknown';
+				})}`);
+				console.log(`[Pending] 🎯 Target chat: ${chatId}`);
+				
+				// Проверяем совпадает ли текущий чат с целевым
+				const currentChatId = await historyPage.evaluate(() => {
+					return window.modelsChat?.getChats?.active?.identity;
+				});
+				
+				if (currentChatId !== chatId) {
+					console.log(`[Pending] 🔄 Chat mismatch! Opening target chat ${chatId}...`);
+					
+					try {
+						// Извлекаем ownerUid и userUid из chatId (формат: profileUid_userUid)
+						const [ownerUid, userUid] = chatId.split('_');
+						
+						// Переключаемся на профиль через URL
+						const targetUrl = `https://luxee.io/chats/?ownerUid=${ownerUid}&profileUid=${profileUid}&userUid=${userUid}`;
+						await historyPage.goto(targetUrl, { 
+							waitUntil: 'domcontentloaded', 
+							timeout: 10000 
+						});
+						
+						// Ждём загрузки чата
+						await historyPage.waitForTimeout(1500);
+						
+						console.log(`[Pending] ✅ Navigated to chat ${chatId}`);
+					} catch (navError) {
+						console.error(`[Pending] ❌ Failed to navigate to chat:`, navError.message);
+						// Продолжаем, возможно чат уже открыт
+					}
+				} else {
+					console.log(`[Pending] ✅ Already on target chat`);
+				}
+
+				// Получаем историю ПОСЛЕ навигации
+				console.log(`[Pending] 📜 Extracting chat history...`);
+				const history = await chatMessagesExtractorService.getChatHistory(
+					historyPage,
+					10,
+				);
 
 					if (history.error) {
 						console.log(
@@ -130,16 +168,35 @@ const aiAutoResponseService = {
 						return;
 					}
 
-					// 🔍 Проверяем последнее сообщение - нужно ли отвечать?
-					const shouldReply = chatMessagesExtractorService.shouldReplyToChat(
-						history.lastMessage,
-					);
+				// 🔍 Проверяем последнее сообщение - нужно ли отвечать?
+				const shouldReply = chatMessagesExtractorService.shouldReplyToChat(
+					history.lastMessage,
+				);
 
-					if (!shouldReply.shouldReply) {
-						console.log(`[Pending] ⏭️  Skipping: ${shouldReply.reason}`);
-						pendingResponses.delete(chatId);
-						return;
+				if (!shouldReply.shouldReply) {
+					console.log(`[Pending] 🔍 Check result: SKIP ❌`);
+					console.log(`[Pending] 📝 Reason: ${shouldReply.reason}`);
+					console.log(`[Pending] 👤 Last message author: ${history.lastMessage?.author}`);
+					console.log(`[Pending] 💬 Message text: "${history.lastMessage?.text?.substring(0, 50)}..."`);
+					console.log(`[Pending] 🏷️ isFromProfile: ${history.lastMessage?.isFromProfile}, isFromMan: ${history.lastMessage?.isFromMan}`);
+					
+					// Дополнительная проверка через modelsChat.getChats.active.unAnswered
+					const unAnsweredStatus = await historyPage.evaluate(() => {
+						return window.modelsChat?.getChats?.active?.unAnswered;
+					});
+					
+					console.log(`[Pending] 📊 modelsChat.unAnswered status: ${unAnsweredStatus}`);
+					
+					if (unAnsweredStatus === false) {
+						console.log(`[Pending] ✅ Confirmed: Message was delivered (unAnswered=false)`);
+					} else if (unAnsweredStatus === true) {
+						console.log(`[Pending] ⚠️  Warning: unAnswered=true but last message from profile - possible race condition`);
 					}
+					
+					console.log(`[Pending] ⏭️  Skipping chat ${chatId}`);
+					pendingResponses.delete(chatId);
+					return;
+				}
 
 					console.log(`[Pending] ✅ Should reply: ${shouldReply.reason}`);
 					console.log(
