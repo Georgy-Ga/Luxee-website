@@ -1,7 +1,7 @@
 // Модуль для работы с AI API
 
 import axios from 'axios';
-import { AI_API_URL, AI_API_KEY, AI_MODEL } from './config.js';
+import { AI_API_KEY, AI_API_URL, AI_MODEL } from './config.js';
 
 /**
  * Отправить запрос к AI API
@@ -16,7 +16,7 @@ export const sendAIRequest = async (messages, retryCount = 0) => {
 		console.log('  📨 Messages count:', messages.length);
 		console.log('  ⚙️ Parameters:');
 		console.log('    - Temperature: 0.8 (creative)');
-		console.log('    - Max tokens: 200 (short responses)');
+		console.log('    - Max tokens: 800 (safety buffer for complex prompts)');
 		console.log('    - Top P: 0.9');
 		console.log('    - Timeout: 30000ms');
 
@@ -24,7 +24,7 @@ export const sendAIRequest = async (messages, retryCount = 0) => {
 			model: AI_MODEL,
 			messages: messages,
 			temperature: 0.8, // Более креативные ответы
-		max_tokens: 200, // Увеличено с 150 до 200 для предотвращения обрезания
+			max_tokens: 800, // Увеличено до 800 как запас, реальные ответы 50-150 токенов (1-3 предложения по SYSTEM_PROMPT)
 			top_p: 0.9,
 		};
 
@@ -46,34 +46,51 @@ export const sendAIRequest = async (messages, retryCount = 0) => {
 		);
 		const duration = Date.now() - startTime;
 
-	const aiResponse = response.data.choices[0].message.content.trim();
-	
-	// ⚠️ Проверка на пустой ответ (может быть из-за content filter DeepSeek)
-	if (!aiResponse || aiResponse.length === 0) {
-		console.log('');
-		console.error('❌ [AI DEBUG] ===== EMPTY RESPONSE FROM AI =====');
-		console.error('  🚨 DeepSeek returned empty response!');
-		console.error('  💡 Likely reason: Content filter blocked the response');
-		console.error('  🔄 Attempt:', retryCount + 1);
-		console.error('  📊 Tokens used:', response.data.usage?.total_tokens || 'N/A');
-		console.error('  📋 Response data:', JSON.stringify(response.data, null, 2));
-		console.error('═'.repeat(80));
-		console.log('');
-		
-		// Создаём специальную ошибку с информацией о фильтре
-		const error = new Error('Empty response from DeepSeek AI - likely content filter');
-		error.isContentFilter = true;
-		error.usage = response.data.usage;
-		throw error;
-	}
-		
+		const aiResponse = response.data.choices[0].message.content.trim();
+
+		// ⚠️ Проверка на пустой ответ (может быть из-за content filter DeepSeek)
+		if (!aiResponse || aiResponse.length === 0) {
+			console.log('');
+			console.error('❌ [AI DEBUG] ===== EMPTY RESPONSE FROM AI =====');
+			console.error('  🚨 DeepSeek returned empty response!');
+			console.error('  💡 Likely reason: Content filter blocked the response');
+			console.error('  🔄 Attempt:', retryCount + 1);
+			console.error(
+				'  📊 Tokens used:',
+				response.data.usage?.total_tokens || 'N/A',
+			);
+			console.error(
+				'  📋 Response data:',
+				JSON.stringify(response.data, null, 2),
+			);
+			console.error('═'.repeat(80));
+			console.log('');
+
+			// Создаём специальную ошибку с информацией о фильтре
+			const error = new Error(
+				'Empty response from DeepSeek AI - likely content filter',
+			);
+			error.isContentFilter = true;
+			error.usage = response.data.usage;
+			throw error;
+		}
+
 		console.log('  ✅ Response received in', duration, 'ms');
 		console.log('  📥 Raw AI response:', aiResponse);
 		console.log('  📊 Response length:', aiResponse.length, 'characters');
 		console.log('  🔍 Response stats:');
-		console.log('    - Tokens used (prompt):', response.data.usage?.prompt_tokens || 'N/A');
-		console.log('    - Tokens used (completion):', response.data.usage?.completion_tokens || 'N/A');
-		console.log('    - Tokens used (total):', response.data.usage?.total_tokens || 'N/A');
+		console.log(
+			'    - Tokens used (prompt):',
+			response.data.usage?.prompt_tokens || 'N/A',
+		);
+		console.log(
+			'    - Tokens used (completion):',
+			response.data.usage?.completion_tokens || 'N/A',
+		);
+		console.log(
+			'    - Tokens used (total):',
+			response.data.usage?.total_tokens || 'N/A',
+		);
 		console.log('═'.repeat(80));
 		console.log('');
 
@@ -82,20 +99,23 @@ export const sendAIRequest = async (messages, retryCount = 0) => {
 		console.log('');
 		console.error('❌ [AI DEBUG] ===== ERROR CALLING DEEPSEEK API =====');
 		console.error('  🚨 Error message:', error.message);
-		
+
 		// Логируем детали ошибки от API
 		if (error.response) {
 			console.error('  📛 HTTP Status:', error.response.status);
-			console.error('  📄 Error data:', JSON.stringify(error.response.data, null, 2));
+			console.error(
+				'  📄 Error data:',
+				JSON.stringify(error.response.data, null, 2),
+			);
 		}
-		
+
 		if (error.code) {
 			console.error('  🔧 Error code:', error.code);
 		}
-		
+
 		console.error('═'.repeat(80));
 		console.log('');
-		
+
 		throw error;
 	}
 };
