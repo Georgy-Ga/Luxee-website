@@ -1,18 +1,23 @@
 // Модуль для тестирования AI
 
-import { buildMessages } from './promptBuilder.js';
 import { sendAIRequest } from './apiClient.js';
+import { buildMessages } from './promptBuilder.js';
 import { cleanResponse } from './responseValidator.js';
 
 /**
  * Тестовый метод для проверки AI
  */
-export const testAI = async ({ manMessage, profile, conversationHistory = [] }) => {
+export const testAI = async ({
+	manMessage,
+	profile,
+	conversationHistory = [],
+}) => {
 	try {
 		console.log('[AI Service] Testing AI...');
 
 		// Строим сообщения
-		const messages = buildMessages({
+		// 🆕 buildMessages теперь async (для получения кастомного промпта из БД)
+		const messages = await buildMessages({
 			conversationHistory,
 			manMessage,
 			profile,

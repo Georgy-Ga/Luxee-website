@@ -1,6 +1,7 @@
 // Модуль для построения промптов и контекста
 
 import { SYSTEM_PROMPT } from './config.js';
+import { getProfilePrompt } from '../profilePromptService.js';
 
 /**
  * Построить контекст профиля для AI
@@ -34,8 +35,9 @@ export const buildProfileContext = (profile, customRules) => {
 /**
  * Построить массив сообщений для AI API
  * 📜 НОВОЕ: Поддержка formattedHistory и typeInstructions из chatMessagesExtractorService
+ * 🎭 НОВОЕ: Поддержка кастомных промптов для профилей
  */
-export const buildMessages = ({ 
+export const buildMessages = async ({ 
 	conversationHistory, 
 	manMessage, 
 	messageType, 
@@ -49,8 +51,9 @@ export const buildMessages = ({
 	console.log('');
 	console.log('📝 [AI DEBUG] ===== BUILDING PROMPT FOR AI =====');
 	console.log('  👤 Profile:', profile?.username || profileName || 'N/A');
+	console.log('  🆔 Profile UID:', profile?.uid || 'N/A');
 	console.log('  👨 Man name:', manName || 'N/A');
-	console.log('  � Man message:', manMessage);
+	console.log('  💬 Man message:', manMessage);
 	console.log('  📊 Message type:', messageType);
 	console.log('  📜 Conversation history length:', conversationHistory?.length || 0);
 	console.log('  📋 Custom rules count:', customRules?.length || 0);
@@ -62,10 +65,14 @@ export const buildMessages = ({
 
 	console.log('  🎭 Profile context:', profileContext);
 
-	// Добавляем system message отдельно (лучше для AI)
+	// 🆕 НОВОЕ: Получаем промпт для конкретного профиля (кастомный или дефолтный)
+	const systemPrompt = await getProfilePrompt(profile?.uid);
+	console.log('  🎯 System prompt type:', systemPrompt === SYSTEM_PROMPT ? 'DEFAULT' : 'CUSTOM');
+
+	// Добавляем system message (кастомный или дефолтный)
 	messages.push({
 		role: 'system',
-		content: SYSTEM_PROMPT,
+		content: systemPrompt,
 	});
 
 	// 📜 НОВОЕ: Если есть отформатированная история - используем её

@@ -14,6 +14,7 @@ import contextRecoveryService from './src/services/browser/contextRecoveryServic
 import socketService from './src/services/socketService.js';
 import aiAutoResponseService from './src/services/aiAutoResponseService.js';
 import LuxeeAccountModel from './src/models/LuxeeAccountModel.js';
+import { loadPromptsFromJson } from './src/services/profilePromptService.js';
 
 dotenv.config();
 
@@ -83,6 +84,20 @@ const start = async () => {
 	try {
 		await mongoose.connect(process.env.MONGO_URL);
 		console.log('[Server] ✓ MongoDB connected');
+
+		// 🆕 Автозагрузка промптов профилей из JSON
+		try {
+			console.log('[Server] Loading profile prompts from JSON...');
+			const stats = await loadPromptsFromJson();
+			if (stats.total > 0) {
+				console.log(`[Server] ✓ Profile prompts loaded: ${stats.loaded}/${stats.total} (${stats.errors} errors, ${stats.skipped} skipped)`);
+			} else {
+				console.log('[Server] ℹ️  No profile prompts JSON file found (this is OK)');
+			}
+		} catch (error) {
+			console.error('[Server] ⚠️  Error loading profile prompts:', error.message);
+			console.log('[Server] ℹ️  Server will continue with default prompts');
+		}
 
 		httpServer.listen(PORT, '0.0.0.0', () => {
 			console.log(`[Server] ✓ HTTP Server running on port ${PORT}`);

@@ -51,6 +51,8 @@ services:
       # Сохранение данных браузера Playwright
       - playwright_data:/app/.playwright
       - browser_contexts:/app/browser-contexts
+      # 🆕 Монтируем папку с промптами профилей
+      - ./backend/prompts:/app/prompts
     healthcheck:
       test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:5000/api/health || exit 1"]
       interval: 30s

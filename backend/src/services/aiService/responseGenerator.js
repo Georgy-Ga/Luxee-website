@@ -40,7 +40,8 @@ export const generateResponse = async ({
 		console.log('  📋 Custom rules loaded:', customRules?.length || 0);
 
 		// Строим сообщения для AI с новыми параметрами
-		const messages = buildMessages({
+		// 🆕 ВАЖНО: buildMessages теперь async (для получения кастомного промпта)
+		const messages = await buildMessages({
 			conversationHistory,
 			manMessage,
 			messageType,
