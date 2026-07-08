@@ -17,6 +17,7 @@ import pageHelpers from './browser/pageHelpers.js';
 import chatMessagesExtractorService from './luxeeApi/chatMessagesExtractorService.js';
 import chatNavigationService from './luxeeApi/chatNavigationService.js';
 import keepAliveService from './luxeeApi/keepAliveService.js';
+import aiAuto from './aiAuto/index.js';
 
 // Хранилище активных процессов автоответов
 const activeAutoResponders = new Map(); // accountId -> { intervalId, isProcessing }
@@ -647,9 +648,9 @@ const aiAutoResponseService = {
 						console.log('═'.repeat(80));
 						console.log('');
 
-						// 🕐 НОВАЯ ЛОГИКА: Планируем ответ с задержкой 10-15 секунд
-						const randomDelay =
-							Math.floor(Math.random() * (10000 - 5000 + 1)) + 10000;
+					// 🕐 НОВАЯ ЛОГИКА: Планируем ответ с задержкой 15-20 секунд
+					const randomDelay =
+						Math.floor(Math.random() * (20000 - 15000 + 1)) + 15000;
 
 						const scheduled =
 							await aiAutoResponseService._schedulePendingResponse(
@@ -950,7 +951,7 @@ const aiAutoResponseService = {
 	 * @param {string} accountId - ID Luxee аккаунта
 	 */
 	processAccountMessages: async accountId => {
-		// 🚨 УРОВЕНЬ 2 ЗАЩИТЫ: Блокировка обработки сообщений
+		// 🚨 ЗАЩИТА: Глобальное отключение
 		if (AI_AUTO_RESPONSE_GLOBALLY_DISABLED) {
 			console.log(
 				`🛑 [AI Auto] GLOBALLY DISABLED - skipping message processing for account ${accountId}`,
@@ -958,15 +959,8 @@ const aiAutoResponseService = {
 			return;
 		}
 
-		// 🔒 SINGLE-THREAD PROTECTION: Если есть активные pending - пропускаем цикл
-		if (pendingResponses.size > 0) {
-			console.log(
-				`[AI Auto] ⏸️  ${pendingResponses.size} response(s) pending, skipping cycle for safety`,
-			);
-			return;
-		}
-
 		try {
+			// Получить аккаунт
 			const account =
 				await LuxeeAccountModel.findById(accountId).populate('user');
 			if (!account) {
@@ -975,7 +969,7 @@ const aiAutoResponseService = {
 				return;
 			}
 
-			// 🛡️ Проверка: User может быть удалён (race condition при deleteUser)
+			// Проверка: User может быть удалён
 			if (!account.user) {
 				console.log(
 					`[AI Auto] User deleted for account ${accountId}, stopping AI...`,
@@ -987,11 +981,7 @@ const aiAutoResponseService = {
 			const userId = account.user._id.toString();
 			const accountEmail = account.luxeeEmail;
 
-			console.log(
-				`[AI Auto] ========== Starting processing for ${accountEmail} ==========`,
-			);
-
-			// Проверяем что AI всё ещё включен
+			// Проверить что AI включен
 			const canUse = await aiManagementService.canAccountUseAi(
 				userId,
 				accountId,
@@ -1004,7 +994,7 @@ const aiAutoResponseService = {
 				return;
 			}
 
-			// Получаем AI контекст
+			// Получить AI контекст
 			const aiContext = await aiBrowserContextService.getAiContext(accountId);
 			if (!aiContext) {
 				console.log(
@@ -1016,181 +1006,16 @@ const aiAutoResponseService = {
 
 			const page = await pageHelpers.getOrCreatePage(aiContext);
 
-			// ШАГ 1: Проверка URL (fix about:blank)
+			// Проверка URL (fix about:blank)
 			const currentUrl = page.url();
-			console.log(`[AI Auto] Current URL: ${currentUrl}`);
-
 			if (currentUrl === 'about:blank' || !currentUrl.includes('luxee.io')) {
 				console.log('[AI Auto] Page is about:blank, navigating to chats...');
 				await chatNavigationService.navigateToChats({ page });
 				await new Promise(resolve => setTimeout(resolve, 3000));
-				console.log('[AI Auto] ✓ Navigated to chats page');
 			}
 
-			// ШАГ 2: Получить активный профиль через modelsChat.getProfile.active
-			const activeProfileData = await page.evaluate(() => {
-				if (
-					typeof modelsChat === 'undefined' ||
-					!modelsChat.getProfile ||
-					!modelsChat.getProfile.active
-				) {
-					return null;
-				}
-
-				const active = modelsChat.getProfile.active;
-				return {
-					uid: active.inner.uid,
-					username: active.inner.username,
-					age: active.inner.age,
-					country: active.inner.country,
-					city: active.inner.city,
-					newMessages: active.newMessages || 0,
-				};
-			});
-
-			if (!activeProfileData) {
-				console.log('[AI Auto] No active profile found');
-				return;
-			}
-
-			console.log(
-				`[AI Auto] Active profile: ${activeProfileData.username} (${activeProfileData.uid})`,
-			);
-
-			// ШАГ 3: ПРИОРИТЕТ - Обработать ТЕКУЩИЙ активный профиль (1 попытка - он уже активен)
-			console.log(
-				'[AI Auto] ===== PRIORITY: Processing CURRENT active profile =====',
-			);
-			const activeResult =
-				await aiAutoResponseService._processProfileWithRetries({
-					accountId,
-					userId,
-					page,
-					profile: activeProfileData,
-					maxAttempts: 1, // ← 1 попытка для текущего профиля
-				});
-
-			// 🔒 SINGLE-THREAD: Если запланировали ответ - ОСТАНАВЛИВАЕМСЯ
-			if (activeResult && activeResult.scheduled) {
-				console.log(
-					'[AI Auto] ✅ Response scheduled on active profile, STOPPING cycle',
-				);
-				console.log(
-					`[AI Auto] ========== Finished processing ${accountEmail} ==========`,
-				);
-				return;
-			}
-
-			// ШАГ 4: Получить ДРУГИЕ профили с NEW MESSAGES (кроме текущего)
-			const otherProfilesWithNewMessages = await page.evaluate(currentUid => {
-				if (
-					typeof modelsChat === 'undefined' ||
-					!modelsChat.getProfile ||
-					!modelsChat.getProfile.data
-				) {
-					return [];
-				}
-
-				const profilesData = modelsChat.getProfile.data;
-				const profiles = [];
-
-				for (const uid in profilesData) {
-					const profile = profilesData[uid];
-					const profileUid = profile.inner.uid;
-					const newMessages = profile.newMessages || 0;
-
-					// Пропускаем текущий профиль
-					if (profileUid === currentUid) {
-						continue;
-					}
-
-					if (newMessages > 0) {
-						profiles.push({
-							uid: profileUid,
-							username: profile.inner.username,
-							age: profile.inner.age,
-							country: profile.inner.country,
-							city: profile.inner.city,
-							newMessages: newMessages,
-						});
-					}
-				}
-
-				return profiles;
-			}, activeProfileData.uid);
-
-			console.log(
-				`[AI Auto] Total OTHER profiles with new messages: ${otherProfilesWithNewMessages.length}`,
-			);
-
-			// Выводим статистику
-			otherProfilesWithNewMessages.forEach(p => {
-				console.log(
-					`[AI Auto]   - ${p.username} (${p.uid}): ${p.newMessages} new`,
-				);
-			});
-
-			// ШАГ 5: Для каждого другого профиля - переключаемся и обрабатываем с 5 попытками
-			if (otherProfilesWithNewMessages.length === 0) {
-				console.log('[AI Auto] No other profiles with new messages found');
-			} else {
-				for (let i = 0; i < otherProfilesWithNewMessages.length; i++) {
-					const profile = otherProfilesWithNewMessages[i];
-
-					console.log(
-						`[AI Auto] ===== Processing profile ${i + 1}/${otherProfilesWithNewMessages.length}: ${profile.username} =====`,
-					);
-					console.log(
-						`[AI Auto] Switching to ${profile.username} (${profile.newMessages} new)...`,
-					);
-
-					// Переключаемся на профиль
-					await page.evaluate(pUid => {
-						if (modelsChat && modelsChat.selectProfile) {
-							modelsChat.selectProfile(pUid);
-						}
-					}, profile.uid);
-
-					// Ждем загрузки чатов
-					await new Promise(resolve => setTimeout(resolve, 3000));
-					console.log(`[AI Auto] ✓ Switched, waiting for chats to load...`);
-
-					// Обрабатываем с 5 попытками
-					const profileResult =
-						await aiAutoResponseService._processProfileWithRetries({
-							accountId,
-							userId,
-							page,
-							profile,
-							maxAttempts: 5,
-						});
-
-					// 🔒 SINGLE-THREAD: Если запланировали ответ - ОСТАНАВЛИВАЕМСЯ
-					if (profileResult && profileResult.scheduled) {
-						console.log(
-							`[AI Auto] ✅ Response scheduled on ${profile.username}, STOPPING cycle`,
-						);
-						console.log(
-							`[AI Auto] ========== Finished processing ${accountEmail} ==========`,
-						);
-						return;
-					}
-
-					// Задержка перед следующим профилем (если продолжаем)
-					if (i < otherProfilesWithNewMessages.length - 1) {
-						console.log('[AI Auto] Waiting 3 sec before next profile...');
-						await new Promise(resolve => setTimeout(resolve, 3000));
-					}
-				}
-
-				console.log(
-					`[AI Auto] ✓ Processed all ${otherProfilesWithNewMessages.length} other profiles with new messages`,
-				);
-			}
-
-			console.log(
-				`[AI Auto] ========== Finished processing ${accountEmail} ==========`,
-			);
+			// 🎯 НОВАЯ ЛОГИКА: Вызов рефакторенного модуля с Mutex защитой
+			await aiAuto.processAccountMessages(accountId, userId, page);
 		} catch (error) {
 			console.error(
 				`[AI Auto] Error in processAccountMessages for ${accountId}:`,

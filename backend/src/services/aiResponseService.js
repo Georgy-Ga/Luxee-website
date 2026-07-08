@@ -152,6 +152,20 @@ const aiResponseService = {
 				// ========== PRODUCTION MODE: РЕАЛЬНАЯ ОТПРАВКА С ПРОВЕРКОЙ ДОСТАВКИ ==========
 				console.log('[AI Response Service] 📤 Starting message send with delivery verification...');
 				
+				// 🔄 КРИТИЧНО: Переключение профиля ДО page.evaluate через глобальный сервис
+				const profileSwitchService = (await import('./luxeeApi/profileSwitchService.js')).default;
+				const switchSuccess = await profileSwitchService.switchProfile(
+					page,
+					accountId,
+					profileUid,
+					'AI Response Service',
+				);
+				
+				if (!switchSuccess) {
+					console.error('[AI Response Service] ❌ Failed to switch profile');
+					throw new Error('Profile switch failed');
+				}
+				
 				// 3. Отправляем сообщение через AI контекст с retry механизмом
 				const MAX_SEND_ATTEMPTS = 3;
 				let sendAttempt = 0;
@@ -162,7 +176,7 @@ const aiResponseService = {
 					console.log(`[AI Response Service] 🔄 Send attempt ${sendAttempt}/${MAX_SEND_ATTEMPTS}...`);
 					
 					result = await page.evaluate(
-						async ({ pUid, cId, msg, attempt }) => {
+						async ({ cId, msg, attempt }) => {
 							try {
 								if (typeof modelsChat === 'undefined') {
 									throw new Error('modelsChat API not available');
@@ -172,12 +186,8 @@ const aiResponseService = {
 								const currentChat = modelsChat.getChats?.active?.identity || 'unknown';
 								console.log(`[AI Response] 📍 Current chat BEFORE navigation: ${currentChat}`);
 
-								// Переключаемся на профиль
-								console.log(`[AI Response] 👤 Switching to profile ${pUid}...`);
-								modelsChat.selectProfile(pUid);
-								await new Promise(resolve => setTimeout(resolve, 500));
-
-								// Открываем чат
+								// ✅ Профиль УЖЕ переключен через profileSwitchService!
+								// Просто открываем чат
 								console.log(`[AI Response] 💬 Opening chat ${cId}...`);
 								modelsChat.selectChat(cId);
 								await new Promise(resolve => setTimeout(resolve, 800));
@@ -309,7 +319,7 @@ const aiResponseService = {
 								};
 							}
 						},
-						{ pUid: profileUid, cId: chatId, msg: message, attempt: sendAttempt },
+						{ cId: chatId, msg: message, attempt: sendAttempt },
 					);
 
 					// Проверяем результат
