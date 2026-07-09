@@ -1,5 +1,8 @@
 {
 	"profiles": [
+		// DISABLED: Mary custom prompt - using default SYSTEM_PROMPT for all profiles
+		// Uncomment and run "node loadPrompts.js" to re-enable
+		/*
 		{
 			"profileUid": 608895,
 			"profileName": "Mary",
@@ -25,5 +28,6 @@
 				"bio": "Do you know what my name means? It means a lady from the forest. I consider myself to be a Forest Fairy, who makes everything and everyone around me happy. I have fire and charm inside me that ignite hearts. I can be crazy and can be very sensual. I like harmony in everything, even at home. No quarrels or misunderstandings honey, just love, chocolates, and serenades!"
 			}
 		}
+		*/
 	]
 }

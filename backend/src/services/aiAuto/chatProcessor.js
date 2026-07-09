@@ -1,9 +1,9 @@
 // AI Auto Response - Chat Processor
 // Обработка одного чата: навигация, извлечение истории, генерация, отправка
 
+import aiResponseService from '../aiResponseService.js';
 import chatMessagesExtractorService from '../luxeeApi/chatMessagesExtractorService.js';
 import messageSendService from '../luxeeApi/messageSendService.js';
-import aiResponseService from '../aiResponseService.js';
 import chatValidator from './chatValidator.js';
 import profileScanner from './profileScanner.js';
 import utils from './utils.js';
@@ -18,9 +18,15 @@ import utils from './utils.js';
  * @param {Object} params.chat - Данные чата
  * @returns {Promise<Object>} - { sent: boolean, reason: string }
  */
-const processSingleChat = async ({ accountId, userId, page, profile, chat }) => {
+const processSingleChat = async ({
+	accountId,
+	userId,
+	page,
+	profile,
+	chat,
+}) => {
 	const startTime = Date.now();
-	
+
 	utils.log('Chat Processor', `📝 Processing chat ${chat.chatId}...`);
 	utils.log(
 		'Chat Processor',
@@ -47,7 +53,7 @@ const processSingleChat = async ({ accountId, userId, page, profile, chat }) => 
 			return { sent: false, reason: 'navigation_timeout' };
 		}
 
-		await utils.sleep(2000);
+		await utils.sleep(3000);
 
 		// Проверка успешности навигации
 		const activeChatId = await page.evaluate(() => {
@@ -91,10 +97,7 @@ const processSingleChat = async ({ accountId, userId, page, profile, chat }) => 
 
 		// ========== ИЗВЛЕЧЬ ИСТОРИЮ (10 сообщений) ==========
 		utils.log('Chat Processor', `📜 Extracting history (10 messages)...`);
-		const history = await chatMessagesExtractorService.getChatHistory(
-			page,
-			10,
-		);
+		const history = await chatMessagesExtractorService.getChatHistory(page, 10);
 
 		if (history.error) {
 			utils.logError(
@@ -180,10 +183,7 @@ const processSingleChat = async ({ accountId, userId, page, profile, chat }) => 
 		);
 
 		if (!fullCheck.shouldReply) {
-			utils.log(
-				'Chat Processor',
-				`⏭️  ${fullCheck.reason} - skipping send`,
-			);
+			utils.log('Chat Processor', `⏭️  ${fullCheck.reason} - skipping send`);
 			return { sent: false, reason: fullCheck.reason };
 		}
 

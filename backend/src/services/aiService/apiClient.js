@@ -15,18 +15,23 @@ export const sendAIRequest = async (messages, retryCount = 0) => {
 		console.log('  🎯 Model:', AI_MODEL);
 		console.log('  📨 Messages count:', messages.length);
 		console.log('  ⚙️ Parameters:');
-		console.log('    - Temperature: 0.8 (creative)');
-		console.log('    - Max tokens: 800 (safety buffer for complex prompts)');
-		console.log('    - Top P: 0.9');
+		console.log('    - Temperature: 1.1 (high creativity & variation)');
+		console.log('    - Max tokens: 800 (safety buffer)');
+		console.log('    - Top P: 0.95 (more diverse)');
+		console.log('    - Frequency penalty: 0.7 (avoid repetition)');
+		console.log('    - Presence penalty: 0.6 (encourage new topics)');
 		console.log('    - Timeout: 30000ms');
 
 		const requestBody = {
 			model: AI_MODEL,
 			messages: messages,
-			temperature: 0.8, // Более креативные ответы
-			max_tokens: 800, // Увеличено до 800 как запас, реальные ответы 50-150 токенов (1-3 предложения по SYSTEM_PROMPT)
-			top_p: 0.9,
+			temperature: 1.1, // Увеличено с 0.8 → больше разнообразия и непредсказуемости
+			max_tokens: 800, // Запас для сложных промптов, реальные ответы 20-100 токенов
+			top_p: 0.95, // Увеличено с 0.9 → менее предсказуемые ответы
+			frequency_penalty: 0.7, // НОВОЕ! Штрафует за повторение одних и тех же токенов
+			presence_penalty: 0.6, // НОВОЕ! Поощряет использование новых тем и слов
 		};
+
 
 		console.log('  📦 Full request body:');
 		console.log(JSON.stringify(requestBody, null, 2));
