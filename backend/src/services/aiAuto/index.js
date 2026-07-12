@@ -53,6 +53,13 @@ const processAccountMessages = async (accountId, userId, page) => {
 			`👤 Active profile: ${activeProfile.username} (${activeProfile.uid})`,
 		);
 
+		console.log('[🤖 AI AUTO] ========== ACTIVE PROFILE ==========');
+		console.log('[🤖 AI AUTO] Profile:', {
+			username: activeProfile.username,
+			uid: activeProfile.uid,
+			allUids: activeProfile.allUids,
+		});
+
 		// 2️⃣ Получить чаты АКТИВНОГО профиля (ПРИОРИТЕТ!)
 		utils.log(
 			'AI Auto',
@@ -64,6 +71,15 @@ const processAccountMessages = async (accountId, userId, page) => {
 			activeProfile.allUids || [activeProfile.uid],
 		);
 
+		console.log('[🤖 AI AUTO] Active chats found:', activeChats.length);
+		if (activeChats.length > 0) {
+			console.log('[🤖 AI AUTO] All active chats:', activeChats.map(c => ({
+				chatId: c.chatId,
+				manName: c.manName,
+				lastActivity: c.lastActivity,
+			})));
+		}
+
 		if (activeChats.length > 0) {
 			utils.log(
 				'AI Auto',
@@ -73,6 +89,11 @@ const processAccountMessages = async (accountId, userId, page) => {
 			// Обрабатываем ПЕРВЫЙ чат активного профиля
 			const firstChat = activeChats[0];
 			utils.log('AI Auto', `Processing first chat: ${firstChat.manName}`);
+			console.log('[🤖 AI AUTO] 🎯 Processing FIRST chat:', {
+				chatId: firstChat.chatId,
+				manName: firstChat.manName,
+				position: '1 of ' + activeChats.length,
+			});
 
 			const result = await chatProcessor.processSingleChat({
 				accountId,
@@ -88,6 +109,7 @@ const processAccountMessages = async (accountId, userId, page) => {
 					'AI Auto',
 					`✅ Message sent on active profile (${Math.round(elapsed / 1000)}s)`,
 				);
+				console.log('[🤖 AI AUTO] ✅ SUCCESS! Message sent on active profile');
 				await utils.randomDelay(3000, 6000);
 				return { processed: true, reason: 'active_profile_processed' };
 			} else {
@@ -95,6 +117,8 @@ const processAccountMessages = async (accountId, userId, page) => {
 					'AI Auto',
 					`⚠️  Failed to send on active profile: ${result.reason}`,
 				);
+				console.log('[🤖 AI AUTO] ⚠️  Failed on active profile:', result.reason);
+				console.log('[🤖 AI AUTO] Note: Only FIRST chat was processed. Remaining chats:', activeChats.length - 1);
 			}
 		} else {
 			utils.log(

@@ -67,7 +67,16 @@ const getAllChatsForProfile = async (page, allUids) => {
 			const chatsList = window.modelsChat.getChats.list;
 			const result = [];
 
+			console.log('[🔍 SCAN] ========== SCANNING CHATS ==========');
+			console.log('[🔍 SCAN] Profile UIDs:', uids);
+			console.log('[🔍 SCAN] Total chats in system:', Object.keys(chatsList).length);
+
+			let scannedCount = 0;
+			let belongsToProfile = 0;
+			let hasUnAnswered = 0;
+
 			for (const chatId in chatsList) {
+				scannedCount++;
 				const chat = chatsList[chatId];
 
 				// Проверка что чат принадлежит этому профилю
@@ -75,14 +84,41 @@ const getAllChatsForProfile = async (page, allUids) => {
 				const [chatProfileUid, manUid] = chatId.split('_');
 				
 				// Проверяем что chatProfileUid есть в любом из UIDs профиля
-				if (!uids.includes(parseInt(chatProfileUid))) continue;
+				const belongs = uids.includes(parseInt(chatProfileUid));
+				
+				if (belongs) {
+					belongsToProfile++;
+					console.log(`[🔍 SCAN] Chat ${chatId}:`, {
+						profileUid: chatProfileUid,
+						manUid: manUid,
+						unAnswered: chat.unAnswered,
+						lastActivity: chat.lastActivity,
+						membersCount: chat.members?.length,
+					});
+				}
+				
+				if (!belongs) continue;
 
 				// ✅ ПРАВИЛЬНО: Проверка unAnswered на уровне container (БЕЗ навигации!)
 				// modelsChat.getChats.list[chatId].unAnswered работает НА ВСЕЙ АНКЕТЕ
-				if (chat.unAnswered !== true) continue;
+				if (chat.unAnswered !== true) {
+					console.log(`[🔍 SCAN] ❌ Chat ${chatId} skipped: unAnswered=${chat.unAnswered}`);
+					continue;
+				}
+
+				hasUnAnswered++;
 
 				// Найти мужчину через members.gender = 1
 				const manMember = chat.members?.find(m => m.gender === 1);
+
+				console.log(`[🔍 SCAN] ✅ UNANSWERED Chat ${chatId}:`, {
+					manMember: manMember ? {
+						uid: manMember.uid,
+						username: manMember.username,
+						firstName: manMember.first_name,
+						gender: manMember.gender,
+					} : 'NOT_FOUND',
+				});
 
 				if (manMember) {
 					result.push({
@@ -96,6 +132,13 @@ const getAllChatsForProfile = async (page, allUids) => {
 
 			// Сортировка по lastActivity (старые первые - FIFO)
 			result.sort((a, b) => a.lastActivity - b.lastActivity);
+
+			console.log('[🔍 SCAN] ========== SCAN COMPLETE ==========');
+			console.log('[🔍 SCAN] Total scanned:', scannedCount);
+			console.log('[🔍 SCAN] Belongs to profile:', belongsToProfile);
+			console.log('[🔍 SCAN] Has unAnswered=true:', hasUnAnswered);
+			console.log('[🔍 SCAN] Final result:', result.length, 'chats');
+			console.log('[🔍 SCAN] Result:', result);
 
 			return result;
 		}, allUids);

@@ -33,12 +33,26 @@ const processSingleChat = async ({
 		`Profile: ${profile.username}, Man: ${chat.manName}`,
 	);
 
+	console.log('[🔧 PROCESSOR] ========== PROCESSING CHAT ==========');
+	console.log('[🔧 PROCESSOR] Chat:', {
+		chatId: chat.chatId,
+		manName: chat.manName,
+		manUid: chat.manUid,
+		lastActivity: chat.lastActivity,
+	});
+	console.log('[🔧 PROCESSOR] Profile:', {
+		uid: profile.uid,
+		username: profile.username,
+		allUids: profile.allUids,
+	});
+
 	try {
 		// ========== НАВИГАЦИЯ К ЧАТУ ==========
 		const [profileUidOuter, userUid] = chat.chatId.split('_');
 		const url = `https://luxee.io/chats/?ownerUid=${profile.uid}&profileUid=${profileUidOuter}&userUid=${userUid}`;
 
 		utils.log('Chat Processor', `🌐 Navigating to: ${url}`);
+		console.log('[🔧 PROCESSOR] Navigation URL:', url);
 
 		try {
 			await page.goto(url, {
@@ -117,10 +131,21 @@ const processSingleChat = async ({
 			history.lastMessage,
 		);
 
+		console.log('[🔧 PROCESSOR] Should reply check:', {
+			shouldReply: shouldReply.shouldReply,
+			reason: shouldReply.reason,
+			lastMessageAuthor: history.lastMessage?.author,
+			lastMessageIsFromProfile: history.lastMessage?.isFromProfile,
+			lastMessageIsFromMan: history.lastMessage?.isFromMan,
+		});
+
 		if (!shouldReply.shouldReply) {
 			utils.log('Chat Processor', `⏭️  ${shouldReply.reason}`);
+			console.log('[🔧 PROCESSOR] ❌ SKIPPING CHAT:', shouldReply.reason);
 			return { sent: false, reason: 'shouldnt_reply' };
 		}
+
+		console.log('[🔧 PROCESSOR] ✅ Will generate AI response');
 
 		// Форматирование истории для AI
 		const formattedHistory = chatMessagesExtractorService.formatHistoryForAI(
@@ -139,7 +164,9 @@ const processSingleChat = async ({
 			`🤖 Generating response (type: ${history.lastMessage.messageType})...`,
 		);
 
-		// ========== ГЕНЕРАЦИЯ ОТВЕТА ==========
+		// ========== ГЕНЕРАЦИЯ И ОТПРАВКА ОТВЕТА ==========
+		utils.log('Chat Processor', `🤖 Generating and sending AI response...`);
+		
 		const aiResponse = await aiResponseService.generateAndSend({
 			userId,
 			accountId,
@@ -152,66 +179,72 @@ const processSingleChat = async ({
 				city: profile.city,
 			},
 			manMessage: history.lastMessage.text,
-			formattedHistory: formattedHistory, // ← ТОЛЬКО formattedHistory!
+			formattedHistory: formattedHistory,
 			profileName: profile.username,
 			manName: history.manName,
 			typeInstructions: typeInstructions,
 			messageType: history.lastMessage.messageType,
-			// НЕ передаём conversationHistory отдельно - это создаёт дубли!
-			skipSending: true, // Генерируем, но НЕ отправляем сразу
+			// skipSending убран - функция всегда генерирует И отправляет
 		});
 
-		if (!aiResponse || !aiResponse.text) {
-			utils.logError('Chat Processor', `❌ Failed to generate response`);
+		// ========== ПРОВЕРКА РЕЗУЛЬТАТА ==========
+		console.log('[🔧 PROCESSOR] ========== AI RESPONSE RESULT ==========');
+		console.log('[🔧 PROCESSOR] Response structure:', {
+			hasResponse: !!aiResponse,
+			success: aiResponse?.success,
+			hasGeneratedResponse: !!aiResponse?.generatedResponse,
+			generatedText: aiResponse?.generatedResponse?.response?.substring(0, 50),
+			hasSendResult: !!aiResponse?.sendResult,
+			sendSuccess: aiResponse?.sendResult?.success,
+			sendTimestamp: aiResponse?.sendResult?.timestamp,
+		});
+		
+		utils.log('Chat Processor', `🔍 Checking AI response result...`);
+		
+		// ✅ ИСПРАВЛЕНО: Проверяем ПРАВИЛЬНЫЕ поля
+		if (!aiResponse || !aiResponse.success) {
+			utils.logError('Chat Processor', `❌ AI generation failed`);
+			console.log('[🔧 PROCESSOR] ❌ GENERATION FAILED - Full response:', aiResponse);
 			return { sent: false, reason: 'generation_failed' };
 		}
+		utils.log('Chat Processor', `   ✓ Generation: SUCCESS`);
 
-		utils.log(
-			'Chat Processor',
-			`✅ Generated response: "${aiResponse.text.substring(0, 50)}..."`,
-		);
-
-		// ========== ПРОВЕРКА #2: Полная проверка перед отправкой ==========
-		utils.log(
-			'Chat Processor',
-			`🔍 Full check before sending (with fallback)...`,
-		);
-		const fullCheck = await chatValidator.fullCheck(
-			page,
-			chat.chatId,
-			profile.uid,
-		);
-
-		if (!fullCheck.shouldReply) {
-			utils.log('Chat Processor', `⏭️  ${fullCheck.reason} - skipping send`);
-			return { sent: false, reason: fullCheck.reason };
+		if (!aiResponse.sendResult || !aiResponse.sendResult.success) {
+			utils.logError('Chat Processor', `❌ Message sending failed`);
+			console.log('[🔧 PROCESSOR] ❌ SEND FAILED - sendResult:', aiResponse.sendResult);
+			return { sent: false, reason: 'send_failed' };
 		}
+		utils.log('Chat Processor', `   ✓ Sending: SUCCESS`);
 
-		utils.log('Chat Processor', `✅ All checks passed: ${fullCheck.reason}`);
+		// Извлекаем сгенерированный текст из правильного места
+		const generatedText = aiResponse.generatedResponse?.response || 'N/A';
+		const sendTime = new Date(aiResponse.sendResult.timestamp).toLocaleTimeString();
+		
+		utils.log(
+			'Chat Processor',
+			`✅ Generated and sent: "${generatedText.substring(0, 50)}..."`,
+		);
+		utils.log('Chat Processor', `✅ Message delivered at ${sendTime}`);
+		
+		console.log('[🔧 PROCESSOR] ✅ MESSAGE SENT SUCCESSFULLY');
+		console.log('[🔧 PROCESSOR] Generated text:', generatedText.substring(0, 100));
+		console.log('[🔧 PROCESSOR] Send timestamp:', aiResponse.sendResult.timestamp);
 
-		// ========== ОТПРАВИТЬ ==========
-		utils.log('Chat Processor', `📤 Sending response...`);
-		const sendResult = await messageSendService.sendMessage({
-			page,
-			profileUid: profile.uid,
+		// ✅ Сообщение УЖЕ отправлено - возвращаем успех
+		const elapsed = Date.now() - startTime;
+		utils.log(
+			'Chat Processor',
+			`✅ Successfully processed chat with ${chat.manName} (${Math.round(elapsed / 1000)}s)`,
+		);
+		
+		return { 
+			sent: true,
 			chatId: chat.chatId,
-			message: aiResponse.text,
-		});
-
-		if (sendResult.success) {
-			const elapsed = Date.now() - startTime;
-			utils.log(
-				'Chat Processor',
-				`✅ Successfully sent to ${chat.manName} (${Math.round(elapsed / 1000)}s)`,
-			);
-			return { sent: true };
-		} else {
-			utils.logError(
-				'Chat Processor',
-				`❌ Failed to send: ${sendResult.error}`,
-			);
-			return { sent: false, reason: 'send_failed', error: sendResult.error };
-		}
+			profileUid: profile.uid,
+			manName: chat.manName,
+			generatedText: generatedText.substring(0, 100),
+			timestamp: aiResponse.sendResult.timestamp,
+		};
 	} catch (error) {
 		utils.logError('Chat Processor', `❌ Unexpected error:`, error);
 		return {

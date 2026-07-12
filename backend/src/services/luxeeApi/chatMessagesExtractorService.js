@@ -22,29 +22,83 @@ const getChatHistory = async (page, limit = 10) => {
 						};
 					}
 
-					// Получаем данные чата для определения участников
-					const activeChatId = modelsChat?.getChats?.active?.identity;
-					const chat = modelsChat?.getChats?.list?.[activeChatId];
+				// Получаем данные чата для определения участников
+				const activeChatId = modelsChat?.getChats?.active?.identity;
+				const chat = modelsChat?.getChats?.list?.[activeChatId];
 
-					if (!chat || !chat.members) {
-						return {
-							error: 'Chat data not found',
-							messages: [],
-							lastMessage: null,
-						};
-					}
+				console.log('[💬 HISTORY] ========== EXTRACTING CHAT HISTORY ==========');
+				console.log('[💬 HISTORY] Active chat ID:', activeChatId);
 
-					// Определяем участников
-					const profileMember = chat.members.find(m => m.type === 2); // Девушка
-					const manMember = chat.members.find(m => m.type === 10); // Мужчина
+				if (!chat || !chat.members) {
+					console.log('[💬 HISTORY] ❌ ERROR: Chat data not found');
+					return {
+						error: 'Chat data not found',
+						messages: [],
+						lastMessage: null,
+					};
+				}
 
-					if (!profileMember || !manMember) {
-						return {
-							error: 'Chat members not found',
-							messages: [],
-							lastMessage: null,
-						};
-					}
+				console.log('[💬 HISTORY] Chat data:', {
+					chatId: chat.identity,
+					unAnswered: chat.unAnswered,
+					lastActivity: chat.lastActivity,
+					membersCount: chat.members?.length,
+				});
+
+				console.log('[💬 HISTORY] All members:', chat.members.map(m => ({
+					uid: m.uid,
+					username: m.username,
+					firstName: m.first_name,
+					type: m.type,
+					gender: m.gender,
+				})));
+
+				// Определяем участников
+				const profileMember = chat.members.find(m => m.type === 2); // Девушка
+				const manMember = chat.members.find(m => m.type === 10); // Мужчина
+
+				console.log('[💬 HISTORY] Found by type:', {
+					profileMember: profileMember ? {
+						uid: profileMember.uid,
+						username: profileMember.username,
+						type: profileMember.type,
+						gender: profileMember.gender,
+					} : 'NOT_FOUND',
+					manMember: manMember ? {
+						uid: manMember.uid,
+						username: manMember.username,
+						type: manMember.type,
+						gender: manMember.gender,
+					} : 'NOT_FOUND',
+				});
+
+				// Пробуем найти по gender если не нашли по type
+				const profileByGender = chat.members.find(m => m.gender === 2);
+				const manByGender = chat.members.find(m => m.gender === 1);
+
+				console.log('[💬 HISTORY] Found by gender:', {
+					profileByGender: profileByGender ? {
+						uid: profileByGender.uid,
+						username: profileByGender.username,
+						type: profileByGender.type,
+						gender: profileByGender.gender,
+					} : 'NOT_FOUND',
+					manByGender: manByGender ? {
+						uid: manByGender.uid,
+						username: manByGender.username,
+						type: manByGender.type,
+						gender: manByGender.gender,
+					} : 'NOT_FOUND',
+				});
+
+				if (!profileMember || !manMember) {
+					console.log('[💬 HISTORY] ❌ ERROR: Chat members not found by type');
+					return {
+						error: 'Chat members not found',
+						messages: [],
+						lastMessage: null,
+					};
+				}
 
 					// Получаем все элементы сообщений
 					const messageElements = container.querySelectorAll('.messages');
@@ -60,6 +114,8 @@ const getChatHistory = async (page, limit = 10) => {
 
 					// Извлекаем данные из каждого сообщения
 					const messages = [];
+					console.log('[💬 HISTORY] Total DOM messages found:', messageElements.length);
+					
 					messageElements.forEach((msgEl, index) => {
 						const isFromProfile = msgEl.classList.contains('message-owner');
 						const isFromMan = msgEl.classList.contains('message-opponent');
@@ -134,6 +190,24 @@ const getChatHistory = async (page, limit = 10) => {
 
 					// Последнее сообщение
 					const lastMessage = messages[messages.length - 1] || null;
+
+					console.log('[💬 HISTORY] ========== MESSAGES EXTRACTED ==========');
+					console.log('[💬 HISTORY] Total messages:', messages.length);
+					console.log('[💬 HISTORY] Recent messages:', recentMessages.length);
+					console.log('[💬 HISTORY] Last message:', lastMessage ? {
+						author: lastMessage.author,
+						isFromProfile: lastMessage.isFromProfile,
+						isFromMan: lastMessage.isFromMan,
+						text: lastMessage.text.substring(0, 50) + '...',
+						messageType: lastMessage.messageType,
+						cssClasses: 'owner=' + lastMessage.isFromProfile + ', opponent=' + lastMessage.isFromMan,
+					} : 'NO_LAST_MESSAGE');
+					
+					// Логируем последние 3 сообщения для контекста
+					console.log('[💬 HISTORY] Last 3 messages:');
+					messages.slice(-3).forEach((msg, i) => {
+						console.log(`  [${i + 1}] ${msg.author} (profile=${msg.isFromProfile}, man=${msg.isFromMan}): ${msg.text.substring(0, 40)}...`);
+					});
 
 					return {
 						messages: recentMessages,
