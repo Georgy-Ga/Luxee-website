@@ -86,39 +86,64 @@ const processAccountMessages = async (accountId, userId, page) => {
 				`🎯 Found ${activeChats.length} chats on ACTIVE profile`,
 			);
 
-			// Обрабатываем ПЕРВЫЙ чат активного профиля
-			const firstChat = activeChats[0];
-			utils.log('AI Auto', `Processing first chat: ${firstChat.manName}`);
-			console.log('[🤖 AI AUTO] 🎯 Processing FIRST chat:', {
-				chatId: firstChat.chatId,
-				manName: firstChat.manName,
-				position: '1 of ' + activeChats.length,
+			// Сортируем чаты: НОВЫЕ ПЕРВЫМИ (по lastActivity)
+			const sortedChats = activeChats.sort((a, b) => {
+				const timeA = parseInt(a.lastActivity) || 0;
+				const timeB = parseInt(b.lastActivity) || 0;
+				return timeB - timeA; // DESC: новые первыми
 			});
 
-			const result = await chatProcessor.processSingleChat({
-				accountId,
-				userId,
-				page,
-				profile: activeProfile,
-				chat: firstChat,
-			});
+			console.log('[🤖 AI AUTO] 📊 Sorted chats (newest first):', sortedChats.slice(0, 5).map(c => ({
+				manName: c.manName,
+				lastActivity: c.lastActivity,
+			})));
 
-			if (result.sent) {
-				const elapsed = Date.now() - startTime;
+			// Обрабатываем ВСЕ чаты по очереди до первого успешного
+			let messageSent = false;
+			for (let i = 0; i < sortedChats.length; i++) {
+				const chat = sortedChats[i];
+				utils.log('AI Auto', `Processing chat ${i + 1}/${sortedChats.length}: ${chat.manName}`);
+				console.log('[🤖 AI AUTO] 🎯 Processing chat:', {
+					chatId: chat.chatId,
+					manName: chat.manName,
+					position: `${i + 1} of ${sortedChats.length}`,
+				});
+
+				const result = await chatProcessor.processSingleChat({
+					accountId,
+					userId,
+					page,
+					profile: activeProfile,
+					chat: chat,
+				});
+
+				if (result.sent) {
+					const elapsed = Date.now() - startTime;
+					utils.log(
+						'AI Auto',
+						`✅ Message sent on active profile (${Math.round(elapsed / 1000)}s)`,
+					);
+					console.log('[🤖 AI AUTO] ✅ SUCCESS! Message sent on active profile');
+					await utils.randomDelay(3000, 6000);
+					messageSent = true;
+					return { processed: true, reason: 'active_profile_processed' };
+				} else {
+					utils.log(
+						'AI Auto',
+						`⚠️  Chat ${i + 1} failed: ${result.reason} - trying next chat`,
+					);
+					console.log('[🤖 AI AUTO] ⚠️  Chat failed:', result.reason, '- continuing to next');
+					// Продолжаем к следующему чату
+				}
+			}
+
+			// Если дошли сюда - ни один чат не подошёл
+			if (!messageSent) {
 				utils.log(
 					'AI Auto',
-					`✅ Message sent on active profile (${Math.round(elapsed / 1000)}s)`,
+					`⚠️  No suitable chats found on active profile (checked all ${sortedChats.length})`,
 				);
-				console.log('[🤖 AI AUTO] ✅ SUCCESS! Message sent on active profile');
-				await utils.randomDelay(3000, 6000);
-				return { processed: true, reason: 'active_profile_processed' };
-			} else {
-				utils.log(
-					'AI Auto',
-					`⚠️  Failed to send on active profile: ${result.reason}`,
-				);
-				console.log('[🤖 AI AUTO] ⚠️  Failed on active profile:', result.reason);
-				console.log('[🤖 AI AUTO] Note: Only FIRST chat was processed. Remaining chats:', activeChats.length - 1);
+				console.log('[🤖 AI AUTO] ⚠️  All chats checked on active profile - none suitable');
 			}
 		} else {
 			utils.log(
@@ -180,29 +205,50 @@ const processAccountMessages = async (accountId, userId, page) => {
 				'AI Auto',
 				`📝 Found ${chats.length} chats on ${profile.username}`,
 			);
-			utils.log('AI Auto', `Processing first chat: ${chats[0].manName}`);
 
-			// Обработать ПЕРВЫЙ чат
-			const result = await chatProcessor.processSingleChat({
-				accountId,
-				userId,
-				page,
-				profile,
-				chat: chats[0],
+			// Сортируем чаты: НОВЫЕ ПЕРВЫМИ
+			const sortedChats = chats.sort((a, b) => {
+				const timeA = parseInt(a.lastActivity) || 0;
+				const timeB = parseInt(b.lastActivity) || 0;
+				return timeB - timeA;
 			});
 
-			if (result.sent) {
-				const elapsed = Date.now() - startTime;
+			// Обрабатываем ВСЕ чаты по очереди
+			let messageSent = false;
+			for (let i = 0; i < sortedChats.length; i++) {
+				const chat = sortedChats[i];
+				utils.log('AI Auto', `Processing chat ${i + 1}/${sortedChats.length}: ${chat.manName}`);
+
+				const result = await chatProcessor.processSingleChat({
+					accountId,
+					userId,
+					page,
+					profile,
+					chat: chat,
+				});
+
+				if (result.sent) {
+					const elapsed = Date.now() - startTime;
+					utils.log(
+						'AI Auto',
+						`✅ Message sent on profile ${profile.username} (${Math.round(elapsed / 1000)}s)`,
+					);
+					await utils.randomDelay(3000, 6000);
+					messageSent = true;
+					return { processed: true, reason: 'other_profile_processed' };
+				} else {
+					utils.log(
+						'AI Auto',
+						`⚠️  Chat ${i + 1} failed: ${result.reason} - trying next`,
+					);
+					// Продолжаем со следующим чатом
+				}
+			}
+
+			if (!messageSent) {
 				utils.log(
 					'AI Auto',
-					`✅ Message sent on profile ${profile.username} (${Math.round(elapsed / 1000)}s)`,
-				);
-				await utils.randomDelay(3000, 6000);
-				return { processed: true, reason: 'other_profile_processed' };
-			} else {
-				utils.log(
-					'AI Auto',
-					`⚠️  Failed to send on ${profile.username}: ${result.reason}`,
+					`⚠️  No suitable chats on ${profile.username} (checked all ${sortedChats.length})`,
 				);
 				// Продолжаем со следующим профилем
 			}
