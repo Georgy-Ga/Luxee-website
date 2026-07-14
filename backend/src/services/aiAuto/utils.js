@@ -57,44 +57,108 @@ const randomDelay = async (min, max) => {
 };
 
 /**
- * Получить активный профиль
+ * Получить активный профиль с retry и reload
  * @param {Object} page - Playwright page
+ * @param {number} maxRetries - Максимум попыток (default: 3)
  * @returns {Promise<Object|null>}
  */
-const getActiveProfile = async page => {
-	try {
-		const profile = await page.evaluate(() => {
-			if (!window.modelsChat?.getProfile?.active?.inner) {
-				return null;
-			}
-
-			const active = window.modelsChat.getProfile.active;
-			const inner = active.inner;
-
-			// Собираем ВСЕ UIDs профиля (inner + outer)
-			const allUids = [inner.uid];
-			if (active.outer) {
-				for (const outerKey in active.outer) {
-					allUids.push(active.outer[outerKey].uid);
+const getActiveProfile = async (page, maxRetries = 3) => {
+	let attempt = 0;
+	
+	while (attempt < maxRetries) {
+		try {
+			const profile = await page.evaluate(() => {
+				// ✅ ПРОВЕРКА 1: modelsChat доступен?
+				if (!window.modelsChat) {
+					throw new Error('modelsChat_not_available');
 				}
+				
+				// ✅ ПРОВЕРКА 2: Активный профиль есть?
+				if (!window.modelsChat.getProfile?.active?.inner) {
+					return null;
+				}
+
+				const active = window.modelsChat.getProfile.active;
+				const inner = active.inner;
+
+				// Собираем ВСЕ UIDs профиля (inner + outer)
+				const allUids = [inner.uid];
+				if (active.outer) {
+					for (const outerKey in active.outer) {
+						allUids.push(active.outer[outerKey].uid);
+					}
+				}
+
+				return {
+					uid: inner.uid,
+					allUids: allUids, // ✅ Все UIDs для поиска чатов
+					username: inner.username,
+					age: inner.age,
+					country: inner.country,
+					city: inner.city,
+					newMessages: active.newMessages || 0,
+				};
+			});
+
+			// Успех! Возвращаем профиль
+			if (profile) {
+				if (attempt > 0) {
+					log('AI Auto', `✅ Active profile found after ${attempt + 1} attempt(s)`);
+				}
+				return profile;
 			}
-
-			return {
-				uid: inner.uid,
-				allUids: allUids, // ✅ Все UIDs для поиска чатов
-				username: inner.username,
-				age: inner.age,
-				country: inner.country,
-				city: inner.city,
-				newMessages: active.newMessages || 0,
-			};
-		});
-
-		return profile;
-	} catch (error) {
-		logError('AI Auto', 'Error getting active profile:', error);
-		return null;
+			
+			// Профиль не найден (но API доступен)
+			log('AI Auto', `⚠️  No active profile (attempt ${attempt + 1}/${maxRetries})`);
+			
+		} catch (error) {
+			// Если modelsChat недоступен → reload страницы
+			if (error.message.includes('modelsChat_not_available')) {
+				log('AI Auto', `⚠️  modelsChat API not available (attempt ${attempt + 1}/${maxRetries})`);
+				
+				if (attempt < maxRetries - 1) {
+					// Получаем текущий URL перед reload
+					const currentUrl = page.url();
+					log('AI Auto', `🔄 Reloading page: ${currentUrl}`);
+					
+					try {
+						// Reload страницы
+						await page.reload({ waitUntil: 'domcontentloaded', timeout: 30000 });
+						log('AI Auto', '✅ Page reloaded successfully');
+						
+						// Ждём загрузки API (2 секунды)
+						await sleep(2000);
+					} catch (reloadError) {
+						logError('AI Auto', `❌ Failed to reload page:`, reloadError);
+						
+						// Если reload не сработал, пробуем navigate
+						try {
+							log('AI Auto', `🔄 Trying navigation to: ${currentUrl}`);
+							await page.goto(currentUrl, { waitUntil: 'domcontentloaded', timeout: 30000 });
+							await sleep(2000);
+							log('AI Auto', '✅ Navigation successful');
+						} catch (navError) {
+							logError('AI Auto', `❌ Failed to navigate:`, navError);
+						}
+					}
+				}
+			} else {
+				// Другая ошибка
+				logError('AI Auto', `Error getting active profile (attempt ${attempt + 1}/${maxRetries}):`, error);
+			}
+		}
+		
+		attempt++;
+		
+		// Ждём перед следующей попыткой (если не последняя)
+		if (attempt < maxRetries) {
+			await sleep(1000);
+		}
 	}
+	
+	// Все попытки исчерпаны
+	log('AI Auto', `❌ Failed to get active profile after ${maxRetries} attempts`);
+	return null;
 };
 
 /**

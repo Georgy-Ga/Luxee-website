@@ -74,6 +74,7 @@ const getAllChatsForProfile = async (page, allUids) => {
 			let scannedCount = 0;
 			let belongsToProfile = 0;
 			let hasUnAnswered = 0;
+			let skippedByUType = 0; // ✅ Новая статистика: пропущено по uType=1
 
 			for (const chatId in chatsList) {
 				scannedCount++;
@@ -108,6 +109,33 @@ const getAllChatsForProfile = async (page, allUids) => {
 
 				hasUnAnswered++;
 
+				// ✅ ДОПОЛНИТЕЛЬНАЯ ПРОВЕРКА: Последнее сообщение через chat.message[]
+				// Проверяем uType последнего сообщения: 1 = profile sent, 2 = man sent
+				if (chat.message && chat.message.length > 0) {
+					const lastMessage = chat.message[chat.message.length - 1];
+					
+					// Если последнее сообщение от профиля (uType = 1) → ПРОПУСКАЕМ!
+					if (lastMessage.uType === 1) {
+						skippedByUType++; // ✅ Увеличиваем счётчик
+						console.log(`[🔍 SCAN] ❌ Chat ${chatId} skipped: last message from PROFILE (uType=1)`);
+						console.log(`[🔍 SCAN]   📝 Message preview: "${(lastMessage.body || '').substring(0, 50)}..."`);
+						console.log(`[🔍 SCAN]   ⚠️  unAnswered=true BUT we already replied! Skipping.`);
+						continue;
+					}
+					
+					// Если последнее сообщение от мужчины (uType = 2) → БЕРЁМ!
+					if (lastMessage.uType === 2) {
+						console.log(`[🔍 SCAN] ✅ Chat ${chatId} OK: last message from MAN (uType=2)`);
+						console.log(`[🔍 SCAN]   📝 Message preview: "${(lastMessage.body || '').substring(0, 50)}..."`);
+					} else {
+						// Неизвестный uType - логируем для отладки
+						console.log(`[🔍 SCAN] ⚠️  Chat ${chatId}: Unknown uType=${lastMessage.uType}, taking chat (fallback)`);
+					}
+				} else {
+					// Нет message[] → берём чат (fallback)
+					console.log(`[🔍 SCAN] ⚠️  Chat ${chatId}: No message[] array - taking chat (fallback)`);
+				}
+
 				// Найти мужчину через members.gender = 1
 				const manMember = chat.members?.find(m => m.gender === 1);
 
@@ -137,8 +165,15 @@ const getAllChatsForProfile = async (page, allUids) => {
 			console.log('[🔍 SCAN] Total scanned:', scannedCount);
 			console.log('[🔍 SCAN] Belongs to profile:', belongsToProfile);
 			console.log('[🔍 SCAN] Has unAnswered=true:', hasUnAnswered);
-			console.log('[🔍 SCAN] Final result:', result.length, 'chats');
-			console.log('[🔍 SCAN] Result:', result);
+			console.log('[🔍 SCAN] Skipped by uType=1:', skippedByUType, '(already replied)');
+			console.log('[🔍 SCAN] Final result:', result.length, 'chats to process');
+			if (result.length > 0) {
+				console.log('[🔍 SCAN] First 3 chats:', result.slice(0, 3).map(c => ({
+					chatId: c.chatId,
+					manName: c.manName,
+					lastActivity: c.lastActivity,
+				})));
+			}
 
 			return result;
 		}, allUids);
