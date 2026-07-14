@@ -307,6 +307,11 @@ T=90s:  Keep-Alive снова проверяет
 - ✅ В `logout()`: добавлена остановка Message Check, Main Keep-Alive, Main Context
 - ✅ В `deleteUser()`: аналогичные изменения
 
+### 3. `backend/src/services/luxeeApi/messageCheckService/checkAllMessages.js`
+- ✅ Добавлен импорт `UserModel` и `messageCheckIntervalService`
+- ✅ Добавлена проверка существования user перед проверкой сообщений
+- ✅ Автоматическая остановка interval если user удалён
+
 ---
 
 ## 🚀 ДЕПЛОЙ

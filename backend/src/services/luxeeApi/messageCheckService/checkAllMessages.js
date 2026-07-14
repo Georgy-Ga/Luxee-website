@@ -1,9 +1,11 @@
 // Модуль для проверки сообщений на всех аккаунтах
 import LuxeeAccountModel from '../../../models/LuxeeAccountModel.js';
+import UserModel from '../../../models/UserModel.js';
 import browserService from '../../browser/browserService.js';
 import pageHelpers from '../../browser/pageHelpers.js';
 import profileActivationService from '../profileActivationService.js';
 import { extractAllProfilesData } from './profileDataExtractor.js';
+import messageCheckIntervalService from '../messageCheckIntervalService.js';
 
 /**
  * Проверить сообщения на всех аккаунтах пользователя
@@ -11,6 +13,18 @@ import { extractAllProfilesData } from './profileDataExtractor.js';
 export const checkAllMessages = async ({ userId }) => {
 	try {
 		console.log(`[Message Check] Checking messages for user ${userId}`);
+
+		// ✅ ПРОВЕРКА: User существует?
+		const user = await UserModel.findById(userId);
+		if (!user) {
+			console.log(`[Message Check] ⚠️  User ${userId} not found, stopping interval...`);
+			messageCheckIntervalService.stop(userId);
+			return {
+				accounts: [],
+				totalUnread: 0,
+				totalProfiles: 0,
+			};
+		}
 
 		// Получаем все аккаунты пользователя
 		const accounts = await LuxeeAccountModel.find({ user: userId });
