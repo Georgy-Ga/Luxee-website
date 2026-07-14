@@ -6,6 +6,8 @@ import tokenService from './tokenService.js';
 import aiBrowserContextService from './browser/aiBrowserContextService.js';
 import aiAutoResponseService from './aiAutoResponseService.js';
 import keepAliveService from './luxeeApi/keepAliveService.js';
+import messageCheckIntervalService from './luxeeApi/messageCheckIntervalService.js';
+import browserService from './browser/browserService.js';
 import ApiError from '../exceptions/apiError.js';
 
 const userService = {
@@ -42,36 +44,55 @@ const userService = {
 			// Удаляем токен
 			const token = await tokenService.removeToken(refreshToken);
 			
-			// Отключаем AI для всех аккаунтов пользователя и закрываем AI контексты
+			// 🔥 ПОЛНЫЙ CLEANUP: Останавливаем ВСЁ для пользователя
 			if (userId) {
-				console.log('[User Service] Disabling AI for all user accounts...');
+				console.log('[User Service] Starting full cleanup for user', userId);
 				
+				// ✅ 1. Останавливаем Message Check Interval
+				try {
+					messageCheckIntervalService.stop(userId);
+					console.log(`[User Service] ✓ Message Check stopped for user ${userId}`);
+				} catch (error) {
+					console.error(`[User Service] ⚠️  Failed to stop Message Check:`, error);
+				}
+				
+				// ✅ 2. Отключаем AI для всех аккаунтов пользователя
+				console.log('[User Service] Disabling AI for all user accounts...');
 				const accounts = await LuxeeAccountModel.find({ user: userId });
 				
 				for (const account of accounts) {
+					const accountId = account._id.toString();
+					
 					try {
 						// Отключаем AI
 						if (account.aiEnabled) {
 							account.aiEnabled = false;
 							await account.save();
-							console.log(`[User Service] AI disabled for account ${account._id}`);
+							console.log(`[User Service] ✓ AI disabled for account ${accountId}`);
 						}
 						
-					// Закрываем AI контекст если есть
-					if (account.aiContext) {
-						// 🛡️ Останавливаем keep-alive для AI контекста
-						keepAliveService.stop(`${account._id}_ai`);
+						// ✅ 3. Закрываем AI контекст
+						if (account.aiContext) {
+							keepAliveService.stop(`${accountId}_ai`);
+							await aiBrowserContextService.closeAiContext(accountId);
+							console.log(`[User Service] ✓ AI context closed for account ${accountId}`);
+						}
 						
-						await aiBrowserContextService.closeAiContext(account._id.toString());
-						console.log(`[User Service] AI context closed for account ${account._id}`);
-					}
+						// ✅ 4. Останавливаем Keep-Alive для основного контекста
+						keepAliveService.stop(accountId);
+						console.log(`[User Service] ✓ Keep-Alive stopped for account ${accountId}`);
+						
+						// ✅ 5. Закрываем основной контекст
+						await browserService.closeContext(accountId);
+						console.log(`[User Service] ✓ Main context closed for account ${accountId}`);
+						
 					} catch (error) {
-						console.error(`[User Service] Error disabling AI for account ${account._id}:`, error);
+						console.error(`[User Service] ⚠️  Error cleaning up account ${accountId}:`, error);
 						// Продолжаем с другими аккаунтами
 					}
 				}
 				
-				console.log('[User Service] AI disabled for all accounts');
+				console.log('[User Service] ✓ Full cleanup completed for user', userId);
 			}
 			
 			return token;
@@ -119,29 +140,49 @@ const userService = {
 		
 		console.log(`[User Service] Starting deletion process for user ${userId}`);
 		
-		// 🔥 КРИТИЧНО: Останавливаем AI auto-response для ВСЕХ аккаунтов пользователя
+		// ✅ 1. Останавливаем Message Check Interval
+		try {
+			messageCheckIntervalService.stop(userId);
+			console.log(`[User Service] ✓ Message Check stopped for user ${userId}`);
+		} catch (error) {
+			console.error(`[User Service] ⚠️  Failed to stop Message Check:`, error);
+		}
+		
+		// ✅ 2. Останавливаем AI auto-response для ВСЕХ аккаунтов пользователя
 		try {
 			console.log(`[User Service] Stopping AI auto-response for all accounts of user ${userId}`);
 			await aiAutoResponseService.stopForUser(userId);
 			console.log(`[User Service] ✓ AI auto-response stopped for user ${userId}`);
 		} catch (error) {
-			console.error(`[User Service] Failed to stop AI for user ${userId}:`, error);
+			console.error(`[User Service] ⚠️  Failed to stop AI for user ${userId}:`, error);
 		}
 		
 		// Получаем все Luxee аккаунты пользователя
 		const luxeeAccounts = await LuxeeAccountModel.find({ user: userId });
 		console.log(`[User Service] Found ${luxeeAccounts.length} Luxee accounts for user ${userId}`);
 		
-		// Закрываем AI контексты и keep-alive для всех аккаунтов
+		// ✅ 3. Закрываем ВСЕ контексты и keep-alive для всех аккаунтов
 		for (const account of luxeeAccounts) {
+			const accountId = account._id.toString();
+			
 			try {
-				// 🛡️ Останавливаем keep-alive для AI контекста
-				keepAliveService.stop(`${account._id}_ai`);
+				// Останавливаем keep-alive для AI контекста
+				keepAliveService.stop(`${accountId}_ai`);
 				
-				await aiBrowserContextService.closeAiContext(account._id.toString());
-				console.log(`[User Service] ✓ AI context and keep-alive closed for account ${account._id}`);
+				// Закрываем AI контекст
+				await aiBrowserContextService.closeAiContext(accountId);
+				console.log(`[User Service] ✓ AI context closed for account ${accountId}`);
+				
+				// ✅ НОВОЕ: Останавливаем Keep-Alive для основного контекста
+				keepAliveService.stop(accountId);
+				console.log(`[User Service] ✓ Keep-Alive stopped for account ${accountId}`);
+				
+				// ✅ НОВОЕ: Закрываем основной контекст
+				await browserService.closeContext(accountId);
+				console.log(`[User Service] ✓ Main context closed for account ${accountId}`);
+				
 			} catch (error) {
-				console.error(`[User Service] Failed to close AI context for account ${account._id}:`, error);
+				console.error(`[User Service] ⚠️  Failed to cleanup account ${accountId}:`, error);
 			}
 		}
 		

@@ -1,6 +1,8 @@
 // Keep-Alive сервис для поддержания активности контекстов
 // Проверяет alert окна и закрывает их нажатием OK
 
+import aiAuto from '../aiAuto/index.js';
+
 const keepAliveIntervals = new Map(); // accountId -> intervalId
 const keepAliveQueue = []; // Очередь для последовательной обработки
 let isProcessingQueue = false;
@@ -95,13 +97,38 @@ const keepAliveService = {
 					if (count > 0) {
 						const isVisible = await popupButton.isVisible().catch(() => false);
 						if (isVisible) {
-							console.log(`[Keep-Alive] Closing "You're inactive" popup for account ${accountId}`);
+							console.log(`[Keep-Alive] 🔔 Closing "You're inactive" popup for account ${accountId}`);
+							
+							// 🛡️ БЕЗОПАСНОСТЬ: Проверка #1 - AI Auto не работает?
+							const lockStatus = aiAuto.getAccountLockStatus(accountId);
+							if (lockStatus?.isLocked) {
+								console.log(`[Keep-Alive] ⏸️  AI Auto is processing ${accountId}, skipping offline→online fix`);
+								continue; // Пропускаем этот аккаунт
+							}
+							
 							await popupButton.click({ timeout: 3000 });
 							await page.waitForTimeout(500);
+							
+							// 🛡️ БЕЗОПАСНОСТЬ: Проверка #2 - AI Auto не начал работу?
+							const lockAfterClick = aiAuto.getAccountLockStatus(accountId);
+							if (lockAfterClick?.isLocked) {
+								console.log(`[Keep-Alive] ⚠️  AI Auto started during click, canceling reload`);
+								continue; // Пропускаем reload
+							}
+							
+							// ✅ RELOAD: Обновляем страницу для восстановления соединения
+							console.log(`[Keep-Alive] 🔄 Reloading page for account ${accountId} (offline→online recovery)`);
+							const currentUrl = page.url();
+							await page.goto(currentUrl, { 
+								waitUntil: 'domcontentloaded', 
+								timeout: 30000 
+							});
+							await page.waitForTimeout(3000); // Ждём загрузки
+							console.log(`[Keep-Alive] ✅ Page reloaded for account ${accountId}`);
 						}
 					}
 				} catch (error) {
-					// Игнорируем
+					console.error(`[Keep-Alive] ⚠️  Error handling offline→online for ${accountId}:`, error.message);
 				}
 
 				console.log(`[Keep-Alive] Check completed for account ${accountId}`);
