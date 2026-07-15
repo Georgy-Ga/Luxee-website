@@ -398,7 +398,7 @@ docker compose up -d --build backend
 ## 📖 Документация
 
 ### 🚀 Быстрый старт
-- **[QUICK_START.md](QUICK_START.md)** - Запуск проекта локально для новичков
+- **[QUICK_START.md](docs/QUICK_START.md)** - Запуск проекта локально для новичков
 - **[QUICK_DEPLOY.md](QUICK_DEPLOY.md)** - Быстрый деплой на production (5 минут)
 
 ### 🐳 Production деплой
@@ -414,10 +414,10 @@ docker compose up -d --build backend
 
 ### 🏗️ Архитектура
 - **[PROJECT_STRUCTURE_EXPLANATION.md](PROJECT_STRUCTURE_EXPLANATION.md)** - Подробное объяснение структуры
-- **[DEVELOPMENT_ENVIRONMENTS.md](DEVELOPMENT_ENVIRONMENTS.md)** - Настройка окружений
+- **[DEVELOPMENT_ENVIRONMENTS.md](docs/DEVELOPMENT_ENVIRONMENTS.md)** - Настройка окружений
 
 ### 🤖 AI функционал
-- **[ai_settings.md](ai_settings.md)** - Настройка AI (DeepSeek/OpenAI)
+- **[ai_settings.md](docs/ai_settings.md)** - Настройка AI (DeepSeek/OpenAI)
 - **[AI_FIXES_SUMMARY.md](AI_FIXES_SUMMARY.md)** - Сводка исправлений AI
 
 ### 🔌 WebSocket
@@ -425,8 +425,8 @@ docker compose up -d --build backend
 - **[WEBSOCKET_IMPLEMENTATION.md](WEBSOCKET_IMPLEMENTATION.md)** - Реализация
 
 ### 🐳 Docker
-- **[DOCKER_FILES_SUMMARY.md](DOCKER_FILES_SUMMARY.md)** - Описание Docker файлов
-- **[DOCKER_DEPLOYMENT.md](DOCKER_DEPLOYMENT.md)** - Docker развертывание
+- **[DOCKER_FILES_SUMMARY.md](docs/DOCKER_FILES_SUMMARY.md)** - Описание Docker файлов
+- **[DOCKER_DEPLOYMENT.md](docs/DOCKER_DEPLOYMENT.md)** - Docker развертывание
 - **[PLAYWRIGHT_DOCKER_FIX.md](PLAYWRIGHT_DOCKER_FIX.md)** - Fix Playwright в Docker
 
 ### 🔧 Backend API

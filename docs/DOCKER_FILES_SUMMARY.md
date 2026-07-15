@@ -235,7 +235,7 @@ docker cp luxee-mongodb:/data/backup ./backups/
 
 - 📖 **Полная документация**: [DOCKER_DEPLOYMENT.md](DOCKER_DEPLOYMENT.md)
 - 🚀 **Быстрый старт**: [QUICK_START.md](QUICK_START.md)
-- 📝 **Основной README**: [README.md](README.md)
+- 📝 **Основной README**: [README.md](../README.md)
 
 ---
 

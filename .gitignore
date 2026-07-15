@@ -22,6 +22,7 @@ Thumbs.db
 # IDE
 .vscode/
 .idea/
+.clinerules/
 *.swp
 *.swo
 *~
@@ -49,5 +50,3 @@ analyze-*.js
 enable-*.js
 insert-*.js
 
-# Spambot (не для GitHub)
-spambot/
