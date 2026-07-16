@@ -12,6 +12,7 @@ const LuxeeAccountSchema = new Schema({
 	aiEnabled: { type: Boolean, default: false }, // AI для этого аккаунта (пользователь может выключить)
 	aiEnabledByAdmin: { type: Boolean, default: false }, // Разрешил ли админ использовать AI (по умолчанию выключен)
 	aiContext: { type: String }, // ID отдельного браузерного контекста для AI (для параллельной работы)
+	spambotAuthenticated: { type: Boolean, default: false }, // Авторизован ли аккаунт в spambot service
 });
 
 export default model('LuxeeAccount', LuxeeAccountSchema);

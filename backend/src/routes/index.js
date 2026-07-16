@@ -5,8 +5,10 @@ import AiController from '../controllers/aiController.js';
 import AiManagementController from '../controllers/aiManagementController/index.js';
 import AiAutoResponseController from '../controllers/aiAutoResponseController.js';
 import LuxeeController from '../controllers/luxeeController.js';
+import distributionRouter from './distribution.js';
 import authMiddleware from '../middleware/authMiddleware.js';
 import roleMiddleware from '../middleware/roleMiddleware.js';
+
 const router = new Router();
 
 router.post(
@@ -196,5 +198,8 @@ router.get(
 	authMiddleware,
 	AiAutoResponseController.isRunning,
 );
+
+// Distribution routes (Spambot integration)
+router.use('/distributions', distributionRouter);
 
 export default router;

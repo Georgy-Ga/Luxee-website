@@ -10,10 +10,14 @@ const NavigationButtons = () => {
   
   const isAiTestPage = location.pathname === '/ai-test';
   const isDashboardPage = location.pathname === '/dashboard';
+  const isDistributionsPage = location.pathname === '/distributions';
+
+  console.log('[NavigationButtons] 📍 Current path:', location.pathname);
+  console.log('[NavigationButtons] 📍 isDistributionsPage:', isDistributionsPage);
 
   return (
     <>
-      {/* AI Test Button - показываем когда НЕ на странице AI Test */}
+      {/* AI Test Button */}
       {!isAiTestPage && (
         <button
           onClick={() => navigate('/ai-test')}
@@ -23,7 +27,7 @@ const NavigationButtons = () => {
         </button>
       )}
 
-      {/* Dashboard Button - показываем когда НЕ на Dashboard */}
+      {/* Dashboard Button */}
       {!isDashboardPage && (
         <button
           onClick={() => navigate('/dashboard')}
@@ -32,6 +36,18 @@ const NavigationButtons = () => {
           📊 Dashboard
         </button>
       )}
+
+      {/* Distributions Button - ВСЕГДА показываем, но с разными стилями */}
+      <button
+        onClick={() => navigate('/distributions')}
+        className={`hidden sm:block px-2 lg:px-4 py-1.5 lg:py-2 text-xs lg:text-sm rounded-lg font-medium transition-colors ${
+          isDistributionsPage
+            ? 'bg-green-600 hover:bg-green-700 dark:bg-green-500 dark:hover:bg-green-600 text-white ring-2 ring-green-300 dark:ring-green-700'
+            : 'bg-blue-600 hover:bg-blue-700 dark:bg-blue-500 dark:hover:bg-blue-600 text-white'
+        }`}
+      >
+        📢 Рассылки
+      </button>
     </>
   );
 };

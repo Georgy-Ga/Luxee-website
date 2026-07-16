@@ -40,11 +40,15 @@ services:
       AI_API_KEY: ${AI_API_KEY}
       AI_MODEL: ${AI_MODEL:-gemini-cli/gemini-2.5-flash}
       ALLOWED_ORIGINS: ${ALLOWED_ORIGINS:-http://localhost:5173,http://localhost:5174,http://localhost:80,http://localhost}
+      # Spambot Service
+      SPAMBOT_URL: http://luxee-spambot:8001
     ports:
       - "5001:5000"
     depends_on:
       mongodb:
         condition: service_healthy
+      spambot:
+        condition: service_started
     networks:
       - luxee-network
     volumes:
@@ -58,6 +62,32 @@ services:
       interval: 30s
       timeout: 10s
       retries: 3
+
+  # Spambot Service (Python)
+  spambot:
+    build:
+      context: ./backend-spambot
+      dockerfile: Dockerfile
+    container_name: luxee-spambot
+    restart: unless-stopped
+    environment:
+      SPAMBOT_PORT: 8001
+      SPAMBOT_HOST: 0.0.0.0
+      NODE_BACKEND_URL: http://backend:5000
+      HIDDEN_BROWSER: "true"
+      SKIP_SENDING_MESSAGE: "false"
+    ports:
+      - "8001:8001"
+    networks:
+      - luxee-network
+    volumes:
+      - spambot_logs:/app/logs
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8001/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 20s
 
   # Frontend
   frontend:
@@ -92,4 +122,6 @@ volumes:
   playwright_data:
     driver: local
   browser_contexts:
+    driver: local
+  spambot_logs:
     driver: local

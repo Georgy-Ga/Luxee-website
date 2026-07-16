@@ -10,6 +10,7 @@ import { SocketProvider } from './contexts/SocketContext';
 import Login from './pages/Login';
 import Dashboard from './pages/Dashboard';
 import AiTest from './pages/AiTest';
+import Distributions from './pages/Distributions';
 
 // Создаём QueryClient
 const queryClient = new QueryClient({
@@ -85,6 +86,14 @@ function App() {
               element={
                 <ProtectedRoute>
                   <AiTest />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/distributions"
+              element={
+                <ProtectedRoute>
+                  <Distributions />
                 </ProtectedRoute>
               }
             />
