@@ -143,27 +143,34 @@ const getChatHistory = async (page, limit = 10) => {
 						const dateEl = msgEl.querySelector('.message_created');
 						const sidAttr = msgEl.getAttribute('data-sid');
 
-						// Определяем тип сообщения
-						const hasWink =
-							textEl && textEl.querySelector('.chat-member__wink');
-						const hasVideo = textEl && textEl.querySelector('video');
-						const hasImage = msgEl.querySelector('.message_media img');
-						const hasEmojione = textEl && textEl.querySelector('img.emojione');
+					// Определяем тип сообщения
+					const hasWink =
+						textEl && textEl.querySelector('.chat-member__wink');
+					const hasVideo = textEl && textEl.querySelector('video');
+					const hasImage = msgEl.querySelector('.message_media img');
+					const hasGift = textEl && textEl.querySelector('.chat-gift-icon');
+					const hasEmojione = textEl && textEl.querySelector('img.emojione');
 
-						let text = textEl ? textEl.textContent.trim() : '';
-						let messageType = 'text';
-						let displayText = text;
+					let text = textEl ? textEl.textContent.trim() : '';
+					let messageType = 'text';
+					let displayText = text;
 
-						if (hasWink) {
-							messageType = 'wink';
-							displayText = '[WINK]';
-						} else if (hasVideo) {
-							messageType = 'video';
-							displayText = '[VIDEO]';
-						} else if (hasImage) {
-							messageType = 'image';
-							displayText = '[IMAGE]';
-						} else if (hasEmojione && text.trim() === '') {
+					if (hasWink) {
+						messageType = 'wink';
+						displayText = '[WINK]';
+					} else if (hasVideo) {
+						messageType = 'video';
+						displayText = '[VIDEO]';
+					} else if (hasImage) {
+						messageType = 'image';
+						displayText = '[IMAGE]';
+					} else if (hasGift) {
+						// 🎁 Подарок - убираем цифры (цену) и оставляем только текст
+						messageType = 'gift';
+						// Убираем начальные цифры (цена подарка типа "29", "55")
+						const giftText = text.replace(/^\d+\s*/, '').trim();
+						displayText = giftText || 'sent a gift';
+					} else if (hasEmojione && text.trim() === '') {
 							// Только эмодзи без текста
 							messageType = 'emoji';
 							const emojiAlt = hasEmojione.alt || hasEmojione.title || '❓';
@@ -335,7 +342,7 @@ const shouldReplyToChat = lastMessage => {
 
 /**
  * Получить инструкции для AI в зависимости от типа сообщения
- * @param {string} messageType - Тип сообщения (text, wink, video, image, emoji)
+ * @param {string} messageType - Тип сообщения (text, wink, video, image, emoji, gift)
  * @returns {string} - Дополнительные инструкции для AI
  */
 const getAIInstructionsForMessageType = messageType => {
@@ -360,6 +367,13 @@ Show interest and ask engaging questions!`;
 			return `
 Note: Man sent a video. React to it enthusiastically and keep the conversation going.
 Show you're interested in what he shared!`;
+
+		case 'gift':
+			return `
+Note: Man sent you a virtual gift! This is a very special gesture that shows his affection and interest.
+React warmly and genuinely - thank him sweetly and show your appreciation! 
+This is a romantic moment, so respond with warmth, gratitude, and maybe a little flirtiness.
+Make him feel good about his gesture!`;
 
 		default:
 			return '';
