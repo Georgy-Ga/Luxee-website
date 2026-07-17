@@ -180,6 +180,87 @@ const switchToProfile = async (page, accountId, profileUid) => {
 	);
 };
 
+/**
+ * Получить профиль по UID (для Catch Up чатов)
+ * @param {Object} page - Playwright page
+ * @param {string} targetUid - UID профиля для поиска (может быть outer или inner)
+ * @returns {Promise<Object|null>} - Данные профиля или null
+ */
+const getProfileByUid = async (page, targetUid) => {
+	try {
+		const profile = await page.evaluate((uid) => {
+			const data = modelsChat?.getProfile?.data;
+			if (!data) return null;
+			
+			// 1️⃣ Прямой поиск (inner UID)
+			const profileData = data[uid];
+			if (profileData) {
+				const inner = profileData.inner;
+				if (!inner) return null;
+				
+				// Собираем все UIDs (inner + outer)
+				const allUids = [inner.uid];
+				if (profileData.outer) {
+					for (const key in profileData.outer) {
+						allUids.push(profileData.outer[key].uid);
+					}
+				}
+				
+				return {
+					uid: inner.uid,
+					allUids: allUids,
+					username: inner.username,
+					age: inner.age,
+					country: inner.country,
+					city: inner.city,
+				};
+			}
+			
+			// 2️⃣ Поиск в modelsChat.getProfile.outer (outer UID → inner UID)
+			const outerProfiles = modelsChat?.getProfile?.outer;
+			if (outerProfiles && outerProfiles[uid]) {
+				const outerProfile = outerProfiles[uid];
+				const innerUid = outerProfile.import_uid;
+				
+				console.log(`[getProfileByUid] Found outer UID ${uid}, inner UID: ${innerUid}`);
+				
+				// Получаем полные данные по inner UID
+				if (innerUid && data[innerUid]) {
+					const innerData = data[innerUid];
+					const inner = innerData.inner;
+					if (!inner) return null;
+					
+					// Собираем все UIDs
+					const allUids = [inner.uid];
+					if (innerData.outer) {
+						for (const key in innerData.outer) {
+							allUids.push(innerData.outer[key].uid);
+						}
+					}
+					
+					return {
+						uid: inner.uid,
+						allUids: allUids,
+						username: inner.username,
+						age: inner.age,
+						country: inner.country,
+						city: inner.city,
+					};
+				}
+			}
+			
+			console.log(`[getProfileByUid] Profile not found for UID: ${uid}`);
+			return null;
+		}, targetUid);
+		
+		return profile;
+		
+	} catch (error) {
+		logError('Utils', `Error getting profile by UID ${targetUid}:`, error);
+		return null;
+	}
+};
+
 export default {
 	getTimestamp,
 	log,
@@ -188,4 +269,5 @@ export default {
 	randomDelay,
 	getActiveProfile,
 	switchToProfile,
+	getProfileByUid,
 };

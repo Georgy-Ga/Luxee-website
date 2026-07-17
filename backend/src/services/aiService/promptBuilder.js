@@ -104,10 +104,16 @@ export const buildMessages = async ({
 	if (typeInstructions) {
 		messageContext = typeInstructions + '\n';
 		console.log('  🎯 Using type instructions from chatMessagesExtractorService');
-	} else if (manMessage.includes('[Emoji]')) {
-		// Fallback - старый метод для эмодзи
-		messageContext = '[The man sent you an emoji/sticker - respond warmly with emotion and ask a question]\n';
-		console.log('  😊 Detected emoji message - added emoji context (fallback)');
+		console.log('  📏 Type instructions length:', typeInstructions.length, 'chars');
+		const preview = typeInstructions.substring(0, 150).replace(/\n/g, ' ');
+		console.log('  📝 Type instructions preview:', preview + '...');
+	} else {
+		console.log('  ⚠️  NO type instructions provided');
+		if (manMessage.includes('[Emoji]')) {
+			// Fallback - старый метод для эмодзи
+			messageContext = '[The man sent you an emoji/sticker - respond warmly with emotion and ask a question]\n';
+			console.log('  😊 Detected emoji message - added emoji context (fallback)');
+		}
 	}
 
 	// Добавляем текущее сообщение от мужчины

@@ -3,8 +3,6 @@
 
 import aiResponseService from '../aiResponseService.js';
 import chatMessagesExtractorService from '../luxeeApi/chatMessagesExtractorService.js';
-import messageSendService from '../luxeeApi/messageSendService.js';
-import chatValidator from './chatValidator.js';
 import profileScanner from './profileScanner.js';
 import utils from './utils.js';
 
@@ -16,6 +14,7 @@ import utils from './utils.js';
  * @param {Object} params.page - Playwright page
  * @param {Object} params.profile - Данные профиля
  * @param {Object} params.chat - Данные чата
+ * @param {boolean} params.isCatchUp - Флаг что чат из Catch Up (опционально)
  * @returns {Promise<Object>} - { sent: boolean, reason: string }
  */
 const processSingleChat = async ({
@@ -24,6 +23,7 @@ const processSingleChat = async ({
 	page,
 	profile,
 	chat,
+	isCatchUp = false,
 }) => {
 	const startTime = Date.now();
 
@@ -51,15 +51,28 @@ const processSingleChat = async ({
 		const [profileUidOuter, userUid] = chat.chatId.split('_');
 		const url = `https://luxee.io/chats/?ownerUid=${profile.uid}&profileUid=${profileUidOuter}&userUid=${userUid}`;
 
+		console.log('[🚦 CHAT PROCESSOR] ========================================');
+		console.log('[🚦 CHAT PROCESSOR] 🌐 NAVIGATION START');
+		console.log('[🚦 CHAT PROCESSOR] From URL:', page.url());
+		console.log('[🚦 CHAT PROCESSOR] To URL:', url);
+		console.log('[🚦 CHAT PROCESSOR] Chat ID:', chat.chatId);
+		console.log('[🚦 CHAT PROCESSOR] Profile:', profile.username, `(${profile.uid})`);
+		console.log('[🚦 CHAT PROCESSOR] Man:', chat.manName);
+		console.log('[🚦 CHAT PROCESSOR] isCatchUp:', isCatchUp);
+		console.log('[🚦 CHAT PROCESSOR] Time:', new Date().toISOString());
+
 		utils.log('Chat Processor', `🌐 Navigating to: ${url}`);
 		console.log('[🔧 PROCESSOR] Navigation URL:', url);
 
 		try {
+			console.log('[🚦 CHAT PROCESSOR] ⏳ Executing page.goto()...');
 			await page.goto(url, {
 				waitUntil: 'domcontentloaded',
 				timeout: 10000,
 			});
+			console.log('[🚦 CHAT PROCESSOR] ✅ page.goto() completed');
 		} catch (navError) {
+			console.log('[🚦 CHAT PROCESSOR] ❌ page.goto() FAILED:', navError.message);
 			utils.logError(
 				'Chat Processor',
 				`❌ Navigation error: ${navError.message}`,
@@ -67,7 +80,10 @@ const processSingleChat = async ({
 			return { sent: false, reason: 'navigation_timeout' };
 		}
 
+		console.log('[🚦 CHAT PROCESSOR] ⏳ Sleeping 3 seconds...');
 		await utils.sleep(3000);
+		console.log('[🚦 CHAT PROCESSOR] ✅ Sleep completed');
+		console.log('[🚦 CHAT PROCESSOR] Current URL after navigation:', page.url());
 
 		// Проверка успешности навигации
 		const activeChatId = await page.evaluate(() => {
@@ -84,65 +100,157 @@ const processSingleChat = async ({
 
 		utils.log('Chat Processor', `✅ Navigated successfully`);
 
-		// ========== ПРОВЕРКА #1: unAnswered ПОСЛЕ навигации ==========
-		utils.log('Chat Processor', `🔍 Checking unAnswered status...`);
-		const unAnsweredCheck = await profileScanner.checkActiveChatUnAnswered(
-			page,
-			chat.chatId,
-		);
-
-		if (unAnsweredCheck.error) {
-			utils.logError(
-				'Chat Processor',
-				`❌ unAnswered check failed: ${unAnsweredCheck.error}`,
+		// ========== ПРОВЕРКА unAnswered (ТОЛЬКО ДЛЯ ОБЫЧНЫХ ЧАТОВ!) ==========
+		if (!isCatchUp) {
+			// 📋 ОБЫЧНЫЕ ЧАТЫ: проверяем unAnswered
+			utils.log('Chat Processor', `🔍 Checking unAnswered status...`);
+			const unAnsweredCheck = await profileScanner.checkActiveChatUnAnswered(
+				page,
+				chat.chatId,
 			);
-			return { sent: false, reason: 'unanswered_check_failed' };
-		}
 
-		if (!unAnsweredCheck.isUnAnswered) {
+			if (unAnsweredCheck.error) {
+				utils.logError(
+					'Chat Processor',
+					`❌ unAnswered check failed: ${unAnsweredCheck.error}`,
+				);
+				return { sent: false, reason: 'unanswered_check_failed' };
+			}
+
+			if (!unAnsweredCheck.isUnAnswered) {
+				utils.log(
+					'Chat Processor',
+					`⏭️  Chat already answered (unAnswered = false) - skipping`,
+				);
+				return { sent: false, reason: 'already_answered' };
+			}
+
+			utils.log('Chat Processor', `✅ unAnswered = true, proceeding...`);
+		} else {
+			// 🔥 CATCH UP: НЕ проверяем unAnswered - пишем в любом случае!
 			utils.log(
 				'Chat Processor',
-				`⏭️  Chat already answered (unAnswered = false) - skipping`,
+				`🎯 Catch Up mode: skipping unAnswered check`,
 			);
-			return { sent: false, reason: 'already_answered' };
 		}
 
-		utils.log('Chat Processor', `✅ unAnswered = true, proceeding...`);
+	// ========== ИЗВЛЕЧЬ ИСТОРИЮ С RETRY (3 попытки) ==========
+	let history = null;
+	let retryCount = 0;
+	const maxRetries = 3;
 
-		// ========== ИЗВЛЕЧЬ ИСТОРИЮ (10 сообщений) ==========
-		utils.log('Chat Processor', `📜 Extracting history (10 messages)...`);
-		const history = await chatMessagesExtractorService.getChatHistory(page, 10);
-
-		if (history.error) {
-			utils.logError(
-				'Chat Processor',
-				`❌ Failed to extract history: ${history.error}`,
-			);
-			return { sent: false, reason: 'history_extraction_failed' };
-		}
-
+	while (retryCount < maxRetries && !history) {
 		utils.log(
 			'Chat Processor',
-			`✅ Extracted ${history.messages.length} messages`,
+			`📜 Extracting history (attempt ${retryCount + 1}/${maxRetries})...`,
 		);
 
-		// Проверка последнего сообщения
-		const shouldReply = chatMessagesExtractorService.shouldReplyToChat(
-			history.lastMessage,
+		const result = await chatMessagesExtractorService.getChatHistory(page, 10);
+
+		if (!result.error) {
+			history = result;
+			utils.log(
+				'Chat Processor',
+				`✅ Extracted ${history.messages.length} messages`,
+			);
+			break;
+		}
+
+		retryCount++;
+		if (retryCount < maxRetries) {
+			utils.log('Chat Processor', `⏳ Retry in 2 seconds...`);
+			await utils.sleep(2000);
+		} else {
+			utils.logError(
+				'Chat Processor',
+				`❌ Failed to extract history after ${maxRetries} attempts: ${result.error}`,
+			);
+		}
+	}
+
+	// ========== FALLBACK ДЛЯ CATCH UP: ПЕРВОЕ СООБЩЕНИЕ ==========
+	if (!history && isCatchUp) {
+		utils.log(
+			'Chat Processor',
+			'🎯 Catch Up: No history found, will send FIRST MESSAGE...',
 		);
 
-		console.log('[🔧 PROCESSOR] Should reply check:', {
-			shouldReply: shouldReply.shouldReply,
-			reason: shouldReply.reason,
-			lastMessageAuthor: history.lastMessage?.author,
-			lastMessageIsFromProfile: history.lastMessage?.isFromProfile,
-			lastMessageIsFromMan: history.lastMessage?.isFromMan,
-		});
+		// Создаём минимальную "историю" для первого сообщения
+		history = {
+			messages: [],
+			lastMessage: null,
+			formattedHistory: '',
+		};
 
-		if (!shouldReply.shouldReply) {
-			utils.log('Chat Processor', `⏭️  ${shouldReply.reason}`);
-			console.log('[🔧 PROCESSOR] ❌ SKIPPING CHAT:', shouldReply.reason);
-			return { sent: false, reason: 'shouldnt_reply' };
+		utils.log('Chat Processor', '💬 Using first message mode for Catch Up');
+	}
+
+	// ========== ОБЫЧНЫЕ ЧАТЫ: ПРОПУСКАЕМ ЕСЛИ НЕТ ИСТОРИИ ==========
+	if (!history) {
+		utils.logError(
+			'Chat Processor',
+			`❌ Failed to extract history after ${maxRetries} attempts`,
+		);
+		return { sent: false, reason: 'history_extraction_failed' };
+	}
+
+	// ========== ОПРЕДЕЛЯЕМ ТИП ПРОМТА ==========
+	let typeInstructions = '';
+
+	if (isCatchUp) {
+		// 🔥 CATCH UP ЛОГИКА
+		utils.log('Chat Processor', '🎯 Processing Catch Up chat...');
+
+		// ✅ ПРОВЕРКА: есть ли история?
+		if (!history.lastMessage) {
+			// 📭 НЕТ ИСТОРИИ → ПЕРВОЕ СООБЩЕНИЕ
+			typeInstructions = `This is a FIRST MESSAGE to start a conversation. Write a short, friendly, and natural greeting that shows interest in getting to know him. Keep it simple, warm, and inviting (1-2 sentences max). Don't ask too many questions at once.`;
+			utils.log('Chat Processor', '💬 Catch Up: FIRST MESSAGE (no history)');
+		} else {
+			// 📬 ЕСТЬ ИСТОРИЯ → СТАНДАРТНЫЙ ПРОМТ
+			typeInstructions =
+				chatMessagesExtractorService.getAIInstructionsForMessageType(
+					history.lastMessage.messageType,
+				);
+
+			// Если последнее от девушки → добавляем короткую подсказку
+			if (history.lastMessage.isFromProfile) {
+				typeInstructions += `\n\nNOTE: The man saw your last message but didn't reply. Re-engage him with a fresh question based on chat history.`;
+				utils.log(
+					'Chat Processor',
+					'💬 Catch Up: last from profile, added re-engagement note',
+				);
+			} else {
+				utils.log(
+					'Chat Processor',
+					'📬 Catch Up: last from man, standard reply',
+				);
+			}
+		}
+	} else {
+			// 📋 ОБЫЧНЫЙ ЧАТ: проверяем shouldReply
+			const shouldReply = chatMessagesExtractorService.shouldReplyToChat(
+				history.lastMessage,
+			);
+
+			console.log('[🔧 PROCESSOR] Should reply check:', {
+				shouldReply: shouldReply.shouldReply,
+				reason: shouldReply.reason,
+				lastMessageAuthor: history.lastMessage?.author,
+				lastMessageIsFromProfile: history.lastMessage?.isFromProfile,
+				lastMessageIsFromMan: history.lastMessage?.isFromMan,
+			});
+
+			if (!shouldReply.shouldReply) {
+				utils.log('Chat Processor', `⏭️  ${shouldReply.reason}`);
+				console.log('[🔧 PROCESSOR] ❌ SKIPPING CHAT:', shouldReply.reason);
+				return { sent: false, reason: 'shouldnt_reply' };
+			}
+
+			typeInstructions =
+				chatMessagesExtractorService.getAIInstructionsForMessageType(
+					history.lastMessage.messageType,
+				);
 		}
 
 		console.log('[🔧 PROCESSOR] ✅ Will generate AI response');
@@ -154,19 +262,37 @@ const processSingleChat = async ({
 			history.manName,
 		);
 
-		const typeInstructions =
-			chatMessagesExtractorService.getAIInstructionsForMessageType(
-				history.lastMessage.messageType,
-			);
-
+		// 📊 ЛОГИРОВАНИЕ ПРОМТА
 		utils.log(
 			'Chat Processor',
-			`🤖 Generating response (type: ${history.lastMessage.messageType})...`,
+			`📋 Type instructions length: ${typeInstructions.length} chars`,
+		);
+		if (typeInstructions) {
+			const preview = typeInstructions.substring(0, 100).replace(/\n/g, ' ');
+			utils.log(
+				'Chat Processor',
+				`📄 Type instructions preview: ${preview}...`,
+			);
+		} else {
+			utils.log('Chat Processor', `⚠️  NO type instructions provided!`);
+		}
+
+		const messageType = history.lastMessage?.messageType || 'text';
+		utils.log(
+			'Chat Processor',
+			`🤖 Generating response (type: ${messageType})...`,
 		);
 
 		// ========== ГЕНЕРАЦИЯ И ОТПРАВКА ОТВЕТА ==========
-		utils.log('Chat Processor', `🤖 Generating and sending AI response...`);
+		console.log('[🚦 CHAT PROCESSOR] ========================================');
+		console.log('[🚦 CHAT PROCESSOR] 🤖 AI GENERATION & SEND START');
+		console.log('[🚦 CHAT PROCESSOR] Current URL:', page.url());
+		console.log('[🚦 CHAT PROCESSOR] Chat ID:', chat.chatId);
+		console.log('[🚦 CHAT PROCESSOR] Time:', new Date().toISOString());
 		
+		utils.log('Chat Processor', `🤖 Generating and sending AI response...`);
+
+		console.log('[🚦 CHAT PROCESSOR] ⏳ Calling aiResponseService.generateAndSend()...');
 		const aiResponse = await aiResponseService.generateAndSend({
 			userId,
 			accountId,
@@ -178,12 +304,12 @@ const processSingleChat = async ({
 				country: profile.country,
 				city: profile.city,
 			},
-			manMessage: history.lastMessage.text,
+			manMessage: history.lastMessage?.text || '',
 			formattedHistory: formattedHistory,
 			profileName: profile.username,
-			manName: history.manName,
+			manName: chat.manName || history.manName || 'there',
 			typeInstructions: typeInstructions,
-			messageType: history.lastMessage.messageType,
+			messageType: messageType,
 			// skipSending убран - функция всегда генерирует И отправляет
 		});
 
@@ -198,46 +324,71 @@ const processSingleChat = async ({
 			sendSuccess: aiResponse?.sendResult?.success,
 			sendTimestamp: aiResponse?.sendResult?.timestamp,
 		});
-		
+
 		utils.log('Chat Processor', `🔍 Checking AI response result...`);
-		
+
 		// ✅ ИСПРАВЛЕНО: Проверяем ПРАВИЛЬНЫЕ поля
 		if (!aiResponse || !aiResponse.success) {
 			utils.logError('Chat Processor', `❌ AI generation failed`);
-			console.log('[🔧 PROCESSOR] ❌ GENERATION FAILED - Full response:', aiResponse);
+			console.log(
+				'[🔧 PROCESSOR] ❌ GENERATION FAILED - Full response:',
+				aiResponse,
+			);
 			return { sent: false, reason: 'generation_failed' };
 		}
 		utils.log('Chat Processor', `   ✓ Generation: SUCCESS`);
 
 		if (!aiResponse.sendResult || !aiResponse.sendResult.success) {
 			utils.logError('Chat Processor', `❌ Message sending failed`);
-			console.log('[🔧 PROCESSOR] ❌ SEND FAILED - sendResult:', aiResponse.sendResult);
+			console.log(
+				'[🔧 PROCESSOR] ❌ SEND FAILED - sendResult:',
+				aiResponse.sendResult,
+			);
 			return { sent: false, reason: 'send_failed' };
 		}
 		utils.log('Chat Processor', `   ✓ Sending: SUCCESS`);
 
 		// Извлекаем сгенерированный текст из правильного места
 		const generatedText = aiResponse.generatedResponse?.response || 'N/A';
-		const sendTime = new Date(aiResponse.sendResult.timestamp).toLocaleTimeString();
-		
+		const sendTime = new Date(
+			aiResponse.sendResult.timestamp,
+		).toLocaleTimeString();
+
 		utils.log(
 			'Chat Processor',
 			`✅ Generated and sent: "${generatedText.substring(0, 50)}..."`,
 		);
 		utils.log('Chat Processor', `✅ Message delivered at ${sendTime}`);
-		
+
 		console.log('[🔧 PROCESSOR] ✅ MESSAGE SENT SUCCESSFULLY');
-		console.log('[🔧 PROCESSOR] Generated text:', generatedText.substring(0, 100));
-		console.log('[🔧 PROCESSOR] Send timestamp:', aiResponse.sendResult.timestamp);
+		console.log(
+			'[🔧 PROCESSOR] Generated text:',
+			generatedText.substring(0, 100),
+		);
+		console.log(
+			'[🔧 PROCESSOR] Send timestamp:',
+			aiResponse.sendResult.timestamp,
+		);
 
 		// ✅ Сообщение УЖЕ отправлено - возвращаем успех
 		const elapsed = Date.now() - startTime;
+		
+		console.log('[🚦 CHAT PROCESSOR] ========================================');
+		console.log('[🚦 CHAT PROCESSOR] ✅ MESSAGE SENT SUCCESSFULLY');
+		console.log('[🚦 CHAT PROCESSOR] Chat ID:', chat.chatId);
+		console.log('[🚦 CHAT PROCESSOR] Man:', chat.manName);
+		console.log('[🚦 CHAT PROCESSOR] Profile:', profile.username);
+		console.log('[🚦 CHAT PROCESSOR] Duration:', Math.round(elapsed / 1000), 'seconds');
+		console.log('[🚦 CHAT PROCESSOR] Current URL after send:', page.url());
+		console.log('[🚦 CHAT PROCESSOR] Time:', new Date().toISOString());
+		console.log('[🚦 CHAT PROCESSOR] ========================================');
+		
 		utils.log(
 			'Chat Processor',
 			`✅ Successfully processed chat with ${chat.manName} (${Math.round(elapsed / 1000)}s)`,
 		);
-		
-		return { 
+
+		return {
 			sent: true,
 			chatId: chat.chatId,
 			profileUid: profile.uid,
