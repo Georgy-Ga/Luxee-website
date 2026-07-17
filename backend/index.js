@@ -15,6 +15,7 @@ import socketService from './src/services/socketService.js';
 import aiAutoResponseService from './src/services/aiAutoResponseService.js';
 import LuxeeAccountModel from './src/models/LuxeeAccountModel.js';
 import { loadPromptsFromJson } from './src/services/profilePromptService.js';
+import spambotPollingService from './src/services/spambotPollingService.js';
 
 dotenv.config();
 
@@ -162,6 +163,17 @@ const start = async () => {
 				console.error('[Server] Error during AI recovery:', error);
 			}
 		}, 6000); // Задержка 6 секунд (после основного recovery)
+
+		// Запуск Spambot Polling Service
+		setTimeout(() => {
+			try {
+				console.log('\n[Server] Starting Spambot Polling Service...');
+				spambotPollingService.start();
+				console.log('[Server] ✓ Spambot Polling Service started\n');
+			} catch (error) {
+				console.error('[Server] Error starting Spambot Polling Service:', error);
+			}
+		}, 9000); // Задержка 9 секунд (после AI recovery)
 	} catch (error) {
 		console.log(error);
 	}

@@ -1,0 +1,17 @@
+# Core dependency (existing spambot) - includes all browser automation
+rpaframework==30.0.2
+
+# FastAPI and web server (ТОЛЬКО для API wrapper)
+fastapi==0.104.1
+uvicorn[standard]==0.24.0
+
+# Data validation (требуется для FastAPI)
+pydantic==2.5.0
+
+# Environment variables
+python-dotenv==1.0.0
+
+# HTTP requests (для вызовов к Node.js backend)
+requests==2.31.0
+
+# НЕ указываем beautifulsoup4, cryptography, Pillow - они уже в rpaframework!

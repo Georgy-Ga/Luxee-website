@@ -45,6 +45,13 @@ export const SOCKET_EVENTS = {
 	AI_USER_CHANGED: 'ai:user:changed',
 	AI_BULK_CHANGED: 'ai:bulk:changed',
 	
+	// Сервер -> Клиент (Spambot рассылки)
+	DISTRIBUTION_STATUS_UPDATE: 'spambot:distribution:status',
+	DISTRIBUTION_STARTED: 'spambot:distribution:started',
+	DISTRIBUTION_COMPLETED: 'spambot:distribution:completed',
+	DISTRIBUTION_STOPPED: 'spambot:distribution:stopped',
+	DISTRIBUTION_ERROR: 'spambot:distribution:error',
+	
 	// Системные
 	ERROR: 'error',
 	RECONNECT: 'reconnect'

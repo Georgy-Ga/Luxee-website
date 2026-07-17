@@ -244,6 +244,81 @@ getConnectedUsersCount() {
 			}))
 		};
 	}
+
+	/**
+	 * Emit события обновления статуса рассылки (Spambot)
+	 * @param {string} userId - ID пользователя-владельца
+	 * @param {Object} data - Данные о статусе рассылки
+	 */
+	emitDistributionStatusUpdate(userId, data) {
+		if (!this.ensureInitialized()) return;
+
+		const event = SOCKET_EVENTS.DISTRIBUTION_STATUS_UPDATE;
+		
+		// Отправляем только владельцу рассылки
+		this.emitToUser(userId, event, {
+			...data,
+			timestamp: new Date().toISOString()
+		});
+
+		console.log(`[Socket Service] Distribution status update sent to user ${userId}:`, data.distributionId);
+	}
+
+	/**
+	 * Emit события запуска рассылки
+	 */
+	emitDistributionStarted(userId, distributionData) {
+		if (!this.ensureInitialized()) return;
+
+		this.emitToUser(userId, SOCKET_EVENTS.DISTRIBUTION_STARTED, {
+			...distributionData,
+			timestamp: new Date().toISOString()
+		});
+
+		console.log(`[Socket Service] Distribution started event sent to user ${userId}`);
+	}
+
+	/**
+	 * Emit события завершения рассылки
+	 */
+	emitDistributionCompleted(userId, distributionData) {
+		if (!this.ensureInitialized()) return;
+
+		this.emitToUser(userId, SOCKET_EVENTS.DISTRIBUTION_COMPLETED, {
+			...distributionData,
+			timestamp: new Date().toISOString()
+		});
+
+		console.log(`[Socket Service] Distribution completed event sent to user ${userId}`);
+	}
+
+	/**
+	 * Emit события остановки рассылки
+	 */
+	emitDistributionStopped(userId, distributionData) {
+		if (!this.ensureInitialized()) return;
+
+		this.emitToUser(userId, SOCKET_EVENTS.DISTRIBUTION_STOPPED, {
+			...distributionData,
+			timestamp: new Date().toISOString()
+		});
+
+		console.log(`[Socket Service] Distribution stopped event sent to user ${userId}`);
+	}
+
+	/**
+	 * Emit события ошибки в рассылке
+	 */
+	emitDistributionError(userId, distributionData) {
+		if (!this.ensureInitialized()) return;
+
+		this.emitToUser(userId, SOCKET_EVENTS.DISTRIBUTION_ERROR, {
+			...distributionData,
+			timestamp: new Date().toISOString()
+		});
+
+		console.log(`[Socket Service] Distribution error event sent to user ${userId}`);
+	}
 }
 
 // Экспортируем singleton instance

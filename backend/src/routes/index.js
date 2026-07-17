@@ -7,6 +7,7 @@ import AiAutoResponseController from '../controllers/aiAutoResponseController.js
 import LuxeeController from '../controllers/luxeeController.js';
 import authMiddleware from '../middleware/authMiddleware.js';
 import roleMiddleware from '../middleware/roleMiddleware.js';
+import spambotRoutes from './spambotRoutes.js';
 const router = new Router();
 
 router.post(
@@ -196,5 +197,8 @@ router.get(
 	authMiddleware,
 	AiAutoResponseController.isRunning,
 );
+
+// Spambot routes
+router.use('/spambot', spambotRoutes);
 
 export default router;

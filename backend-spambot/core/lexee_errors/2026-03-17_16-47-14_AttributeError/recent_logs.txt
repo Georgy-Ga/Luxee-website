@@ -1,0 +1,10 @@
+2026-03-17 16:45:04,834 - INFO    [luxee_browser.py:66 - login()] - Logging in...
+2026-03-17 16:45:15,876 - INFO    [luxee_browser.py:87 - login()] - Logged in successfully
+2026-03-17 16:45:15,876 - INFO    [process.py:10 - extract_profiles()] - Extracting profiles...
+2026-03-17 16:45:15,877 - INFO    [requests_class.py:38 - __reset_if_stale()] - Session reset due to staleness.
+2026-03-17 16:45:20,963 - INFO    [process.py:12 - extract_profiles()] - Extracted 2 profiles.
+2026-03-17 16:45:21,142 - INFO    [luxee_browser.py:402 - logout()] - Logged out successfully
+2026-03-17 16:46:56,815 - INFO    [luxee_browser.py:66 - login()] - Logging in...
+2026-03-17 16:47:02,768 - INFO    [luxee_browser.py:87 - login()] - Logged in successfully
+2026-03-17 16:47:02,769 - INFO    [luxee_browser.py:411 - filter_clients()] - Updating clients list.
+2026-03-17 16:47:12,770 - INFO    [requests_class.py:38 - __reset_if_stale()] - Session reset due to staleness.

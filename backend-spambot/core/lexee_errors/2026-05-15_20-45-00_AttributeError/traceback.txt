@@ -1,0 +1,19 @@
+Traceback (most recent call last):
+  File "C:\Users\user\Desktop\spambot\src\process.py", line 31, in start
+    self.luxee.start_distribution(distribution)
+  File "C:\Users\user\Desktop\spambot\src\luxee_site\luxee_browser.py", line 33, in wrapper
+    result = func(self, *args, **kwargs)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\user\Desktop\spambot\src\luxee_site\luxee_browser.py", line 504, in start_distribution
+    clients = self.filter_clients(distribution)
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\user\Desktop\spambot\src\luxee_site\luxee_browser.py", line 447, in filter_clients
+    self._get_clients_list(purchased=True, free=False)  # Получаем токен
+    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\user\Desktop\spambot\src\luxee_site\luxee_browser.py", line 172, in _get_clients_list
+    return self.__extract_clients(clients_html)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\user\Desktop\spambot\src\luxee_site\luxee_browser.py", line 156, in __extract_clients
+    app = client_wrapper.find("span", {"class": "application-wrap"}).text.strip()
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AttributeError: 'NoneType' object has no attribute 'text'
