@@ -203,7 +203,7 @@ const processAccountMessages = async (accountId, userId, page) => {
 					console.log(
 						'[🤖 AI AUTO] ✅ SUCCESS! Message sent on active profile',
 					);
-					await utils.randomDelay(3000, 6000);
+					await utils.randomDelay(12000, 24000);
 					messageSent = true;
 					return { processed: true, reason: 'active_profile_processed' };
 				} else {
@@ -314,7 +314,7 @@ const processAccountMessages = async (accountId, userId, page) => {
 							'AI Auto',
 							`✅ Message sent on profile ${profile.username} (${Math.round(elapsed / 1000)}s)`,
 						);
-						await utils.randomDelay(3000, 6000);
+						await utils.randomDelay(12000, 24000);
 						messageSent = true;
 						return { processed: true, reason: 'other_profile_processed' };
 					} else {
