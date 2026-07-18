@@ -248,18 +248,37 @@ class SpambotController {
 				});
 			}
 
-			// Запустить рассылку
-			const userRole = req.user.role;
-			const distribution = await spambotService.startDistribution({
-				accountId,
-				userId,
-				userRole,
-				config,
-			});
+		// Запустить рассылку
+		const userRole = req.user.role;
+		
+		console.log('🔥🔥🔥 [Spambot Controller] BEFORE startDistribution');
+		console.log('🔥🔥🔥 accountId:', accountId);
+		console.log('🔥🔥🔥 userId:', userId);
+		console.log('🔥🔥🔥 userRole:', userRole);
+		
+		const distribution = await spambotService.startDistribution({
+			accountId,
+			userId,
+			userRole,
+			config,
+		});
+
+		console.log('🚀🚀🚀 [Spambot Controller] AFTER startDistribution');
+		console.log('🚀🚀🚀 distribution:', JSON.stringify(distribution, null, 2));
 
 		// Отправить WebSocket событие о запуске
-		// ВАЖНО: Конвертируем Date в ISO строки для правильной передачи через WebSocket
-		socketService.emitDistributionStarted(userId, {
+		// ВАЖНО: Используем distribution.user (владелец аккаунта), а не req.user.id (кто запустил)
+		// Это обеспечивает что user получит уведомление, даже если админ запустил рассылку
+		console.log('[Spambot Controller] 📡 Sending WebSocket event:');
+		console.log('[Spambot Controller] 📡 Initiator (req.user.id):', req.user.id);
+		console.log('[Spambot Controller] 📡 Owner (distribution.user):', distribution.user);
+		console.log('[Spambot Controller] 📡 distributionId:', distribution.distributionId);
+		
+		// ВАЖНО: distribution.user это ObjectId, нужно конвертировать в string
+		const ownerUserId = distribution.user.toString();
+		console.log('[Spambot Controller] 💡 Converted to string:', ownerUserId);
+		
+		socketService.emitDistributionStarted(ownerUserId, {
 			distributionId: distribution.distributionId,
 			id: distribution.id,
 			status: distribution.status,

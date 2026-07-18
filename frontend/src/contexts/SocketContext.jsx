@@ -20,7 +20,8 @@ export const SocketProvider = ({ children }) => {
 	const [reconnectAttempt, setReconnectAttempt] = useState(0);
 
 	// Инициализация Socket соединения
-	const connectSocket = useCallback(() => {
+	// ❌ НЕ добавлять socket в зависимости - это вызывает бесконечный цикл!
+	useEffect(() => {
 		const token = Cookies.get('accessToken');
 		
 		if (!token) {
@@ -28,6 +29,7 @@ export const SocketProvider = ({ children }) => {
 			return;
 		}
 
+		// Если уже есть подключение - не создаем новое
 		if (socket?.connected) {
 			console.log('[Socket] Already connected');
 			return;
@@ -59,8 +61,8 @@ export const SocketProvider = ({ children }) => {
 			transports: ['websocket', 'polling'],
 			reconnection: true,
 			reconnectionDelay: 1000,
-			reconnectionDelayMax: 10000, // Увеличен макс интервал до 10 сек
-			reconnectionAttempts: Infinity, // Бесконечные попытки переподключения
+			reconnectionDelayMax: 10000,
+			reconnectionAttempts: Infinity,
 		});
 
 		// Обработчики событий
@@ -68,14 +70,13 @@ export const SocketProvider = ({ children }) => {
 			console.log('[Socket] ✓ Connected:', newSocket.id);
 			setIsConnected(true);
 			setConnectionError(null);
-			setReconnectAttempt(0); // Сброс счётчика попыток при успешном подключении
+			setReconnectAttempt(0);
 		});
 
 		newSocket.on('disconnect', (reason) => {
 			console.log('[Socket] ✗ Disconnected:', reason);
 			setIsConnected(false);
 			
-			// Показываем разные сообщения в зависимости от причины
 			if (reason === 'io server disconnect') {
 				console.log('[Socket] Server closed connection, will not reconnect automatically');
 			} else {
@@ -85,8 +86,7 @@ export const SocketProvider = ({ children }) => {
 
 		newSocket.on('connect_error', (error) => {
 			setReconnectAttempt((prev) => prev + 1);
-			const attemptNumber = reconnectAttempt + 1;
-			console.error(`[Socket] Connection error (attempt ${attemptNumber}):`, error.message);
+			console.error(`[Socket] Connection error (attempt ${prev + 1}):`, error.message);
 			setConnectionError(error.message);
 			setIsConnected(false);
 		});
@@ -111,47 +111,31 @@ export const SocketProvider = ({ children }) => {
 
 		setSocket(newSocket);
 
+		// Cleanup при размонтировании
 		return () => {
 			console.log('[Socket] Cleaning up connection');
 			newSocket.close();
-		};
-	}, [socket]);
-
-	// Отключение Socket соединения
-	const disconnectSocket = useCallback(() => {
-		if (socket) {
-			console.log('[Socket] Disconnecting...');
-			socket.close();
 			setSocket(null);
-			setIsConnected(false);
-			setConnectionError(null);
-		}
-	}, [socket]);
+		};
+	}, []); // ✅ Пустой массив - подключаемся только один раз при монтировании!
 
-	// Подключаемся при монтировании компонента
-	useEffect(() => {
-		const cleanup = connectSocket();
-		return cleanup;
-	}, []);
-
-	// Переподключение при изменении токена
+	// Отключение при выходе (отсутствие токена)
 	useEffect(() => {
 		const token = Cookies.get('accessToken');
 		
-		if (token && !socket) {
-			connectSocket();
-		} else if (!token && socket) {
-			disconnectSocket();
+		if (!token && socket) {
+			console.log('[Socket] No token, disconnecting...');
+			socket.close();
+			setSocket(null);
+			setIsConnected(false);
 		}
-	}, [socket, connectSocket, disconnectSocket]);
+	}, []); // Мониторим токен вручную через интервал или события, а не через useEffect
 
 	const value = {
 		socket,
 		isConnected,
 		connectionError,
 		reconnectAttempt,
-		connectSocket,
-		disconnectSocket,
 	};
 
 	return (

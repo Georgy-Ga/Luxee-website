@@ -187,26 +187,30 @@ class SpambotPollingService {
 
 				// Выбрать правильный метод в зависимости от статуса
 				if (status.status === 'completed') {
-					socketService.emitDistributionCompleted(distribution.user._id, {
+					// ВАЖНО: distribution.user._id это ObjectId, конвертируем в string
+					socketService.emitDistributionCompleted(distribution.user._id.toString(), {
 						...eventData,
 						completedAt: new Date().toISOString()
 					});
 				} else if (status.status === 'error') {
-					socketService.emitDistributionError(distribution.user._id, {
+					// ВАЖНО: distribution.user._id это ObjectId, конвертируем в string
+					socketService.emitDistributionError(distribution.user._id.toString(), {
 						...eventData,
 						errorMessage: status.errorMessage || 'Unknown error'
 					});
 				} else if (status.status === 'running') {
 					// Для progress updates используем общее событие status
+					// ВАЖНО: distribution.user._id это ObjectId, конвертируем в string
 					socketService.emitToUserAndAdmins(
-						distribution.user._id,
+						distribution.user._id.toString(),
 						'spambot:distribution:status',
 						eventData
 					);
 				} else {
 					// Для других статусов (stopped, idle) используем общее событие
+					// ВАЖНО: distribution.user._id это ObjectId, конвертируем в string
 					socketService.emitToUserAndAdmins(
-						distribution.user._id,
+						distribution.user._id.toString(),
 						'spambot:distribution:status',
 						eventData
 					);
@@ -252,9 +256,11 @@ class SpambotPollingService {
 
 						// Использовать правильные методы socketService
 						if (finalStatus.status === 'completed') {
-							socketService.emitDistributionCompleted(distribution.user._id, eventData);
+							// ВАЖНО: distribution.user._id это ObjectId, конвертируем в string
+							socketService.emitDistributionCompleted(distribution.user._id.toString(), eventData);
 						} else if (finalStatus.status === 'error') {
-							socketService.emitDistributionError(distribution.user._id, {
+							// ВАЖНО: distribution.user._id это ObjectId, конвертируем в string
+							socketService.emitDistributionError(distribution.user._id.toString(), {
 								...eventData,
 								errorMessage: finalStatus.errorMessage || 'Unknown error'
 							});

@@ -122,29 +122,43 @@ class SocketService {
 	emitToUserAndAdmins(userId, event, data) {
 		if (!this.ensureInitialized()) return;
 
+		console.log(`🌟🌟🌟 [Socket Service] emitToUserAndAdmins called`);
+		console.log(`🌟 userId: ${userId}`);
+		console.log(`🌟 event: ${event}`);
+		console.log(`🌟 Total connected users: ${this.connectedUsers.size}`);
+		console.log(`🌟 All connected user IDs:`, Array.from(this.connectedUsers.keys()));
+
 		let sentToSockets = new Set();
 		let sentToUsers = 0;
 
 		// Отправить владельцу
 		const userSockets = this.connectedUsers.get(userId);
+		console.log(`🔍 User ${userId} sockets:`, userSockets ? Array.from(userSockets) : 'NOT FOUND');
+		
 		if (userSockets && userSockets.size > 0) {
 			userSockets.forEach(socketId => {
 				this.io.to(socketId).emit(event, data);
 				sentToSockets.add(socketId);
+				console.log(`✅ Emitted to user socket: ${socketId}`);
 			});
 			sentToUsers++;
+		} else {
+			console.log(`❌ User ${userId} has NO sockets!`);
 		}
 
 		// Отправить всем админам
+		console.log(`🔍 Checking admins... Total sockets: ${this.io.sockets.sockets.size}`);
 		this.io.sockets.sockets.forEach((socket) => {
+			console.log(`  Socket ${socket.id}: userId=${socket.userId}, role=${socket.userRole}`);
 			if (socket.userRole === 'admin' && !sentToSockets.has(socket.id)) {
 				socket.emit(event, data);
 				sentToSockets.add(socket.id);
 				sentToUsers++;
+				console.log(`✅ Emitted to admin socket: ${socket.id}`);
 			}
 		});
 
-		console.log(`[Socket Service] Emit to user ${userId} + admins (${sentToSockets.size} connections, ${sentToUsers} users): ${event}`);
+		console.log(`📊 [Socket Service] Emit to user ${userId} + admins (${sentToSockets.size} connections, ${sentToUsers} users): ${event}`);
 	}
 
 	/**
@@ -306,12 +320,22 @@ getConnectedUsersCount() {
 	emitDistributionStarted(userId, distributionData) {
 		if (!this.ensureInitialized()) return;
 
+		console.log(`[Socket Service] 🚀 emitDistributionStarted called`);
+		console.log(`[Socket Service] 🚀 Target userId: ${userId}`);
+		console.log(`[Socket Service] 🚀 User connected: ${this.isUserConnected(userId)}`);
+		console.log(`[Socket Service] 🚀 Total connected users: ${this.getConnectedUsersCount()}`);
+		console.log(`[Socket Service] 🚀 Distribution ID: ${distributionData.distributionId}`);
+		
+		// Показать все подключенные пользователи для отладки
+		const stats = this.getStats();
+		console.log(`[Socket Service] 🚀 Connected users:`, stats.userConnections);
+
 		this.emitToUserAndAdmins(userId, SOCKET_EVENTS.DISTRIBUTION_STARTED, {
 			...distributionData,
 			timestamp: new Date().toISOString()
 		});
 
-		console.log(`[Socket Service] Distribution started event sent to user ${userId} + admins`);
+		console.log(`[Socket Service] ✅ Distribution started event sent to user ${userId} + admins`);
 	}
 
 	/**

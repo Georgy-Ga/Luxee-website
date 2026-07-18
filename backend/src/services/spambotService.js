@@ -202,14 +202,18 @@ class SpambotService {
 
 			await distribution.save();
 
-			console.log(`[Spambot Service] Distribution started: ${distribution_id} for account ${account.luxeeEmail}`);
+		console.log(`[Spambot Service] Distribution started: ${distribution_id} for account ${account.luxeeEmail}`);
 
-			return {
-				id: distribution._id,
-				distributionId: distribution_id,
-				status: 'running',
-				accountEmail: account.luxeeEmail
-			};
+		return {
+			id: distribution._id,
+			distributionId: distribution_id,
+			status: 'running',
+			accountEmail: account.luxeeEmail,
+			user: account.user, // ID владельца аккаунта для WebSocket уведомлений
+			config: distribution.config,
+			createdAt: distribution.createdAt,
+			startedAt: distribution.startedAt
+		};
 
 		} catch (error) {
 			// Снять блокировку при ошибке
@@ -366,7 +370,8 @@ class SpambotService {
 
 			// Отправить WebSocket событие об остановке
 			const socketService = (await import('./socketService.js')).default;
-			socketService.emitDistributionStopped(distribution.user, {
+			// ВАЖНО: distribution.user это ObjectId, конвертируем в string
+			socketService.emitDistributionStopped(distribution.user.toString(), {
 				distributionId: distribution.distributionId,
 				id: distribution._id,
 				status: 'stopped',
