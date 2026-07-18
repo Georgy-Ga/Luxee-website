@@ -45,6 +45,11 @@ export const SOCKET_EVENTS = {
 	AI_USER_CHANGED: 'ai:user:changed',
 	AI_BULK_CHANGED: 'ai:bulk:changed',
 	
+	// Сервер -> Клиент (Luxee аккаунты)
+	LUXEE_ACCOUNT_CREATED: 'luxee:account:created',
+	LUXEE_ACCOUNT_UPDATED: 'luxee:account:updated',
+	LUXEE_ACCOUNT_DELETED: 'luxee:account:deleted',
+	
 	// Сервер -> Клиент (Spambot рассылки)
 	DISTRIBUTION_STATUS_UPDATE: 'spambot:distribution:status',
 	DISTRIBUTION_STARTED: 'spambot:distribution:started',

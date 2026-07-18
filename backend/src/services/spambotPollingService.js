@@ -17,6 +17,64 @@ class SpambotPollingService {
 	}
 
 	/**
+	 * Восстановить потерянные обновления при старте
+	 */
+	async recoverLostUpdates() {
+		try {
+			console.log('[Spambot Polling] 🔄 Checking for lost updates...');
+			
+			// Найти все рассылки со статусом running в MongoDB
+			const runningDistributions = await SpambotDistributionModel.find({
+				status: 'running'
+			}).populate('user luxeeAccount');
+			
+			if (runningDistributions.length === 0) {
+				console.log('[Spambot Polling] ✅ No running distributions to recover');
+				return;
+			}
+			
+			console.log(`[Spambot Polling] 🔍 Found ${runningDistributions.length} running distributions, checking Python...`);
+			
+			// Проверить каждую у Python Service
+			for (const distribution of runningDistributions) {
+				try {
+					const status = await SpambotService.getDistributionStatus(
+						distribution._id,
+						distribution.user._id
+					);
+					
+					// Если статус изменился - обновляем
+					if (status.status !== 'running' || 
+						status.sentMessagesCount !== distribution.sentMessagesCount) {
+						
+						console.log(
+							`[Spambot Polling] 🔧 Recovering distribution ${distribution.distributionId}: ` +
+							`${distribution.status} -> ${status.status}, ` +
+							`sent: ${distribution.sentMessagesCount} -> ${status.sentMessagesCount}`
+						);
+						
+						await distribution.updateStatus({
+							status: status.status,
+							sent_messages_count: status.sentMessagesCount,
+							skipped_clients: status.skippedClientsCount
+						});
+					}
+				} catch (error) {
+					console.error(
+						`[Spambot Polling] ❌ Failed to recover ${distribution.distributionId}:`,
+						error.message
+					);
+				}
+			}
+			
+			console.log('[Spambot Polling] ✅ Recovery complete');
+			
+		} catch (error) {
+			console.error('[Spambot Polling] ❌ Recovery failed:', error);
+		}
+	}
+
+	/**
 	 * Запустить polling
 	 */
 	start() {
@@ -28,8 +86,11 @@ class SpambotPollingService {
 		console.log(`[Spambot Polling] Starting (interval: ${this.pollIntervalMs}ms)`);
 		this.isPolling = true;
 
-		// Немедленная проверка
-		this.checkActiveDistributions();
+		// Восстановление при старте
+		this.recoverLostUpdates().then(() => {
+			// Немедленная проверка после восстановления
+			this.checkActiveDistributions();
+		});
 
 		// Периодическая проверка
 		this.pollingInterval = setInterval(() => {
@@ -68,7 +129,7 @@ class SpambotPollingService {
 				return;
 			}
 
-			console.log(`[Spambot Polling] Checking ${activeDistributions.length} active distributions`);
+			console.log(`[Spambot Polling] 🔍 Checking ${activeDistributions.length} active distributions`);
 
 			// Проверить каждую рассылку
 			for (const distribution of activeDistributions) {
@@ -76,7 +137,7 @@ class SpambotPollingService {
 			}
 
 		} catch (error) {
-			console.error('[Spambot Polling] Error checking distributions:', error);
+			console.error('[Spambot Polling] ❌ Error checking distributions:', error);
 		}
 	}
 
@@ -85,11 +146,15 @@ class SpambotPollingService {
 	 */
 	async checkDistributionStatus(distribution) {
 		try {
+			console.log(`[Spambot Polling] 📡 Fetching status for distribution ${distribution.distributionId} (user: ${distribution.user.email})`);
+
 			// Получить актуальный статус из Python Service
 			const status = await SpambotService.getDistributionStatus(
 				distribution._id,
 				distribution.user._id
 			);
+
+			console.log(`[Spambot Polling] 📊 Status received: ${status.status}, sent: ${status.sentMessagesCount}, skipped: ${status.skippedClientsCount}`);
 
 			// Проверить изменился ли статус
 			const statusChanged = 
@@ -98,30 +163,54 @@ class SpambotPollingService {
 				distribution.skippedClientsCount !== status.skippedClientsCount;
 
 			if (statusChanged) {
+				console.log(`[Spambot Polling] 🔄 Status changed for distribution ${distribution.distributionId}`);
+				console.log(`[Spambot Polling] 🔄 Old: status=${distribution.status}, sent=${distribution.sentMessagesCount}, skipped=${distribution.skippedClientsCount}`);
+				console.log(`[Spambot Polling] 🔄 New: status=${status.status}, sent=${status.sentMessagesCount}, skipped=${status.skippedClientsCount}`);
 				console.log(
 					`[Spambot Polling] Status update for ${distribution.distributionId}: ` +
 					`${distribution.status} -> ${status.status}, ` +
 					`sent: ${distribution.sentMessagesCount} -> ${status.sentMessagesCount}`
 				);
 
-				// Отправить WebSocket событие пользователю
-				const eventName = status.status === 'completed' 
-					? 'spambot:distribution:completed'
-					: status.status === 'error'
-					? 'spambot:distribution:error'
-					: 'spambot:distribution:status';
-
-				socketService.emitToUser(distribution.user._id, eventName, {
+				// Подготовить данные события
+				const eventData = {
 					distributionId: distribution.distributionId,
 					id: distribution._id,
 					status: status.status,
 					sentMessagesCount: status.sentMessagesCount,
 					skippedClientsCount: status.skippedClientsCount,
 					currentClient: status.currentClient,
-					errorMessage: status.errorMessage,
 					accountEmail: distribution.luxeeAccount.luxeeEmail,
+					profileName: distribution.config?.profileName || 'N/A',
 					timestamp: new Date().toISOString()
-				});
+				};
+
+				// Выбрать правильный метод в зависимости от статуса
+				if (status.status === 'completed') {
+					socketService.emitDistributionCompleted(distribution.user._id, {
+						...eventData,
+						completedAt: new Date().toISOString()
+					});
+				} else if (status.status === 'error') {
+					socketService.emitDistributionError(distribution.user._id, {
+						...eventData,
+						errorMessage: status.errorMessage || 'Unknown error'
+					});
+				} else if (status.status === 'running') {
+					// Для progress updates используем общее событие status
+					socketService.emitToUserAndAdmins(
+						distribution.user._id,
+						'spambot:distribution:status',
+						eventData
+					);
+				} else {
+					// Для других статусов (stopped, idle) используем общее событие
+					socketService.emitToUserAndAdmins(
+						distribution.user._id,
+						'spambot:distribution:status',
+						eventData
+					);
+				}
 			}
 
 		} catch (error) {
@@ -146,15 +235,30 @@ class SpambotPollingService {
 							`finished with status: ${finalStatus.status}`
 						);
 
-						socketService.emitToUser(distribution.user._id, 'spambot:distribution:completed', {
+						// Подготовить данные с датами и дополнительными полями
+						const eventData = {
 							distributionId: distribution.distributionId,
 							id: distribution._id,
 							status: finalStatus.status,
-							sentMessagesCount: finalStatus.sentMessagesCount,
-							skippedClientsCount: finalStatus.skippedClientsCount,
 							accountEmail: distribution.luxeeAccount.luxeeEmail,
-							timestamp: new Date().toISOString()
-						});
+							profileName: distribution.config?.profileName || 'N/A',
+							distributionType: distribution.config?.distributionType || 'chat',
+							sentMessagesCount: finalStatus.sentMessagesCount || 0,
+							skippedClientsCount: finalStatus.skippedClientsCount || 0,
+							createdAt: distribution.createdAt?.toISOString(),
+							startedAt: distribution.startedAt?.toISOString(),
+							completedAt: new Date().toISOString()
+						};
+
+						// Использовать правильные методы socketService
+						if (finalStatus.status === 'completed') {
+							socketService.emitDistributionCompleted(distribution.user._id, eventData);
+						} else if (finalStatus.status === 'error') {
+							socketService.emitDistributionError(distribution.user._id, {
+								...eventData,
+								errorMessage: finalStatus.errorMessage || 'Unknown error'
+							});
+						}
 					}
 				} catch (finalError) {
 					console.error(

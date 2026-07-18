@@ -113,6 +113,41 @@ class SocketService {
 	}
 
 	/**
+	 * Отправить событие пользователю + всем админам
+	 * Используется для событий, которые админы должны видеть (например, рассылки)
+	 * @param {string} userId - ID пользователя
+	 * @param {string} event - Название события
+	 * @param {Object} data - Данные для отправки
+	 */
+	emitToUserAndAdmins(userId, event, data) {
+		if (!this.ensureInitialized()) return;
+
+		let sentToSockets = new Set();
+		let sentToUsers = 0;
+
+		// Отправить владельцу
+		const userSockets = this.connectedUsers.get(userId);
+		if (userSockets && userSockets.size > 0) {
+			userSockets.forEach(socketId => {
+				this.io.to(socketId).emit(event, data);
+				sentToSockets.add(socketId);
+			});
+			sentToUsers++;
+		}
+
+		// Отправить всем админам
+		this.io.sockets.sockets.forEach((socket) => {
+			if (socket.userRole === 'admin' && !sentToSockets.has(socket.id)) {
+				socket.emit(event, data);
+				sentToSockets.add(socket.id);
+				sentToUsers++;
+			}
+		});
+
+		console.log(`[Socket Service] Emit to user ${userId} + admins (${sentToSockets.size} connections, ${sentToUsers} users): ${event}`);
+	}
+
+	/**
 	 * Emit события изменения AI статуса
 	 * Отправляет всем подключенным клиентам для синхронизации
 	 * 
@@ -266,58 +301,62 @@ getConnectedUsersCount() {
 
 	/**
 	 * Emit события запуска рассылки
+	 * ВАЖНО: Данные должны приходить уже с конвертированными датами из controller
 	 */
 	emitDistributionStarted(userId, distributionData) {
 		if (!this.ensureInitialized()) return;
 
-		this.emitToUser(userId, SOCKET_EVENTS.DISTRIBUTION_STARTED, {
+		this.emitToUserAndAdmins(userId, SOCKET_EVENTS.DISTRIBUTION_STARTED, {
 			...distributionData,
 			timestamp: new Date().toISOString()
 		});
 
-		console.log(`[Socket Service] Distribution started event sent to user ${userId}`);
+		console.log(`[Socket Service] Distribution started event sent to user ${userId} + admins`);
 	}
 
 	/**
 	 * Emit события завершения рассылки
+	 * ВАЖНО: Данные должны приходить уже с конвертированными датами из controller
 	 */
 	emitDistributionCompleted(userId, distributionData) {
 		if (!this.ensureInitialized()) return;
 
-		this.emitToUser(userId, SOCKET_EVENTS.DISTRIBUTION_COMPLETED, {
+		this.emitToUserAndAdmins(userId, SOCKET_EVENTS.DISTRIBUTION_COMPLETED, {
 			...distributionData,
 			timestamp: new Date().toISOString()
 		});
 
-		console.log(`[Socket Service] Distribution completed event sent to user ${userId}`);
+		console.log(`[Socket Service] Distribution completed event sent to user ${userId} + admins`);
 	}
 
 	/**
 	 * Emit события остановки рассылки
+	 * ВАЖНО: Данные должны приходить уже с конвертированными датами из controller
 	 */
 	emitDistributionStopped(userId, distributionData) {
 		if (!this.ensureInitialized()) return;
 
-		this.emitToUser(userId, SOCKET_EVENTS.DISTRIBUTION_STOPPED, {
+		this.emitToUserAndAdmins(userId, SOCKET_EVENTS.DISTRIBUTION_STOPPED, {
 			...distributionData,
 			timestamp: new Date().toISOString()
 		});
 
-		console.log(`[Socket Service] Distribution stopped event sent to user ${userId}`);
+		console.log(`[Socket Service] Distribution stopped event sent to user ${userId} + admins`);
 	}
 
 	/**
 	 * Emit события ошибки в рассылке
+	 * ВАЖНО: Данные должны приходить уже с конвертированными датами из controller
 	 */
 	emitDistributionError(userId, distributionData) {
 		if (!this.ensureInitialized()) return;
 
-		this.emitToUser(userId, SOCKET_EVENTS.DISTRIBUTION_ERROR, {
+		this.emitToUserAndAdmins(userId, SOCKET_EVENTS.DISTRIBUTION_ERROR, {
 			...distributionData,
 			timestamp: new Date().toISOString()
 		});
 
-		console.log(`[Socket Service] Distribution error event sent to user ${userId}`);
+		console.log(`[Socket Service] Distribution error event sent to user ${userId} + admins`);
 	}
 }
 

@@ -1,6 +1,7 @@
 import express from 'express';
 import spambotController from '../controllers/spambotController.js';
 import authMiddleware from '../middleware/authMiddleware.js';
+import roleMiddleware from '../middleware/roleMiddleware.js';
 
 const router = express.Router();
 
@@ -8,6 +9,71 @@ const router = express.Router();
  * Все routes требуют авторизации
  */
 router.use(authMiddleware);
+
+/**
+ * ========================================
+ * ADMIN ROUTES
+ * ========================================
+ */
+
+/**
+ * GET /api/spambot/admin/accounts
+ * 
+ * ADMIN: Получить все Luxee аккаунты, сгруппированные по пользователям
+ * 
+ * Response: {
+ *   success: boolean,
+ *   accounts: [{
+ *     user: { _id, email, role },
+ *     accounts: [{ _id, luxeeEmail, isActive, lastActivity, createdAt }]
+ *   }]
+ * }
+ */
+router.get('/admin/accounts', roleMiddleware('admin'), spambotController.getAdminAccounts);
+
+/**
+ * GET /api/spambot/admin/distributions
+ * 
+ * ADMIN: Получить все рассылки всех пользователей
+ * 
+ * Query params:
+ * - status?: string
+ * - userId?: string
+ * - limit?: number
+ * 
+ * Response: {
+ *   success: boolean,
+ *   distributions: [{
+ *     id, distributionId, status, accountEmail, userEmail, userId,
+ *     profileName, distributionType, sentMessagesCount, skippedClientsCount,
+ *     limit, startedAt, completedAt, createdAt
+ *   }]
+ * }
+ */
+router.get('/admin/distributions', roleMiddleware('admin'), spambotController.getAdminDistributions);
+
+/**
+ * GET /api/spambot/admin/profiles?accountId=X
+ * 
+ * ADMIN: Получить профили для любого аккаунта (без проверки владельца)
+ * 
+ * Query params:
+ * - accountId: string (required)
+ * 
+ * Response: {
+ *   success: boolean,
+ *   profiles: [{
+ *     uid, owner_uid, name, age, location, image_url
+ *   }]
+ * }
+ */
+router.get('/admin/profiles', roleMiddleware('admin'), spambotController.getAdminProfiles);
+
+/**
+ * ========================================
+ * USER ROUTES
+ * ========================================
+ */
 
 /**
  * GET /api/spambot/profiles?accountId=X

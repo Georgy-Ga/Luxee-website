@@ -4,7 +4,9 @@ import { luxeeApi } from '../api/luxeeApi';
 import { spambotApi } from '../api/spambotApi';
 import Header from '../components/layout/Header';
 import { useSocket } from '../contexts/SocketContext';
+import useAuthStore from '../stores/authStore';
 import AccountSelector from '../components/Spambot/AccountSelector';
+import AdminAccountSelector from '../components/Spambot/AdminAccountSelector';
 import ProfileSelector from '../components/Spambot/ProfileSelector';
 import DistributionForm from '../components/Spambot/DistributionForm';
 import DistributionQueue from '../components/Spambot/DistributionQueue';
@@ -15,6 +17,8 @@ import DistributionHistory from '../components/Spambot/DistributionHistory';
  */
 const Spambot = () => {
 	const { socket, isConnected } = useSocket();
+	const { user } = useAuthStore();
+	const isAdmin = user?.role === 'admin';
 	
 	// State
 	const [selectedAccount, setSelectedAccount] = useState(null);
@@ -46,10 +50,18 @@ const Spambot = () => {
 		}
 	}, [queuedDistributions]);
 
-	// Загрузка аккаунтов
-	const { data: accounts = [], isLoading: accountsLoading } = useQuery({
-		queryKey: ['luxee-accounts'],
-		queryFn: luxeeApi.getAccounts,
+	// Загрузка аккаунтов (разная логика для админа и пользователя)
+	const { data: accounts = [], isLoading: accountsLoading, refetch: refetchAccounts } = useQuery({
+		queryKey: ['spambot-accounts', isAdmin],
+		queryFn: async () => {
+			if (isAdmin) {
+				// Админ получает все аккаунты сгруппированные по пользователям
+				return await spambotApi.getAdminAccounts();
+			} else {
+				// Обычный пользователь получает только свои аккаунты
+				return await luxeeApi.getAccounts();
+			}
+		},
 	});
 
 	// Загрузка профилей при выборе аккаунта
@@ -108,27 +120,30 @@ const Spambot = () => {
 			console.log('[Spambot] 🔄 Force reload profiles (ignoring cache)');
 		}
 
-		// Загрузить с сервера
-		setLoadingProfiles(true);
-		try {
-			console.log('[Spambot] 📡 Loading profiles from server...');
-			const data = await spambotApi.getProfiles(accountId);
-			setProfiles(data);
+	// Загрузить с сервера
+	setLoadingProfiles(true);
+	try {
+		console.log('[Spambot] 📡 Loading profiles from server...');
+		// Админ использует admin endpoint, пользователь - обычный
+		const data = isAdmin 
+			? await spambotApi.getAdminProfiles(accountId)
+			: await spambotApi.getProfiles(accountId);
+		setProfiles(data);
 
-			// Сохранить в кэш
-			try {
-				localStorage.setItem(`spambot_profiles_${accountId}`, JSON.stringify(data));
-				localStorage.setItem(`spambot_profiles_timestamp_${accountId}`, Date.now().toString());
-				console.log('[Spambot] ✅ Profiles cached');
-			} catch (error) {
-				console.error('[Spambot] Error caching profiles:', error);
-			}
+		// Сохранить в кэш
+		try {
+			localStorage.setItem(`spambot_profiles_${accountId}`, JSON.stringify(data));
+			localStorage.setItem(`spambot_profiles_timestamp_${accountId}`, Date.now().toString());
+			console.log('[Spambot] ✅ Profiles cached');
 		} catch (error) {
-			console.error('[Spambot] Error loading profiles:', error);
-		} finally {
-			setLoadingProfiles(false);
+			console.error('[Spambot] Error caching profiles:', error);
 		}
-	};
+	} catch (error) {
+		console.error('[Spambot] Error loading profiles:', error);
+	} finally {
+		setLoadingProfiles(false);
+	}
+};
 
 	// Очистить кэш профилей и сбросить выбор
 	const handleClearProfiles = () => {
@@ -154,12 +169,17 @@ const Spambot = () => {
 	}, []);
 
 	const loadDistributionHistory = async () => {
+		console.log('[Spambot] 📚 Loading distribution history...');
 		setLoadingHistory(true);
 		try {
 			const data = await spambotApi.getDistributions({ limit: 20 });
+			console.log(`[Spambot] ✅ Loaded ${data.length} distributions`);
+			if (data.length > 0) {
+				console.log('[Spambot] 📊 First distribution:', JSON.stringify(data[0], null, 2));
+			}
 			setDistributionHistory(data);
 		} catch (error) {
-			console.error('[Spambot] Error loading history:', error);
+			console.error('[Spambot] ❌ Error loading history:', error);
 		} finally {
 			setLoadingHistory(false);
 		}
@@ -246,11 +266,22 @@ const Spambot = () => {
 	// Остановка рассылки
 	const handleStopDistribution = async (distributionId) => {
 		try {
-			await spambotApi.stopDistribution(distributionId);
+			console.log(`[Spambot] 🛑 Stopping distribution: ${distributionId}`);
+			console.log(`[Spambot] 🛑 Current history:`, distributionHistory);
+			
+			const result = await spambotApi.stopDistribution(distributionId);
+			
+			console.log(`[Spambot] ✅ Stop result:`, result);
+			console.log(`[Spambot] ✅ Waiting for WebSocket update...`);
 			// История обновится через WebSocket
 		} catch (error) {
-			console.error('[Spambot] Error stopping distribution:', error);
-			alert(error.message || 'Ошибка при остановке рассылки');
+			console.error('[Spambot] ❌ Error stopping distribution:', error);
+			console.error('[Spambot] ❌ Error details:', {
+				message: error.message,
+				response: error.response?.data,
+				status: error.response?.status
+			});
+			alert(`Ошибка остановки рассылки: ${error.message}`);
 		}
 	};
 
@@ -261,41 +292,90 @@ const Spambot = () => {
 		const handleDistributionStatus = (data) => {
 			console.log('[Spambot] Distribution status update:', data);
 			
+			// Обновить активную рассылку
 			if (activeDistribution && data.distributionId === activeDistribution.distributionId) {
 				setActiveDistribution(prev => ({ ...prev, ...data }));
 			}
 			
-			loadDistributionHistory();
+			// Обновить в истории (без перезагрузки всей истории)
+			setDistributionHistory(prev => 
+				prev.map(dist => 
+					dist.distributionId === data.distributionId 
+						? { ...dist, ...data }
+						: dist
+				)
+			);
 		};
 
 		const handleDistributionStarted = (data) => {
 			console.log('[Spambot] Distribution started:', data);
 			setActiveDistribution(data);
-			loadDistributionHistory();
+			
+			// Добавить в начало истории
+			setDistributionHistory(prev => {
+				// Проверить если уже есть
+				const exists = prev.find(d => d.distributionId === data.distributionId);
+				if (exists) {
+					return prev.map(dist => 
+						dist.distributionId === data.distributionId ? data : dist
+					);
+				}
+				return [data, ...prev];
+			});
 		};
 
 		const handleDistributionCompleted = (data) => {
 			console.log('[Spambot] Distribution completed:', data);
+			
+			// Сбросить активную если это она
 			if (activeDistribution && data.distributionId === activeDistribution.distributionId) {
 				setActiveDistribution(null);
 			}
-			loadDistributionHistory();
+			
+			// Обновить в истории
+			setDistributionHistory(prev =>
+				prev.map(dist =>
+					dist.distributionId === data.distributionId
+						? { ...dist, ...data, status: 'completed' }
+						: dist
+				)
+			);
 		};
 
 		const handleDistributionStopped = (data) => {
 			console.log('[Spambot] Distribution stopped:', data);
+			
+			// Сбросить активную если это она
 			if (activeDistribution && data.distributionId === activeDistribution.distributionId) {
 				setActiveDistribution(null);
 			}
-			loadDistributionHistory();
+			
+			// Обновить в истории
+			setDistributionHistory(prev =>
+				prev.map(dist =>
+					dist.distributionId === data.distributionId
+						? { ...dist, ...data, status: 'stopped' }
+						: dist
+				)
+			);
 		};
 
 		const handleDistributionError = (data) => {
 			console.error('[Spambot] Distribution error:', data);
+			
+			// Обновить активную
 			if (activeDistribution && data.distributionId === activeDistribution.distributionId) {
 				setActiveDistribution(prev => ({ ...prev, status: 'error', errorMessage: data.errorMessage }));
 			}
-			loadDistributionHistory();
+			
+			// Обновить в истории
+			setDistributionHistory(prev =>
+				prev.map(dist =>
+					dist.distributionId === data.distributionId
+						? { ...dist, ...data, status: 'error' }
+						: dist
+				)
+			);
 		};
 
 		socket.on('spambot:distribution:status', handleDistributionStatus);
@@ -312,6 +392,23 @@ const Spambot = () => {
 			socket.off('spambot:distribution:error', handleDistributionError);
 		};
 	}, [socket, isConnected, activeDistribution]);
+
+	// WebSocket - Обновление списка аккаунтов при создании нового (для админа)
+	useEffect(() => {
+		if (!socket || !isConnected || !isAdmin) return;
+
+		const handleAccountCreated = (data) => {
+			console.log('[Spambot] New account created:', data);
+			// Обновить список аккаунтов
+			refetchAccounts();
+		};
+
+		socket.on('luxee:account:created', handleAccountCreated);
+
+		return () => {
+			socket.off('luxee:account:created', handleAccountCreated);
+		};
+	}, [socket, isConnected, isAdmin, refetchAccounts]);
 
 	return (
 		<div className="h-screen flex flex-col bg-light-bg dark:bg-dark-bg">
@@ -333,13 +430,22 @@ const Spambot = () => {
 					<div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
 						{/* Левая колонка: Форма настройки */}
 						<div className="space-y-6">
-							{/* Шаг 1: Выбор аккаунта */}
-							<AccountSelector
-								accounts={accounts}
-								selectedAccount={selectedAccount}
-								onSelect={setSelectedAccount}
-								loading={accountsLoading}
-							/>
+							{/* Шаг 1: Выбор аккаунта (разный UI для админа) */}
+							{isAdmin ? (
+								<AdminAccountSelector
+									usersWithAccounts={accounts}
+									selectedAccount={selectedAccount}
+									onSelect={setSelectedAccount}
+									loading={accountsLoading}
+								/>
+							) : (
+								<AccountSelector
+									accounts={accounts}
+									selectedAccount={selectedAccount}
+									onSelect={setSelectedAccount}
+									loading={accountsLoading}
+								/>
+							)}
 
 							{/* Шаг 2: Выбор профиля */}
 							<ProfileSelector

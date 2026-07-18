@@ -131,7 +131,7 @@ const DistributionHistory = ({ distributions, loading, onStop }) => {
 								<td className="py-3 px-2">
 									{dist.status === 'running' && (
 										<button
-											onClick={() => onStop(dist._id)}
+											onClick={() => onStop(dist.distributionId)}
 											className="px-3 py-1 text-xs rounded-lg border border-red-300 dark:border-red-700 text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20"
 										>
 											Остановить

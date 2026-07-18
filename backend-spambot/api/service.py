@@ -5,8 +5,11 @@ This service converts Pydantic models to core models and manages distribution pr
 """
 import asyncio
 import sys
+import json
+import time
+import tempfile
 from pathlib import Path
-from typing import Dict
+from typing import Dict, Optional, Callable
 from datetime import datetime
 
 # Add core/ to Python path so 'from src.' imports work inside core modules
@@ -26,6 +29,10 @@ from api.models import (
     ProfileInfo,
     ProfilesResponse
 )
+
+# Directory for status persistence (cross-platform)
+STATUSES_DIR = Path(tempfile.gettempdir()) / "spambot_statuses"
+STATUSES_DIR.mkdir(parents=True, exist_ok=True)
 
 
 class SpambotService:
@@ -103,6 +110,64 @@ class SpambotService:
             logger.error(f"[Service] Error getting profiles: {e}")
             raise
     
+    def _update_distribution_status(
+        self, 
+        distribution_id: str, 
+        sent_count: Optional[int] = None, 
+        skipped_count: Optional[int] = None,
+        current_client: Optional[str] = None
+    ):
+        """
+        Thread-safe status update callable from executor thread.
+        Also persists status to file for recovery after crashes.
+        """
+        if distribution_id not in self.statuses:
+            return
+        
+        current = self.statuses[distribution_id]
+        
+        # Update only provided values
+        self.statuses[distribution_id] = DistributionStatus(
+            status=current.status,
+            sent_messages_count=sent_count if sent_count is not None else current.sent_messages_count,
+            skipped_clients=skipped_count if skipped_count is not None else current.skipped_clients,
+            current_client=current_client if current_client is not None else current.current_client,
+            error_message=current.error_message
+        )
+        
+        logger.debug(
+            f"[Service] Status updated for {distribution_id}: "
+            f"sent={self.statuses[distribution_id].sent_messages_count}, "
+            f"skipped={self.statuses[distribution_id].skipped_clients}"
+        )
+        
+        # Persist to file for recovery
+        try:
+            status_file = STATUSES_DIR / f"{distribution_id}.json"
+            status_data = {
+                "distribution_id": distribution_id,
+                "status": self.statuses[distribution_id].status,
+                "sent_messages_count": self.statuses[distribution_id].sent_messages_count,
+                "skipped_clients": self.statuses[distribution_id].skipped_clients,
+                "current_client": self.statuses[distribution_id].current_client,
+                "updated_at": time.time()
+            }
+            with open(status_file, 'w') as f:
+                json.dump(status_data, f)
+        except Exception as e:
+            logger.warning(f"[Service] Failed to persist status to file: {e}")
+            # Don't interrupt workflow if file save fails
+    
+    def _cleanup_status_file(self, distribution_id: str):
+        """Remove status file after completion"""
+        try:
+            status_file = STATUSES_DIR / f"{distribution_id}.json"
+            if status_file.exists():
+                status_file.unlink()
+                logger.debug(f"[Service] Cleaned up status file for {distribution_id}")
+        except Exception as e:
+            logger.warning(f"[Service] Failed to cleanup status file: {e}")
+    
     async def start_distribution(
         self, 
         config: DistributionConfigInternal, 
@@ -170,6 +235,16 @@ class SpambotService:
             process = DistributionProcess()
             self.active_processes[distribution_id] = process
             
+            # Create should_stop_callback for this distribution
+            def should_stop_callback() -> bool:
+                """Check if this distribution should stop"""
+                return self._should_stop.get(distribution_id, False)
+            
+            # Create status_updater callback for real-time updates
+            def status_updater(sent: Optional[int] = None, skipped: Optional[int] = None, client: Optional[str] = None):
+                """Callback for real-time status updates from distribution process"""
+                self._update_distribution_status(distribution_id, sent, skipped, client)
+            
             # Run in thread pool (since it's synchronous and blocking)
             loop = asyncio.get_event_loop()
             await loop.run_in_executor(
@@ -177,7 +252,9 @@ class SpambotService:
                 process.start,
                 distribution,
                 config.username,
-                config.password
+                config.password,
+                should_stop_callback,
+                status_updater
             )
             
             # Update status to completed
@@ -203,7 +280,10 @@ class SpambotService:
             )
         
         finally:
-            # Cleanup
+            # Cleanup status file
+            self._cleanup_status_file(distribution_id)
+            
+            # Cleanup process
             if distribution_id in self.active_processes:
                 try:
                     self.active_processes[distribution_id].finish()

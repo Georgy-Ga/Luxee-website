@@ -76,4 +76,44 @@ export const spambotApi = {
 		const response = await apiClient.post(`/spambot/distributions/${distributionId}/stop`);
 		return response.data;
 	},
+
+	// ========================================
+	// ADMIN METHODS
+	// ========================================
+
+	/**
+	 * ADMIN: Получить все Luxee аккаунты, сгруппированные по пользователям
+	 * @returns {Promise<Array>} - [{user: {_id, email, role}, accounts: [...]}]
+	 */
+	async getAdminAccounts() {
+		const response = await apiClient.get('/spambot/admin/accounts');
+		return response.data.accounts;
+	},
+
+	/**
+	 * ADMIN: Получить все рассылки всех пользователей
+	 * @param {Object} filters
+	 * @param {string} filters.status - Фильтр по статусу
+	 * @param {string} filters.userId - Фильтр по пользователю
+	 * @param {number} filters.limit - Количество
+	 * @returns {Promise<Array>} - Список всех рассылок
+	 */
+	async getAdminDistributions(filters = {}) {
+		const response = await apiClient.get('/spambot/admin/distributions', {
+			params: filters,
+		});
+		return response.data.distributions;
+	},
+
+	/**
+	 * ADMIN: Получить профили для любого аккаунта
+	 * @param {string} accountId - ID Luxee аккаунта
+	 * @returns {Promise<Array>} - Список профилей
+	 */
+	async getAdminProfiles(accountId) {
+		const response = await apiClient.get('/spambot/admin/profiles', {
+			params: { accountId },
+		});
+		return response.data.profiles;
+	},
 };

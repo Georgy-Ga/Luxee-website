@@ -94,15 +94,22 @@ class SpambotService {
 	 * @param {Object} params
 	 * @param {string} params.accountId - ID Luxee аккаунта
 	 * @param {string} params.userId - ID пользователя
+	 * @param {string} params.userRole - Роль пользователя ('admin' | 'user')
 	 * @param {Object} params.config - Конфигурация рассылки
 	 * @returns {Promise<Object>} - Данные созданной рассылки
 	 */
-	async startDistribution({ accountId, userId, config }) {
+	async startDistribution({ accountId, userId, userRole = 'user', config }) {
 		// 1. Проверка доступа к аккаунту
-		const account = await LuxeeAccountModel.findOne({
-			_id: accountId,
-			user: userId
-		});
+		// Админ может запускать рассылки на любых аккаунтах
+		let account;
+		if (userRole === 'admin') {
+			account = await LuxeeAccountModel.findById(accountId);
+		} else {
+			account = await LuxeeAccountModel.findOne({
+				_id: accountId,
+				user: userId
+			});
+		}
 
 		if (!account) {
 			throw new Error('Account not found or access denied');
@@ -165,13 +172,15 @@ class SpambotService {
 				}
 			);
 
-			const { distribution_id, status } = response.data;
+		const { distribution_id, status } = response.data;
 
-			// 6. Сохранить в MongoDB
-			const distribution = new SpambotDistributionModel({
-				user: userId,
-				luxeeAccount: accountId,
-				distributionId: distribution_id,
+		// 6. Сохранить в MongoDB
+		// ВАЖНО: Сохраняем ID владельца аккаунта, а не того кто запустил рассылку
+		// Это важно для WebSocket уведомлений и для связи с аккаунтом
+		const distribution = new SpambotDistributionModel({
+			user: account.user, // ID владельца аккаунта (не админа!)
+			luxeeAccount: accountId,
+			distributionId: distribution_id,
 				config: {
 					profileUid: config.profileUid,
 					profileName: config.profileName,
@@ -311,16 +320,21 @@ class SpambotService {
 	/**
 	 * Остановить рассылку
 	 * 
-	 * @param {string} distributionId - ID рассылки (MongoDB)
+	 * @param {string} distributionId - ID рассылки (UUID от Python Service)
 	 * @param {string} userId - ID пользователя
+	 * @param {string} userRole - Роль пользователя ('admin' | 'user')
 	 * @returns {Promise<Object>} - Результат остановки
 	 */
-	async stopDistribution(distributionId, userId) {
-		// Найти рассылку
-		const distribution = await SpambotDistributionModel.findOne({
-			_id: distributionId,
-			user: userId
-		});
+	async stopDistribution(distributionId, userId, userRole = 'user') {
+		// Найти рассылку по distributionId (UUID), а не по _id (MongoDB ObjectId)
+		// Админ может остановить любую рассылку, обычный пользователь - только свою
+		const query = { distributionId: distributionId };
+		if (userRole !== 'admin') {
+			query.user = userId;
+		}
+
+		const distribution = await SpambotDistributionModel.findOne(query)
+			.populate('luxeeAccount', 'luxeeEmail');
 
 		if (!distribution) {
 			throw new Error('Distribution not found or access denied');
@@ -345,10 +359,26 @@ class SpambotService {
 
 			// Обновить статус в БД
 			distribution.status = 'stopped';
-			distribution.completedAt = new Date();
+			distribution.stoppedAt = new Date();
 			await distribution.save();
 
 			console.log(`[Spambot Service] Distribution stopped: ${distribution.distributionId}`);
+
+			// Отправить WebSocket событие об остановке
+			const socketService = (await import('./socketService.js')).default;
+			socketService.emitDistributionStopped(distribution.user, {
+				distributionId: distribution.distributionId,
+				id: distribution._id,
+				status: 'stopped',
+				accountEmail: distribution.luxeeAccount?.luxeeEmail,
+				profileName: distribution.config?.profileName || 'N/A',
+				distributionType: distribution.config?.distributionType || 'chat',
+				sentMessagesCount: distribution.sentMessagesCount || 0,
+				skippedClientsCount: distribution.skippedClientsCount || 0,
+				createdAt: distribution.createdAt?.toISOString(),
+				startedAt: distribution.startedAt?.toISOString(),
+				stoppedAt: distribution.stoppedAt?.toISOString()
+			});
 
 			return {
 				id: distribution._id,
@@ -399,6 +429,115 @@ class SpambotService {
 			completedAt: d.completedAt,
 			createdAt: d.createdAt
 		}));
+	}
+
+	/**
+	 * ADMIN: Получить все Luxee аккаунты, сгруппированные по пользователям
+	 * 
+	 * @returns {Promise<Array>} - Список пользователей с их аккаунтами
+	 */
+	async getAllAccountsGroupedByUser() {
+		const accounts = await LuxeeAccountModel.find()
+			.populate('user', 'email role')
+			.sort({ 'user.email': 1, luxeeEmail: 1 });
+
+		// Группировать по пользователям
+		const grouped = {};
+		
+		for (const account of accounts) {
+			const userId = account.user._id.toString();
+			
+			if (!grouped[userId]) {
+				grouped[userId] = {
+					user: {
+						_id: account.user._id,
+						email: account.user.email,
+						role: account.user.role
+					},
+					accounts: []
+				};
+			}
+			
+			grouped[userId].accounts.push({
+				_id: account._id,
+				luxeeEmail: account.luxeeEmail,
+				isActive: account.isActive,
+				lastActivity: account.lastActivity,
+				createdAt: account.createdAt
+			});
+		}
+
+		return Object.values(grouped);
+	}
+
+	/**
+	 * ADMIN: Получить все рассылки всех пользователей
+	 * 
+	 * @param {Object} filters - Фильтры
+	 * @returns {Promise<Array>} - Список всех рассылок с информацией о пользователе
+	 */
+	async getAllDistributions(filters = {}) {
+		const query = {};
+
+		if (filters.status) {
+			query.status = filters.status;
+		}
+
+		if (filters.userId) {
+			query.user = filters.userId;
+		}
+
+		const distributions = await SpambotDistributionModel.find(query)
+			.populate('luxeeAccount', 'luxeeEmail')
+			.populate('user', 'email')
+			.sort({ status: 1, createdAt: -1 }) // running сверху, потом по дате
+			.limit(filters.limit || 100);
+
+		return distributions.map(d => ({
+			id: d._id,
+			distributionId: d.distributionId,
+			status: d.status,
+			accountEmail: d.luxeeAccount.luxeeEmail,
+			userEmail: d.user.email,
+			userId: d.user._id,
+			profileName: d.config.profileName,
+			distributionType: d.config.distributionType,
+			sentMessagesCount: d.sentMessagesCount,
+			skippedClientsCount: d.skippedClientsCount,
+			limit: d.config.limit,
+			startedAt: d.startedAt,
+			completedAt: d.completedAt,
+			createdAt: d.createdAt
+		}));
+	}
+
+	/**
+	 * ADMIN: Получить профили для любого аккаунта (без проверки владельца)
+	 * 
+	 * @param {string} accountId - ID Luxee аккаунта
+	 * @returns {Promise<Array>} - Список профилей
+	 */
+	async getProfilesAdmin(accountId) {
+		const account = await LuxeeAccountModel.findById(accountId);
+
+		if (!account) {
+			throw new Error('Account not found');
+		}
+
+		try {
+			const response = await axios.get(`${PYTHON_SERVICE_URL}/api/profiles`, {
+				params: {
+					username: account.luxeeEmail,
+					password: account.luxeePassword
+				},
+				timeout: 60000
+			});
+
+			return response.data.profiles;
+		} catch (error) {
+			console.error('[Spambot Service] Error getting profiles (admin):', error.message);
+			throw new Error(`Failed to get profiles: ${error.response?.data?.detail || error.message}`);
+		}
 	}
 }
 

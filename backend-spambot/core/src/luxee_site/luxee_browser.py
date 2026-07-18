@@ -528,11 +528,16 @@ class Luxee:
         return False
 
     @relogin_and_retry_if_site_fail()
-    def start_distribution(self, distribution: Distribution):
+    def start_distribution(self, distribution: Distribution, should_stop_callback=None, status_updater=None):
         """Starts the distribution process."""
         start_time = time.time()
 
         while distribution.sent_messages_count < distribution.limit:
+            # Check if we should stop
+            if should_stop_callback and should_stop_callback():
+                logger.info("Distribution stopped by external request")
+                break
+                
             if distribution.max_time_minutes > 0:
                 elapsed_time = (time.time() - start_time) / 60
                 if elapsed_time >= distribution.max_time_minutes:
@@ -614,6 +619,14 @@ class Luxee:
                     if message_sent:
                         sent_messages_on_page += 1
                         distribution.sent_messages_count += 1
+                        
+                        # Call status_updater for real-time updates
+                        if status_updater:
+                            status_updater(
+                                sent=distribution.sent_messages_count,
+                                skipped=distribution.skipped_clients,
+                                client=str(client.uid)
+                            )
 
                         if distribution.sent_messages_count >= distribution.limit:
                             raise CompleteDestributionError("Limit reached")
@@ -626,11 +639,16 @@ class Luxee:
                 break
 
     @relogin_and_retry_if_site_fail()
-    def start_mail_distribution(self, distribution: Distribution):
+    def start_mail_distribution(self, distribution: Distribution, should_stop_callback=None, status_updater=None):
         """Starts the distribution process."""
         start_time = time.time()
 
         while distribution.sent_messages_count < distribution.limit:
+            # Check if we should stop
+            if should_stop_callback and should_stop_callback():
+                logger.info("Distribution stopped by external request")
+                break
+                
             if distribution.max_time_minutes > 0:
                 elapsed_time = (time.time() - start_time) / 60
                 if elapsed_time >= distribution.max_time_minutes:
@@ -719,6 +737,14 @@ class Luxee:
                     if message_sent:
                         sent_messages_on_page += 1
                         distribution.sent_messages_count += 1
+                        
+                        # Call status_updater for real-time updates
+                        if status_updater:
+                            status_updater(
+                                sent=distribution.sent_messages_count,
+                                skipped=distribution.skipped_clients,
+                                client=str(client.uid)
+                            )
 
                         if distribution.sent_messages_count >= distribution.limit:
                             raise CompleteDestributionError("Limit reached")
