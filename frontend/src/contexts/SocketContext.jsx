@@ -43,12 +43,18 @@ export const SocketProvider = ({ children }) => {
 		const hostname = window.location.hostname;
   		const protocol = window.location.protocol;
   
-  		// Локальная разработка
-  		if (hostname === 'localhost' || hostname.startsWith('192.168')) {
-    			return `${protocol}//${hostname}:5000`;
+  		// Если это IP адрес или localhost - используем :5001
+  		// Паттерн: localhost, 127.0.0.1, или любой IP (xxx.xxx.xxx.xxx)
+  		const isIpOrLocalhost = 
+    			hostname === 'localhost' ||
+    			hostname === '127.0.0.1' ||
+    			/^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}$/.test(hostname);
+  
+  		if (isIpOrLocalhost) {
+    			return `${protocol}//${hostname}:5001`;
   		}
   
-  		// Production
+  		// Production с доменом - используем nginx (без порта)
   		return `${protocol}//${hostname}`;
 	};
 
