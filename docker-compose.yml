@@ -11,11 +11,11 @@ services:
       - mongodb_data:/data/db
       - mongodb_config:/data/configdb
     ports:
-      - "27017:27017"
+      - '27017:27017'
     networks:
       - luxee-network
     healthcheck:
-      test: ["CMD", "mongo", "--eval", "db.adminCommand('ping')", "--quiet"]
+      test: ['CMD', 'mongo', '--eval', "db.adminCommand('ping')", '--quiet']
       interval: 10s
       timeout: 5s
       retries: 5
@@ -31,7 +31,7 @@ services:
     environment:
       NODE_ENV: production
       PORT: 5000
-      DOCKER: "true"
+      DOCKER: 'true'
       MONGO_URL: mongodb://${MONGO_ROOT_USERNAME:-admin}:${MONGO_ROOT_PASSWORD:-changeme}@mongodb:27017/luxee?authSource=admin
       JWT_ACCESS_SECRET: ${JWT_ACCESS_SECRET}
       JWT_REFRESH_SECRET: ${JWT_REFRESH_SECRET}
@@ -43,7 +43,7 @@ services:
       # Spambot Service URL
       SPAMBOT_SERVICE_URL: http://backend-spambot:8001
     ports:
-      - "5001:5000"
+      - '5001:5000'
     depends_on:
       mongodb:
         condition: service_healthy
@@ -58,7 +58,15 @@ services:
       # 🆕 Монтируем папку с промптами профилей
       - ./backend/prompts:/app/prompts
     healthcheck:
-      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:5000/api/health || exit 1"]
+      test:
+        [
+          'CMD',
+          'wget',
+          '--quiet',
+          '--tries=1',
+          '--spider',
+          'http://localhost:5000/api/health || exit 1',
+        ]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -72,16 +80,22 @@ services:
     restart: unless-stopped
     environment:
       PORT: 8001
-      PYTHONUNBUFFERED: "1"
+      PYTHONUNBUFFERED: '1'
     ports:
-      - "8001:8001"
+      - '8001:8001'
     networks:
       - luxee-network
     volumes:
       # Для логов и временных файлов
       - spambot_logs:/app/logs
     healthcheck:
-      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8001/health')"]
+      test:
+        [
+          'CMD',
+          'python',
+          '-c',
+          "import urllib.request; urllib.request.urlopen('http://localhost:8001/health')",
+        ]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -97,13 +111,21 @@ services:
     container_name: luxee-frontend
     restart: unless-stopped
     ports:
-      - "8080:80"
+      - '8080:80'
     depends_on:
       - backend
     networks:
       - luxee-network
     healthcheck:
-      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:80 || exit 1"]
+      test:
+        [
+          'CMD',
+          'wget',
+          '--quiet',
+          '--tries=1',
+          '--spider',
+          'http://localhost:80 || exit 1',
+        ]
       interval: 30s
       timeout: 10s
       retries: 3

@@ -6,7 +6,7 @@
  */
 
 import SpambotDistributionModel from '../models/SpambotDistributionModel.js';
-import SpambotService from './SpambotService.js';
+import SpambotService from './spambotService.js';
 import socketService from './socketService.js';
 
 class SpambotPollingService {
