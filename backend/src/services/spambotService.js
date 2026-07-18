@@ -4,16 +4,17 @@ import SpambotDistributionModel from '../models/SpambotDistributionModel.js';
 
 /**
  * Spambot Service
- * 
+ *
  * Управляет рассылками через Python Spambot Service.
- * 
+ *
  * ВАЖНО: Блокировки для предотвращения параллельных рассылок:
  * - Один Luxee аккаунт = одна активная рассылка
  * - Проверка перед запуском
  * - Mutex через MongoDB (атомарные операции)
  */
 
-const PYTHON_SERVICE_URL = process.env.SPAMBOT_SERVICE_URL || 'http://localhost:8001';
+const PYTHON_SERVICE_URL =
+	process.env.SPAMBOT_SERVICE_URL || 'http://localhost:8001';
 
 // In-memory блокировки (дополнительная защита)
 const accountLocks = new Map();
@@ -21,7 +22,7 @@ const accountLocks = new Map();
 class SpambotService {
 	/**
 	 * Проверить доступность аккаунта для рассылки
-	 * 
+	 *
 	 * @param {string} accountId - ID Luxee аккаунта
 	 * @returns {Promise<{available: boolean, reason?: string}>}
 	 */
@@ -30,13 +31,14 @@ class SpambotService {
 		if (accountLocks.has(accountId)) {
 			return {
 				available: false,
-				reason: 'Account is currently locked for another distribution'
+				reason: 'Account is currently locked for another distribution',
 			};
 		}
 
 		// Проверка 2: MongoDB - активные рассылки
-		const activeDistributions = await SpambotDistributionModel.getAccountActiveDistributions(accountId);
-		
+		const activeDistributions =
+			await SpambotDistributionModel.getAccountActiveDistributions(accountId);
+
 		if (activeDistributions.length > 0) {
 			return {
 				available: false,
@@ -45,8 +47,8 @@ class SpambotService {
 					id: d._id,
 					distributionId: d.distributionId,
 					status: d.status,
-					startedAt: d.startedAt
-				}))
+					startedAt: d.startedAt,
+				})),
 			};
 		}
 
@@ -55,7 +57,7 @@ class SpambotService {
 
 	/**
 	 * Получить список профилей для аккаунта
-	 * 
+	 *
 	 * @param {string} accountId - ID Luxee аккаунта
 	 * @param {string} userId - ID пользователя
 	 * @returns {Promise<Array>} - Список профилей
@@ -64,7 +66,7 @@ class SpambotService {
 		// Проверка прав доступа
 		const account = await LuxeeAccountModel.findOne({
 			_id: accountId,
-			user: userId
+			user: userId,
 		});
 
 		if (!account) {
@@ -76,21 +78,23 @@ class SpambotService {
 			const response = await axios.get(`${PYTHON_SERVICE_URL}/api/profiles`, {
 				params: {
 					username: account.luxeeEmail,
-					password: account.luxeePassword
+					password: account.luxeePassword,
 				},
-				timeout: 60000 // 60 секунд (операция долгая)
+				timeout: 60000, // 60 секунд (операция долгая)
 			});
 
 			return response.data.profiles;
 		} catch (error) {
 			console.error('[Spambot Service] Error getting profiles:', error.message);
-			throw new Error(`Failed to get profiles: ${error.response?.data?.detail || error.message}`);
+			throw new Error(
+				`Failed to get profiles: ${error.response?.data?.detail || error.message}`,
+			);
 		}
 	}
 
 	/**
 	 * Запустить рассылку
-	 * 
+	 *
 	 * @param {Object} params
 	 * @param {string} params.accountId - ID Luxee аккаунта
 	 * @param {string} params.userId - ID пользователя
@@ -107,7 +111,7 @@ class SpambotService {
 		} else {
 			account = await LuxeeAccountModel.findOne({
 				_id: accountId,
-				user: userId
+				user: userId,
 			});
 		}
 
@@ -117,7 +121,7 @@ class SpambotService {
 
 		// 2. Проверка доступности аккаунта (блокировки)
 		const availability = await this.checkAccountAvailability(accountId);
-		
+
 		if (!availability.available) {
 			throw new Error(availability.reason);
 		}
@@ -131,36 +135,38 @@ class SpambotService {
 				// Credentials из MongoDB
 				username: account.luxeeEmail,
 				password: account.luxeePassword,
-				
+
 				// Конфигурация от пользователя
 				profile_uid: config.profileUid,
 				profile_name: config.profileName,
 				distribution_type: config.distributionType,
-				
+
 				// Filters
 				purchased: config.purchased ?? true,
 				free: config.free ?? true,
 				only_empty_chat: config.onlyEmptyChat ?? false,
 				only_not_empty_chat: config.onlyNotEmptyChat ?? false,
-				
+
 				// Messages
 				messages: config.messages?.map(m => ({
 					text: m.text,
-					interval: m.interval || 0
+					interval: m.interval || 0,
 				})),
-				
-				mail_message: config.mailMessage ? {
-					title: config.mailMessage.title,
-					text: config.mailMessage.text,
-					pictures_number: config.mailMessage.picturesNumber || []
-				} : null,
-				
+
+				mail_message: config.mailMessage
+					? {
+							title: config.mailMessage.title,
+							text: config.mailMessage.text,
+							pictures_number: config.mailMessage.picturesNumber || [],
+						}
+					: null,
+
 				// Limits
 				exclude_ids: config.excludeIds || [],
 				specific_users: config.specificUsers || [],
 				limit: config.limit,
 				filter_update_limit: config.filterUpdateLimit,
-				max_time_minutes: config.maxTimeMinutes || 180
+				max_time_minutes: config.maxTimeMinutes || 180,
 			};
 
 			// 5. Отправить запрос в Python Service
@@ -168,19 +174,19 @@ class SpambotService {
 				`${PYTHON_SERVICE_URL}/api/distribution/start`,
 				fullConfig,
 				{
-					timeout: 30000 // 30 секунд
-				}
+					timeout: 30000, // 30 секунд
+				},
 			);
 
-		const { distribution_id, status } = response.data;
+			const { distribution_id, status } = response.data;
 
-		// 6. Сохранить в MongoDB
-		// ВАЖНО: Сохраняем ID владельца аккаунта, а не того кто запустил рассылку
-		// Это важно для WebSocket уведомлений и для связи с аккаунтом
-		const distribution = new SpambotDistributionModel({
-			user: account.user, // ID владельца аккаунта (не админа!)
-			luxeeAccount: accountId,
-			distributionId: distribution_id,
+			// 6. Сохранить в MongoDB
+			// ВАЖНО: Сохраняем ID владельца аккаунта, а не того кто запустил рассылку
+			// Это важно для WebSocket уведомлений и для связи с аккаунтом
+			const distribution = new SpambotDistributionModel({
+				user: account.user, // ID владельца аккаунта (не админа!)
+				luxeeAccount: accountId,
+				distributionId: distribution_id,
 				config: {
 					profileUid: config.profileUid,
 					profileName: config.profileName,
@@ -195,47 +201,59 @@ class SpambotService {
 					specificUsers: config.specificUsers,
 					limit: config.limit,
 					filterUpdateLimit: config.filterUpdateLimit,
-					maxTimeMinutes: config.maxTimeMinutes
+					maxTimeMinutes: config.maxTimeMinutes,
 				},
-				status: 'running'
+				status: 'running',
 			});
 
 			await distribution.save();
 
-		console.log(`[Spambot Service] Distribution started: ${distribution_id} for account ${account.luxeeEmail}`);
+			console.log(
+				`[Spambot Service] Distribution started: ${distribution_id} for account ${account.luxeeEmail}`,
+			);
 
-		return {
-			id: distribution._id,
-			distributionId: distribution_id,
-			status: 'running',
-			accountEmail: account.luxeeEmail,
-			user: account.user, // ID владельца аккаунта для WebSocket уведомлений
-			config: distribution.config,
-			createdAt: distribution.createdAt,
-			startedAt: distribution.startedAt
-		};
-
+			return {
+				id: distribution._id,
+				distributionId: distribution_id,
+				status: 'running',
+				accountEmail: account.luxeeEmail,
+				user: account.user, // ID владельца аккаунта для WebSocket уведомлений
+				config: distribution.config,
+				createdAt: distribution.createdAt,
+				startedAt: distribution.startedAt,
+			};
 		} catch (error) {
 			// Снять блокировку при ошибке
 			accountLocks.delete(accountId);
-			
-			console.error('[Spambot Service] Error starting distribution:', error.message);
-			console.error('[Spambot Service] Error details:', error.response?.data || error.stack);
-			
+
+			console.error(
+				'[Spambot Service] Error starting distribution:',
+				error.message,
+			);
+			console.error(
+				'[Spambot Service] Error details:',
+				error.response?.data || error.stack,
+			);
+
 			// Правильная обработка ошибок
 			let errorMessage = 'Unknown error';
-			
+
 			if (error.response) {
 				// Ответ от Python backend с ошибкой
-				errorMessage = error.response.data?.detail || error.response.data?.message || `HTTP ${error.response.status}`;
+				errorMessage =
+					error.response.data?.detail ||
+					error.response.data?.message ||
+					`HTTP ${error.response.status}`;
 			} else if (error.request) {
 				// Запрос отправлен, но ответа не получено (Python backend не доступен)
-				errorMessage = 'Python Spambot Service is not available. Make sure it is running on ' + PYTHON_SERVICE_URL;
+				errorMessage =
+					'Python Spambot Service is not available. Make sure it is running on ' +
+					PYTHON_SERVICE_URL;
 			} else {
 				// Ошибка при настройке запроса
 				errorMessage = error.message;
 			}
-			
+
 			throw new Error(`Failed to start distribution: ${errorMessage}`);
 		} finally {
 			// Снять in-memory блокировку через 5 секунд
@@ -248,7 +266,7 @@ class SpambotService {
 
 	/**
 	 * Получить статус рассылки
-	 * 
+	 *
 	 * @param {string} distributionId - ID рассылки (MongoDB)
 	 * @param {string} userId - ID пользователя
 	 * @returns {Promise<Object>} - Статус рассылки
@@ -257,7 +275,7 @@ class SpambotService {
 		// Найти рассылку
 		const distribution = await SpambotDistributionModel.findOne({
 			_id: distributionId,
-			user: userId
+			user: userId,
 		}).populate('luxeeAccount', 'luxeeEmail');
 
 		if (!distribution) {
@@ -276,7 +294,7 @@ class SpambotService {
 				errorMessage: distribution.errorMessage,
 				accountEmail: distribution.luxeeAccount.luxeeEmail,
 				startedAt: distribution.startedAt,
-				completedAt: distribution.completedAt
+				completedAt: distribution.completedAt,
 			};
 		}
 
@@ -284,7 +302,7 @@ class SpambotService {
 		try {
 			const response = await axios.get(
 				`${PYTHON_SERVICE_URL}/api/distribution/${distribution.distributionId}/status`,
-				{ timeout: 10000 }
+				{ timeout: 10000 },
 			);
 
 			const statusData = response.data;
@@ -302,12 +320,11 @@ class SpambotService {
 				errorMessage: statusData.error_message,
 				accountEmail: distribution.luxeeAccount.luxeeEmail,
 				startedAt: distribution.startedAt,
-				completedAt: distribution.completedAt
+				completedAt: distribution.completedAt,
 			};
-
 		} catch (error) {
 			console.error('[Spambot Service] Error getting status:', error.message);
-			
+
 			// Вернуть последний известный статус из БД
 			return {
 				id: distribution._id,
@@ -316,14 +333,14 @@ class SpambotService {
 				sentMessagesCount: distribution.sentMessagesCount,
 				skippedClientsCount: distribution.skippedClientsCount,
 				errorMessage: 'Failed to fetch latest status from Python Service',
-				accountEmail: distribution.luxeeAccount.luxeeEmail
+				accountEmail: distribution.luxeeAccount.luxeeEmail,
 			};
 		}
 	}
 
 	/**
 	 * Остановить рассылку
-	 * 
+	 *
 	 * @param {string} distributionId - ID рассылки (UUID от Python Service)
 	 * @param {string} userId - ID пользователя
 	 * @param {string} userRole - Роль пользователя ('admin' | 'user')
@@ -337,8 +354,10 @@ class SpambotService {
 			query.user = userId;
 		}
 
-		const distribution = await SpambotDistributionModel.findOne(query)
-			.populate('luxeeAccount', 'luxeeEmail');
+		const distribution = await SpambotDistributionModel.findOne(query).populate(
+			'luxeeAccount',
+			'luxeeEmail',
+		);
 
 		if (!distribution) {
 			throw new Error('Distribution not found or access denied');
@@ -349,7 +368,7 @@ class SpambotService {
 			return {
 				id: distribution._id,
 				status: distribution.status,
-				message: 'Distribution already stopped'
+				message: 'Distribution already stopped',
 			};
 		}
 
@@ -358,7 +377,7 @@ class SpambotService {
 			await axios.post(
 				`${PYTHON_SERVICE_URL}/api/distribution/${distribution.distributionId}/stop`,
 				{},
-				{ timeout: 10000 }
+				{ timeout: 10000 },
 			);
 
 			// Обновить статус в БД
@@ -366,7 +385,9 @@ class SpambotService {
 			distribution.stoppedAt = new Date();
 			await distribution.save();
 
-			console.log(`[Spambot Service] Distribution stopped: ${distribution.distributionId}`);
+			console.log(
+				`[Spambot Service] Distribution stopped: ${distribution.distributionId}`,
+			);
 
 			// Отправить WebSocket событие об остановке
 			const socketService = (await import('./socketService.js')).default;
@@ -382,24 +403,28 @@ class SpambotService {
 				skippedClientsCount: distribution.skippedClientsCount || 0,
 				createdAt: distribution.createdAt?.toISOString(),
 				startedAt: distribution.startedAt?.toISOString(),
-				stoppedAt: distribution.stoppedAt?.toISOString()
+				stoppedAt: distribution.stoppedAt?.toISOString(),
 			});
 
 			return {
 				id: distribution._id,
 				status: 'stopped',
-				message: 'Distribution stopped successfully'
+				message: 'Distribution stopped successfully',
 			};
-
 		} catch (error) {
-			console.error('[Spambot Service] Error stopping distribution:', error.message);
-			throw new Error(`Failed to stop distribution: ${error.response?.data?.detail || error.message}`);
+			console.error(
+				'[Spambot Service] Error stopping distribution:',
+				error.message,
+			);
+			throw new Error(
+				`Failed to stop distribution: ${error.response?.data?.detail || error.message}`,
+			);
 		}
 	}
 
 	/**
 	 * Получить список рассылок пользователя
-	 * 
+	 *
 	 * @param {string} userId - ID пользователя
 	 * @param {Object} filters - Фильтры
 	 * @returns {Promise<Array>} - Список рассылок
@@ -432,13 +457,13 @@ class SpambotService {
 			limit: d.config.limit,
 			startedAt: d.startedAt,
 			completedAt: d.completedAt,
-			createdAt: d.createdAt
+			createdAt: d.createdAt,
 		}));
 	}
 
 	/**
 	 * ADMIN: Получить все Luxee аккаунты, сгруппированные по пользователям
-	 * 
+	 *
 	 * @returns {Promise<Array>} - Список пользователей с их аккаунтами
 	 */
 	async getAllAccountsGroupedByUser() {
@@ -450,25 +475,31 @@ class SpambotService {
 		const grouped = {};
 		
 		for (const account of accounts) {
+			// Пропустить аккаунты с удаленным пользователем (race condition или старые данные)
+			if (!account.user) {
+				console.warn(`[Spambot Service] ⚠️  Account ${account._id} (${account.luxeeEmail}) has no user, skipping...`);
+				continue;
+			}
+
 			const userId = account.user._id.toString();
-			
+
 			if (!grouped[userId]) {
 				grouped[userId] = {
 					user: {
 						_id: account.user._id,
 						email: account.user.email,
-						role: account.user.role
+						role: account.user.role,
 					},
-					accounts: []
+					accounts: [],
 				};
 			}
-			
+
 			grouped[userId].accounts.push({
 				_id: account._id,
 				luxeeEmail: account.luxeeEmail,
 				isActive: account.isActive,
 				lastActivity: account.lastActivity,
-				createdAt: account.createdAt
+				createdAt: account.createdAt,
 			});
 		}
 
@@ -477,7 +508,7 @@ class SpambotService {
 
 	/**
 	 * ADMIN: Получить все рассылки всех пользователей
-	 * 
+	 *
 	 * @param {Object} filters - Фильтры
 	 * @returns {Promise<Array>} - Список всех рассылок с информацией о пользователе
 	 */
@@ -512,13 +543,13 @@ class SpambotService {
 			limit: d.config.limit,
 			startedAt: d.startedAt,
 			completedAt: d.completedAt,
-			createdAt: d.createdAt
+			createdAt: d.createdAt,
 		}));
 	}
 
 	/**
 	 * ADMIN: Получить профили для любого аккаунта (без проверки владельца)
-	 * 
+	 *
 	 * @param {string} accountId - ID Luxee аккаунта
 	 * @returns {Promise<Array>} - Список профилей
 	 */
@@ -533,15 +564,20 @@ class SpambotService {
 			const response = await axios.get(`${PYTHON_SERVICE_URL}/api/profiles`, {
 				params: {
 					username: account.luxeeEmail,
-					password: account.luxeePassword
+					password: account.luxeePassword,
 				},
-				timeout: 60000
+				timeout: 60000,
 			});
 
 			return response.data.profiles;
 		} catch (error) {
-			console.error('[Spambot Service] Error getting profiles (admin):', error.message);
-			throw new Error(`Failed to get profiles: ${error.response?.data?.detail || error.message}`);
+			console.error(
+				'[Spambot Service] Error getting profiles (admin):',
+				error.message,
+			);
+			throw new Error(
+				`Failed to get profiles: ${error.response?.data?.detail || error.message}`,
+			);
 		}
 	}
 }
