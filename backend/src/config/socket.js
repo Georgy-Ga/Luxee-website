@@ -44,6 +44,7 @@ export const SOCKET_EVENTS = {
 	AI_ACCOUNT_CHANGED: 'ai:account:changed',
 	AI_USER_CHANGED: 'ai:user:changed',
 	AI_BULK_CHANGED: 'ai:bulk:changed',
+	AI_SCHEDULE_CHANGED: 'ai:schedule:changed',
 	
 	// Сервер -> Клиент (Luxee аккаунты)
 	LUXEE_ACCOUNT_CREATED: 'luxee:account:created',

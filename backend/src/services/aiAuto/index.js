@@ -5,6 +5,8 @@ import catchUpScanner from './catchUpScanner.js';
 import chatProcessor from './chatProcessor.js';
 import profileScanner from './profileScanner.js';
 import utils from './utils.js';
+import aiScheduleService from '../aiScheduleService.js';
+import LuxeeAccount from '../../models/LuxeeAccountModel.js';
 
 // Глобальная блокировка для аккаунтов (Mutex)
 const processingLocks = new Map(); // accountId → { isProcessing: true, startedAt: timestamp }
@@ -41,6 +43,38 @@ const processAccountMessages = async (accountId, userId, page) => {
 		});
 
 		utils.log('AI Auto', `🔒 Account ${accountId} LOCKED`);
+
+		// ========== ПРОВЕРКА AI SCHEDULE (ИНТЕРВАЛОВ) ==========
+		// Проверяем можно ли сейчас работать по расписанию пользователя
+		const account = await LuxeeAccount.findById(accountId).populate('user');
+		
+		if (!account || !account.user) {
+			utils.log('AI Auto', `❌ Account or user not found for schedule check`);
+			return { processed: false, reason: 'account_not_found' };
+		}
+
+		const scheduleCheck = await aiScheduleService.checkUserSchedule(account.user._id);
+		
+		if (!scheduleCheck.shouldRun) {
+			const nextTime = scheduleCheck.nextToggleTime 
+				? new Date(scheduleCheck.nextToggleTime).toLocaleString('ru-RU') 
+				: 'неизвестно';
+			
+			const stateEmoji = scheduleCheck.currentState === 'resting' ? '💤' : '⏸️';
+			utils.log('AI Auto', `${stateEmoji} User ${account.user.email} в режиме ОТДЫХА до ${nextTime}`);
+			
+			return { 
+				processed: false, 
+				reason: 'user_schedule_resting',
+				nextRunTime: scheduleCheck.nextToggleTime 
+			};
+		}
+
+		// Если только что переключились - логируем
+		if (scheduleCheck.justToggled) {
+			const stateEmoji = scheduleCheck.currentState === 'working' ? '⚡' : '💤';
+			utils.log('AI Auto', `${stateEmoji} Schedule auto-switched to: ${scheduleCheck.currentState}`);
+		}
 
 		// ========== ОСНОВНАЯ ЛОГИКА ==========
 
@@ -203,7 +237,7 @@ const processAccountMessages = async (accountId, userId, page) => {
 					console.log(
 						'[🤖 AI AUTO] ✅ SUCCESS! Message sent on active profile',
 					);
-					await utils.randomDelay(12000, 24000);
+					await utils.randomDelay(19000, 31000);
 					messageSent = true;
 					return { processed: true, reason: 'active_profile_processed' };
 				} else {
@@ -314,7 +348,7 @@ const processAccountMessages = async (accountId, userId, page) => {
 							'AI Auto',
 							`✅ Message sent on profile ${profile.username} (${Math.round(elapsed / 1000)}s)`,
 						);
-						await utils.randomDelay(12000, 24000);
+						await utils.randomDelay(19000, 31000);
 						messageSent = true;
 						return { processed: true, reason: 'other_profile_processed' };
 					} else {

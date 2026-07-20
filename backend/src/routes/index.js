@@ -4,6 +4,7 @@ import UserController from '../controllers/UserController.js';
 import AiController from '../controllers/aiController.js';
 import AiManagementController from '../controllers/aiManagementController/index.js';
 import AiAutoResponseController from '../controllers/aiAutoResponseController.js';
+import AiScheduleController from '../controllers/aiScheduleController.js';
 import LuxeeController from '../controllers/luxeeController.js';
 import authMiddleware from '../middleware/authMiddleware.js';
 import roleMiddleware from '../middleware/roleMiddleware.js';
@@ -196,6 +197,31 @@ router.get(
 	'/ai/auto-response/accounts/:accountId/is-running',
 	authMiddleware,
 	AiAutoResponseController.isRunning,
+);
+
+// AI Schedule routes (интервалы работы/отдыха)
+router.get(
+	'/ai-schedule/me',
+	authMiddleware,
+	AiScheduleController.getMySchedule,
+);
+router.get(
+	'/ai-schedule/:userId',
+	authMiddleware,
+	roleMiddleware('admin'),
+	AiScheduleController.getSchedule,
+);
+router.put(
+	'/ai-schedule/:userId',
+	authMiddleware,
+	roleMiddleware('admin'),
+	AiScheduleController.updateSchedule,
+);
+router.delete(
+	'/ai-schedule/:userId',
+	authMiddleware,
+	roleMiddleware('admin'),
+	AiScheduleController.resetSchedule,
 );
 
 // Spambot routes

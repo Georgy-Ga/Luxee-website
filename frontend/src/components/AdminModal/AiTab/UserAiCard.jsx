@@ -2,6 +2,7 @@ import PropTypes from 'prop-types';
 import { Badge } from '../../ui';
 import AccountToggleButton from './AccountToggleButton';
 import AccountsList from './AccountsList';
+import AiScheduleSettings from '../../AiSchedule/AiScheduleSettings';
 
 /**
  * Карточка пользователя с управлением AI для его аккаунтов
@@ -50,6 +51,7 @@ const UserAiCard = ({
                 <span>Аккаунтов: {user.accounts.length}</span>
               </div>
 
+              <AiScheduleSettings userId={user._id} userEmail={user.email} />
               <AccountToggleButton userId={user._id} />
             </>
           )}

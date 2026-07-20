@@ -16,6 +16,7 @@ import aiAutoResponseService from './src/services/aiAutoResponseService.js';
 import LuxeeAccountModel from './src/models/LuxeeAccountModel.js';
 import { loadPromptsFromJson } from './src/services/profilePromptService.js';
 import spambotPollingService from './src/services/spambotPollingService.js';
+import aiScheduleService from './src/services/aiScheduleService.js';
 
 dotenv.config();
 
@@ -117,6 +118,11 @@ const start = async () => {
 
 				// Запустить автоматическую очистку неактивных контекстов
 				browserService.startAutoCleanup();
+
+				// Запустить AI Schedule Service
+				console.log('[Server] Starting AI Schedule Service...');
+				await aiScheduleService.initialize();
+				console.log('[Server] ✓ AI Schedule Service started\n');
 			} catch (error) {
 				console.error('[Server] Error during context recovery:', error.message);
 			}

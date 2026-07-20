@@ -1,6 +1,7 @@
 import PropTypes from 'prop-types';
 import AccountAIButton from './AccountAIButton';
 import ProfileItem from './ProfileItem';
+import AiScheduleStatus from './AiScheduleStatus';
 
 /**
  * Элемент аккаунта с профилями
@@ -27,6 +28,8 @@ const AccountItem = ({
           <p className="text-[10px] lg:text-xs text-gray-600 dark:text-gray-400">
             {account.profiles?.length || 0} профилей • {account.totalUnread || 0} новых
           </p>
+          {/* Статус расписания AI */}
+          <AiScheduleStatus accountId={account.accountId} />
         </div>
         
         {/* AI Toggle для аккаунта */}

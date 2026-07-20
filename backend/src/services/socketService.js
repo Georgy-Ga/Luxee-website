@@ -212,6 +212,35 @@ class SocketService {
 	}
 
 	/**
+	 * Emit события изменения AI Schedule (интервалов работы/отдыха)
+	 * @param {Object} data - Данные расписания
+	 * @param {string} data.userId - ID пользователя
+	 * @param {string} data.email - Email пользователя
+	 * @param {string} data.currentState - Текущее состояние (working/resting/disabled)
+	 * @param {Date} data.nextToggleTime - Время следующего переключения
+	 * @param {string} data.mode - Режим (scheduled/always)
+	 */
+	emitAIScheduleChanged(data) {
+		if (!this.ensureInitialized()) return;
+
+		const event = SOCKET_EVENTS.AI_SCHEDULE_CHANGED;
+		
+		// Broadcast всем (админы и сам пользователь должны видеть изменения)
+		this.broadcastToAll(event, {
+			userId: data.userId,
+			email: data.email,
+			currentState: data.currentState,
+			nextToggleTime: data.nextToggleTime,
+			mode: data.mode,
+			settings: data.settings,
+			reset: data.reset,
+			timestamp: new Date().toISOString()
+		});
+
+		console.log(`[Socket Service] Emitted AI schedule changed: userId=${data.userId}, state=${data.currentState}, mode=${data.mode}`);
+	}
+
+	/**
 	 * Emit события создания нового Luxee аккаунта
 	 * Используется для динамического обновления списка аккаунтов в админ-панели
 	 */
