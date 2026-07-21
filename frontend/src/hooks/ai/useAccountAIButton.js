@@ -40,7 +40,17 @@ export const useAccountAIButton = (accountId) => {
     
     try {
       await aiApi.toggleMyAccountAi(accountId);
-      // Данные обновятся автоматически через WebSocket (useAiSync)
+      
+      // ✅ FIX: Сразу обновляем локальное состояние (не ждем WebSocket)
+      // WebSocket может быть отключен или задержаться
+      const store = useAiStateStore.getState();
+      console.log('[useAccountAIButton] Updating local state immediately');
+      store.updateUserAccount(accountId, {
+        aiEnabled: false, // Пользователь может только выключить
+        aiEnabledByAdmin: aiEnabledByAdmin, // Не меняем
+      });
+      
+      // Данные также обновятся через WebSocket (useAiSync) если подключен
       return { success: true };
     } catch (error) {
       const errorMessage = error.response?.data?.error || 'Ошибка при переключении AI';

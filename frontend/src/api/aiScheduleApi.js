@@ -5,10 +5,18 @@ import axios from './axios';
  */
 
 /**
- * Получить статус расписания пользователя
+ * Получить статус расписания пользователя (для админа)
  */
 export const getScheduleStatus = async (userId) => {
   const response = await axios.get(`/ai-schedule/${userId}`);
+  return response.data.schedule; // Возвращаем вложенный объект schedule
+};
+
+/**
+ * Получить своё расписание (для текущего пользователя)
+ */
+export const getMyScheduleStatus = async () => {
+  const response = await axios.get('/ai-schedule/me');
   return response.data.schedule; // Возвращаем вложенный объект schedule
 };
 

@@ -77,6 +77,16 @@ export const spambotApi = {
 		return response.data;
 	},
 
+	/**
+	 * Удалить рассылку из очереди
+	 * @param {string} distributionId - ID рассылки (MongoDB _id)
+	 * @returns {Promise<Object>} - Результат удаления
+	 */
+	async deleteDistribution(distributionId) {
+		const response = await apiClient.delete(`/spambot/distributions/${distributionId}`);
+		return response.data;
+	},
+
 	// ========================================
 	// ADMIN METHODS
 	// ========================================

@@ -8,6 +8,7 @@
 import SpambotDistributionModel from '../models/SpambotDistributionModel.js';
 import SpambotService from './spambotService.js';
 import socketService from './socketService.js';
+import spambotQueueService from './SpambotQueueService.js';
 
 class SpambotPollingService {
 	constructor() {
@@ -192,12 +193,22 @@ class SpambotPollingService {
 						...eventData,
 						completedAt: new Date().toISOString()
 					});
+					
+					// Запустить следующую рассылку из очереди
+					console.log(`[Spambot Polling] 🎯 Distribution completed, checking queue for account ${distribution.luxeeAccount._id}`);
+					await spambotQueueService.startNextInQueue(distribution.luxeeAccount._id.toString());
+					
 				} else if (status.status === 'error') {
 					// ВАЖНО: distribution.user._id это ObjectId, конвертируем в string
 					socketService.emitDistributionError(distribution.user._id.toString(), {
 						...eventData,
 						errorMessage: status.errorMessage || 'Unknown error'
 					});
+					
+					// При ошибке тоже запустить следующую рассылку
+					console.log(`[Spambot Polling] 💥 Distribution failed, checking queue for account ${distribution.luxeeAccount._id}`);
+					await spambotQueueService.startNextInQueue(distribution.luxeeAccount._id.toString());
+					
 				} else if (status.status === 'running') {
 					// Для progress updates используем общее событие status
 					// ВАЖНО: distribution.user._id это ObjectId, конвертируем в string

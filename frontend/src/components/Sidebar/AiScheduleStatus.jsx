@@ -1,7 +1,7 @@
 import PropTypes from 'prop-types';
 import { useEffect, useState } from 'react';
 import { useSocket } from '../../contexts/SocketContext';
-import { getScheduleStatus } from '../../api/aiScheduleApi';
+import { getMyScheduleStatus } from '../../api/aiScheduleApi';
 import useAuthStore from '../../stores/authStore';
 
 /**
@@ -12,31 +12,31 @@ const AiScheduleStatus = ({ accountId }) => {
 	const [schedule, setSchedule] = useState(null);
 	const [loading, setLoading] = useState(true);
 	const { socket, isConnected } = useSocket();
-	const userId = useAuthStore(state => state.user?._id);
+	const isAuthenticated = useAuthStore(state => state.isAuthenticated);
 
 	// Загрузка расписания при монтировании
 	useEffect(() => {
-		console.log('[AI Schedule Status] Mount/Update', { accountId, userId });
-		loadSchedule();
-	}, [userId]); // accountId не нужен - расписание общее для пользователя
+		console.log('[AI Schedule Status] Mount/Update', { accountId, isAuthenticated });
+		if (isAuthenticated) {
+			loadSchedule();
+		}
+	}, [isAuthenticated]);
 
 	// Подписка на WebSocket события
 	useEffect(() => {
-		if (!socket || !isConnected || !userId) {
+		if (!socket || !isConnected || !isAuthenticated) {
 			return;
 		}
 
 		const handleScheduleChanged = data => {
-			// Обновляем только если это наш пользователь
-			if (data.userId === userId) {
-				const isEnabled = data.mode === 'scheduled';
+			// Обновляем расписание (userId уже проверен на backend)
+			const isEnabled = data.mode === 'scheduled';
 
-				setSchedule({
-					enabled: isEnabled,
-					currentState: data.currentState ?? 'disabled',
-					nextToggleTime: data.nextToggleTime ?? null,
-				});
-			}
+			setSchedule({
+				enabled: isEnabled,
+				currentState: data.currentState ?? 'disabled',
+				nextToggleTime: data.nextToggleTime ?? null,
+			});
 		};
 
 		socket.on('ai:schedule:changed', handleScheduleChanged);
@@ -44,18 +44,13 @@ const AiScheduleStatus = ({ accountId }) => {
 		return () => {
 			socket.off('ai:schedule:changed', handleScheduleChanged);
 		};
-	}, [socket, isConnected, userId]);
+	}, [socket, isConnected, isAuthenticated]);
 
 	const loadSchedule = async () => {
-		if (!userId) {
-			console.log('[AI Schedule Status] No userId, skipping load');
-			return;
-		}
-
 		try {
 			setLoading(true);
-			console.log('[AI Schedule Status] Loading schedule for userId:', userId);
-			const data = await getScheduleStatus(userId);
+			console.log('[AI Schedule Status] Loading my schedule...');
+			const data = await getMyScheduleStatus();
 			console.log('[AI Schedule Status] Received data:', data);
 
 			setSchedule({

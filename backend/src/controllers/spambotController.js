@@ -464,6 +464,51 @@ class SpambotController {
 			});
 		}
 	}
+
+	/**
+	 * DELETE /api/spambot/distributions/:id
+	 *
+	 * Удалить рассылку из очереди (только для queued статуса)
+	 */
+	async deleteDistribution(req, res) {
+		try {
+			const { id } = req.params;
+			const userId = req.user.id;
+			const userRole = req.user.role;
+
+			// Импортировать SpambotQueueService
+			const spambotQueueService = (await import('../services/SpambotQueueService.js')).default;
+			
+			// Удалить рассылку из очереди
+			await spambotQueueService.removeFromQueue(id, userId, userRole);
+
+			res.json({
+				success: true,
+				message: 'Distribution removed from queue successfully',
+			});
+		} catch (error) {
+			console.error('[Spambot Controller] Error deleting distribution:', error);
+
+			if (error.message.includes('not found') || error.message.includes('access denied')) {
+				return res.status(404).json({
+					success: false,
+					message: error.message,
+				});
+			}
+
+			if (error.message.includes('not queued') || error.message.includes('Cannot delete')) {
+				return res.status(400).json({
+					success: false,
+					message: error.message,
+				});
+			}
+
+			res.status(500).json({
+				success: false,
+				message: error.message,
+			});
+		}
+	}
 }
 
 export default new SpambotController();

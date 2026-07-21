@@ -22,9 +22,12 @@ const DistributionForm = ({ profile, account, onSubmit, loading }) => {
 	const [excludeIds, setExcludeIds] = useState(''); // Строка: "100, 200, 300"
 	
 	// Лимиты
-	const [limit, setLimit] = useState(50);
+	const [limit, setLimit] = useState(30);
 	const [filterUpdateLimit, setFilterUpdateLimit] = useState(10);
 	const [maxTimeMinutes, setMaxTimeMinutes] = useState(180);
+	
+	// Константы
+	const MAX_DISTRIBUTION_LIMIT = 30;
 
 	if (!profile || !account) {
 		return null;
@@ -449,16 +452,22 @@ const DistributionForm = ({ profile, account, onSubmit, loading }) => {
 				<div className="grid grid-cols-1 md:grid-cols-3 gap-4">
 					<div>
 						<label className="block text-sm font-medium text-gray-900 dark:text-white mb-2">
-							Лимит на рассылку:
+							Лимит на рассылку (макс. {MAX_DISTRIBUTION_LIMIT}):
 						</label>
 						<input
 							type="number"
 							value={limit}
-							onChange={(e) => setLimit(e.target.value)}
+							onChange={(e) => {
+								const value = parseInt(e.target.value) || 1;
+								setLimit(Math.min(Math.max(value, 1), MAX_DISTRIBUTION_LIMIT));
+							}}
 							min="1"
-							max="1000"
+							max={MAX_DISTRIBUTION_LIMIT}
 							className="w-full px-3 py-2 rounded-lg border border-light-border dark:border-dark-border bg-white dark:bg-dark-bg text-gray-900 dark:text-white"
 						/>
+						<p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+							Максимум {MAX_DISTRIBUTION_LIMIT} рассылок
+						</p>
 					</div>
 					<div>
 						<label className="block text-sm font-medium text-gray-900 dark:text-white mb-2">

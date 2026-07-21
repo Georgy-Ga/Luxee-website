@@ -1,7 +1,7 @@
 /**
  * Компонент истории рассылок
  */
-const DistributionHistory = ({ distributions, loading, onStop }) => {
+const DistributionHistory = ({ distributions, loading, onStop, onRemoveFromQueue }) => {
 	if (loading) {
 		return (
 			<div className="bg-light-surface dark:bg-dark-surface rounded-lg p-4 border border-light-border dark:border-dark-border">
@@ -30,6 +30,8 @@ const DistributionHistory = ({ distributions, loading, onStop }) => {
 		switch (status) {
 			case 'running':
 				return 'text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-900/20';
+			case 'queued':
+				return 'text-purple-600 dark:text-purple-400 bg-purple-50 dark:bg-purple-900/20';
 			case 'completed':
 				return 'text-green-600 dark:text-green-400 bg-green-50 dark:bg-green-900/20';
 			case 'stopped':
@@ -45,6 +47,8 @@ const DistributionHistory = ({ distributions, loading, onStop }) => {
 		switch (status) {
 			case 'running':
 				return 'Выполняется';
+			case 'queued':
+				return 'В очереди';
 			case 'completed':
 				return 'Завершена';
 			case 'stopped':
@@ -81,6 +85,9 @@ const DistributionHistory = ({ distributions, loading, onStop }) => {
 								Дата
 							</th>
 							<th className="text-left py-3 px-2 text-sm font-medium text-gray-700 dark:text-gray-300">
+								Аккаунт
+							</th>
+							<th className="text-left py-3 px-2 text-sm font-medium text-gray-700 dark:text-gray-300">
 								Профиль
 							</th>
 							<th className="text-left py-3 px-2 text-sm font-medium text-gray-700 dark:text-gray-300">
@@ -109,14 +116,19 @@ const DistributionHistory = ({ distributions, loading, onStop }) => {
 								<td className="py-3 px-2 text-sm text-gray-900 dark:text-white">
 									{formatDate(dist.createdAt)}
 								</td>
-							<td className="py-3 px-2 text-sm text-gray-900 dark:text-white">
-								<div className="max-w-[150px] truncate">
-									{dist.profileName || 'N/A'}
-								</div>
-							</td>
-							<td className="py-3 px-2 text-sm text-gray-700 dark:text-gray-300">
-								{dist.distributionType === 'chat' ? 'Чат' : 'Почта'}
-							</td>
+								<td className="py-3 px-2 text-sm text-gray-700 dark:text-gray-300">
+									<div className="max-w-[180px] truncate" title={dist.accountEmail}>
+										{dist.accountEmail || 'N/A'}
+									</div>
+								</td>
+								<td className="py-3 px-2 text-sm text-gray-900 dark:text-white">
+									<div className="max-w-[150px] truncate">
+										{dist.profileName || 'N/A'}
+									</div>
+								</td>
+								<td className="py-3 px-2 text-sm text-gray-700 dark:text-gray-300">
+									{dist.distributionType === 'chat' ? 'Чат' : 'Почта'}
+								</td>
 								<td className="py-3 px-2">
 									<span className={`inline-flex items-center px-2 py-1 rounded text-xs font-medium ${getStatusColor(dist.status)}`}>
 										{getStatusText(dist.status)}
@@ -135,6 +147,15 @@ const DistributionHistory = ({ distributions, loading, onStop }) => {
 											className="px-3 py-1 text-xs rounded-lg border border-red-300 dark:border-red-700 text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20"
 										>
 											Остановить
+										</button>
+									)}
+									{dist.status === 'queued' && onRemoveFromQueue && (
+										<button
+											onClick={() => onRemoveFromQueue(dist.id || dist._id)}
+											className="px-3 py-1 text-xs rounded-lg border border-orange-300 dark:border-orange-700 text-orange-600 dark:text-orange-400 hover:bg-orange-50 dark:hover:bg-orange-900/20"
+											title="Удалить из очереди"
+										>
+											✖ Удалить
 										</button>
 									)}
 								</td>

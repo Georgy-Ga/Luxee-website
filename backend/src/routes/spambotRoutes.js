@@ -228,4 +228,16 @@ router.get('/distributions/:id/status', spambotController.getDistributionStatus)
  */
 router.post('/distributions/:id/stop', spambotController.stopDistribution);
 
+/**
+ * DELETE /api/spambot/distributions/:id
+ * 
+ * Удалить рассылку из очереди (только для queued статуса)
+ * 
+ * Response: {
+ *   success: boolean,
+ *   message: string
+ * }
+ */
+router.delete('/distributions/:id', spambotController.deleteDistribution);
+
 export default router;

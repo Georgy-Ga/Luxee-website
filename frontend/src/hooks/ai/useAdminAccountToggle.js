@@ -62,7 +62,18 @@ export const useAdminAccountToggle = (userId) => {
       const newStatus = currentStatus === 'all' ? false : true;
       await aiApi.setAllUserAccountsAiByAdmin(userId, newStatus);
       
-      // Данные обновятся автоматически через WebSocket (useAiSync)
+      // ✅ FIX: Сразу обновляем локальное состояние (не ждем WebSocket)
+      // WebSocket может быть отключен или задержаться
+      console.log('[useAdminAccountToggle] Updating local state immediately');
+      currentAccounts.forEach(acc => {
+        store.updateAccountInAdminData({
+          accountId: acc._id,
+          aiEnabled: newStatus,
+          aiEnabledByAdmin: newStatus,
+        });
+      });
+      
+      // Данные также обновятся через WebSocket (useAiSync) если подключен
       return { success: true };
     } catch (error) {
       console.error('[useAdminAccountToggle] Failed to toggle all accounts AI:', error);

@@ -1,6 +1,8 @@
 import axios from 'axios';
 import LuxeeAccountModel from '../models/LuxeeAccountModel.js';
 import SpambotDistributionModel from '../models/SpambotDistributionModel.js';
+import spambotQueueService from './SpambotQueueService.js';
+import socketService from './socketService.js';
 
 /**
  * Spambot Service
@@ -16,43 +18,26 @@ import SpambotDistributionModel from '../models/SpambotDistributionModel.js';
 const PYTHON_SERVICE_URL =
 	process.env.SPAMBOT_SERVICE_URL || 'http://localhost:8001';
 
+// Константы
+const MAX_DISTRIBUTION_LIMIT = 30; // Максимальное количество рассылок
+
 // In-memory блокировки (дополнительная защита)
 const accountLocks = new Map();
 
 class SpambotService {
 	/**
-	 * Проверить доступность аккаунта для рассылки
+	 * Проверить есть ли активная (running) рассылка на аккаунте
 	 *
 	 * @param {string} accountId - ID Luxee аккаунта
-	 * @returns {Promise<{available: boolean, reason?: string}>}
+	 * @returns {Promise<Object|null>} - Активная рассылка или null
 	 */
-	async checkAccountAvailability(accountId) {
-		// Проверка 1: In-memory lock
-		if (accountLocks.has(accountId)) {
-			return {
-				available: false,
-				reason: 'Account is currently locked for another distribution',
-			};
-		}
-
-		// Проверка 2: MongoDB - активные рассылки
-		const activeDistributions =
-			await SpambotDistributionModel.getAccountActiveDistributions(accountId);
-
-		if (activeDistributions.length > 0) {
-			return {
-				available: false,
-				reason: `Account has ${activeDistributions.length} active distribution(s)`,
-				activeDistributions: activeDistributions.map(d => ({
-					id: d._id,
-					distributionId: d.distributionId,
-					status: d.status,
-					startedAt: d.startedAt,
-				})),
-			};
-		}
-
-		return { available: true };
+	async getRunningDistribution(accountId) {
+		const running = await SpambotDistributionModel.findOne({
+			luxeeAccount: accountId,
+			status: 'running'
+		});
+		
+		return running;
 	}
 
 	/**
@@ -93,7 +78,7 @@ class SpambotService {
 	}
 
 	/**
-	 * Запустить рассылку
+	 * Запустить рассылку (с поддержкой очереди)
 	 *
 	 * @param {Object} params
 	 * @param {string} params.accountId - ID Luxee аккаунта
@@ -103,65 +88,105 @@ class SpambotService {
 	 * @returns {Promise<Object>} - Данные созданной рассылки
 	 */
 	async startDistribution({ accountId, userId, userRole = 'user', config }) {
+		// 0. Валидация лимита рассылок
+		if (!config.limit || config.limit < 1 || config.limit > MAX_DISTRIBUTION_LIMIT) {
+			throw new Error(`Distribution limit must be between 1 and ${MAX_DISTRIBUTION_LIMIT}`);
+		}
+		
 		// 1. Проверка доступа к аккаунту
 		// Админ может запускать рассылки на любых аккаунтах
 		let account;
 		if (userRole === 'admin') {
-			account = await LuxeeAccountModel.findById(accountId);
+			account = await LuxeeAccountModel.findById(accountId).populate('user', 'email');
 		} else {
 			account = await LuxeeAccountModel.findOne({
 				_id: accountId,
 				user: userId,
-			});
+			}).populate('user', 'email');
 		}
 
 		if (!account) {
 			throw new Error('Account not found or access denied');
 		}
 
-		// 2. Проверка доступности аккаунта (блокировки)
-		const availability = await this.checkAccountAvailability(accountId);
+		// 2. Проверить есть ли уже running рассылка
+		const shouldQueue = await spambotQueueService.shouldQueue(accountId);
+		
+		// 3. Создать запись в MongoDB с правильным статусом
+		const distribution = new SpambotDistributionModel({
+			user: account.user._id, // ID владельца аккаунта (не админа!)
+			luxeeAccount: accountId,
+			distributionId: `temp_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`, // Временный ID
+			config: {
+				profileUid: config.profileUid,
+				profileName: config.profileName,
+				distributionType: config.distributionType,
+				purchased: config.purchased,
+				free: config.free,
+				onlyEmptyChat: config.onlyEmptyChat,
+				onlyNotEmptyChat: config.onlyNotEmptyChat,
+				messages: config.messages,
+				mailMessage: config.mailMessage,
+				excludeIds: config.excludeIds,
+				specificUsers: config.specificUsers,
+				limit: config.limit,
+				filterUpdateLimit: config.filterUpdateLimit,
+				maxTimeMinutes: config.maxTimeMinutes,
+			},
+			status: shouldQueue ? 'queued' : 'running',
+			queuedAt: shouldQueue ? new Date() : undefined,
+		});
 
-		if (!availability.available) {
-			throw new Error(availability.reason);
+		await distribution.save();
+
+		// 4. Если нужно поставить в очередь - отправить событие и вернуть
+		if (shouldQueue) {
+			const position = await spambotQueueService.getQueuePosition(distribution._id);
+			console.log(
+				`[Spambot Service] Distribution queued (#${position}): ${distribution.distributionId} for account ${account.luxeeEmail}`,
+			);
+			
+			// Отправить WebSocket событие о добавлении в очередь
+			await spambotQueueService.emitQueuedEvent(distribution, position);
+			
+			return {
+				id: distribution._id,
+				distributionId: distribution.distributionId,
+				status: 'queued',
+				accountEmail: account.luxeeEmail,
+				user: account.user._id,
+				config: distribution.config,
+				queuePosition: position,
+				queuedAt: distribution.queuedAt,
+				createdAt: distribution.createdAt,
+			};
 		}
 
-		// 3. Установить in-memory блокировку
+		// 5. Если не в очереди - запустить сразу
+		// Установить in-memory блокировку
 		accountLocks.set(accountId, Date.now());
 
 		try {
-			// 4. Подготовить конфигурацию с credentials
+			// Подготовить конфигурацию с credentials
 			const fullConfig = {
-				// Credentials из MongoDB
 				username: account.luxeeEmail,
 				password: account.luxeePassword,
-
-				// Конфигурация от пользователя
 				profile_uid: config.profileUid,
 				profile_name: config.profileName,
 				distribution_type: config.distributionType,
-
-				// Filters
 				purchased: config.purchased ?? true,
 				free: config.free ?? true,
 				only_empty_chat: config.onlyEmptyChat ?? false,
 				only_not_empty_chat: config.onlyNotEmptyChat ?? false,
-
-				// Messages
 				messages: config.messages?.map(m => ({
 					text: m.text,
 					interval: m.interval || 0,
 				})),
-
-				mail_message: config.mailMessage
-					? {
-							title: config.mailMessage.title,
-							text: config.mailMessage.text,
-							pictures_number: config.mailMessage.picturesNumber || [],
-						}
-					: null,
-
-				// Limits
+				mail_message: config.mailMessage ? {
+					title: config.mailMessage.title,
+					text: config.mailMessage.text,
+					pictures_number: config.mailMessage.picturesNumber || [],
+				} : null,
 				exclude_ids: config.excludeIds || [],
 				specific_users: config.specificUsers || [],
 				limit: config.limit,
@@ -169,95 +194,83 @@ class SpambotService {
 				max_time_minutes: config.maxTimeMinutes || 180,
 			};
 
-			// 5. Отправить запрос в Python Service
+			// Запустить в Python Service
 			const response = await axios.post(
 				`${PYTHON_SERVICE_URL}/api/distribution/start`,
 				fullConfig,
-				{
-					timeout: 30000, // 30 секунд
-				},
+				{ timeout: 30000 }
 			);
 
-			const { distribution_id, status } = response.data;
+			const { distribution_id } = response.data;
 
-			// 6. Сохранить в MongoDB
-			// ВАЖНО: Сохраняем ID владельца аккаунта, а не того кто запустил рассылку
-			// Это важно для WebSocket уведомлений и для связи с аккаунтом
-			const distribution = new SpambotDistributionModel({
-				user: account.user, // ID владельца аккаунта (не админа!)
-				luxeeAccount: accountId,
-				distributionId: distribution_id,
-				config: {
-					profileUid: config.profileUid,
-					profileName: config.profileName,
-					distributionType: config.distributionType,
-					purchased: config.purchased,
-					free: config.free,
-					onlyEmptyChat: config.onlyEmptyChat,
-					onlyNotEmptyChat: config.onlyNotEmptyChat,
-					messages: config.messages,
-					mailMessage: config.mailMessage,
-					excludeIds: config.excludeIds,
-					specificUsers: config.specificUsers,
-					limit: config.limit,
-					filterUpdateLimit: config.filterUpdateLimit,
-					maxTimeMinutes: config.maxTimeMinutes,
-				},
-				status: 'running',
-			});
-
+			// Обновить distributionId в MongoDB
+			distribution.distributionId = distribution_id;
+			distribution.startedAt = new Date();
 			await distribution.save();
 
 			console.log(
 				`[Spambot Service] Distribution started: ${distribution_id} for account ${account.luxeeEmail}`,
 			);
 
+			// Отправить WebSocket событие
+			socketService.emitDistributionStarted(account.user._id.toString(), {
+				distributionId: distribution_id,
+				id: distribution._id,
+				status: 'running',
+				accountEmail: account.luxeeEmail,
+				profileName: config.profileName || 'N/A',
+				distributionType: config.distributionType || 'chat',
+				sentMessagesCount: 0,
+				skippedClientsCount: 0,
+				createdAt: distribution.createdAt?.toISOString(),
+				startedAt: distribution.startedAt?.toISOString(),
+			});
+
 			return {
 				id: distribution._id,
 				distributionId: distribution_id,
 				status: 'running',
 				accountEmail: account.luxeeEmail,
-				user: account.user, // ID владельца аккаунта для WebSocket уведомлений
+				user: account.user._id,
 				config: distribution.config,
 				createdAt: distribution.createdAt,
 				startedAt: distribution.startedAt,
 			};
 		} catch (error) {
-			// Снять блокировку при ошибке
+			// При ошибке запуска - удалить запись или пометить как error
 			accountLocks.delete(accountId);
 
-			console.error(
-				'[Spambot Service] Error starting distribution:',
-				error.message,
-			);
-			console.error(
-				'[Spambot Service] Error details:',
-				error.response?.data || error.stack,
-			);
+			distribution.status = 'error';
+			distribution.errorMessage = error.message;
+			distribution.completedAt = new Date();
+			await distribution.save();
 
-			// Правильная обработка ошибок
+			console.error('[Spambot Service] Error starting distribution:', error.message);
+			console.error('[Spambot Service] Error details:', error.response?.data || error.stack);
+
+			// Отправить WebSocket событие об ошибке
+			socketService.emitDistributionError(account.user._id.toString(), {
+				distributionId: distribution.distributionId,
+				id: distribution._id,
+				status: 'error',
+				errorMessage: error.message,
+				accountEmail: account.luxeeEmail,
+				profileName: config.profileName || 'N/A',
+				distributionType: config.distributionType || 'chat',
+			});
+
 			let errorMessage = 'Unknown error';
-
 			if (error.response) {
-				// Ответ от Python backend с ошибкой
-				errorMessage =
-					error.response.data?.detail ||
-					error.response.data?.message ||
-					`HTTP ${error.response.status}`;
+				errorMessage = error.response.data?.detail || error.response.data?.message || `HTTP ${error.response.status}`;
 			} else if (error.request) {
-				// Запрос отправлен, но ответа не получено (Python backend не доступен)
-				errorMessage =
-					'Python Spambot Service is not available. Make sure it is running on ' +
-					PYTHON_SERVICE_URL;
+				errorMessage = 'Python Spambot Service is not available. Make sure it is running on ' + PYTHON_SERVICE_URL;
 			} else {
-				// Ошибка при настройке запроса
 				errorMessage = error.message;
 			}
 
 			throw new Error(`Failed to start distribution: ${errorMessage}`);
 		} finally {
 			// Снять in-memory блокировку через 5 секунд
-			// (к этому времени статус уже обновится в БД)
 			setTimeout(() => {
 				accountLocks.delete(accountId);
 			}, 5000);
@@ -390,8 +403,6 @@ class SpambotService {
 			);
 
 			// Отправить WebSocket событие об остановке
-			const socketService = (await import('./socketService.js')).default;
-			// ВАЖНО: distribution.user это ObjectId, конвертируем в string
 			socketService.emitDistributionStopped(distribution.user.toString(), {
 				distributionId: distribution.distributionId,
 				id: distribution._id,
@@ -405,6 +416,10 @@ class SpambotService {
 				startedAt: distribution.startedAt?.toISOString(),
 				stoppedAt: distribution.stoppedAt?.toISOString(),
 			});
+
+			// Запустить следующую рассылку из очереди
+			console.log(`[Spambot Service] 🎯 Distribution stopped, checking queue for account ${distribution.luxeeAccount._id}`);
+			await spambotQueueService.startNextInQueue(distribution.luxeeAccount._id.toString());
 
 			return {
 				id: distribution._id,
@@ -526,7 +541,7 @@ class SpambotService {
 		const distributions = await SpambotDistributionModel.find(query)
 			.populate('luxeeAccount', 'luxeeEmail')
 			.populate('user', 'email')
-			.sort({ status: 1, createdAt: -1 }) // running сверху, потом по дате
+			.sort({ createdAt: -1 }) // ✅ FIX: Самые новые рассылки сверху
 			.limit(filters.limit || 100);
 
 		return distributions.map(d => ({

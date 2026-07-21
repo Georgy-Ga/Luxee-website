@@ -222,8 +222,8 @@ const Spambot = () => {
 		console.log('[Spambot] Distribution added to queue:', distribution);
 	};
 
-	// Удалить рассылку из очереди
-	const handleRemoveFromQueue = (id) => {
+	// Удалить рассылку из локальной UI очереди
+	const handleRemoveFromLocalQueue = (id) => {
 		setQueuedDistributions(prev => prev.filter(d => d.id !== id));
 	};
 
@@ -282,6 +282,28 @@ const Spambot = () => {
 				status: error.response?.status
 			});
 			alert(`Ошибка остановки рассылки: ${error.message}`);
+		}
+	};
+
+	// Удаление рассылки из очереди
+	const handleRemoveFromQueue = async (distributionId) => {
+		try {
+			console.log(`[Spambot] 🗑️  Removing from queue: ${distributionId}`);
+			
+			const result = await spambotApi.deleteDistribution(distributionId);
+			
+			console.log(`[Spambot] ✅ Remove result:`, result);
+			
+			// Удалить из истории локально (или дождаться WebSocket)
+			setDistributionHistory(prev => prev.filter(d => d._id !== distributionId && d.id !== distributionId));
+		} catch (error) {
+			console.error('[Spambot] ❌ Error removing distribution:', error);
+			console.error('[Spambot] ❌ Error details:', {
+				message: error.message,
+				response: error.response?.data,
+				status: error.response?.status
+			});
+			alert(`Ошибка удаления рассылки: ${error.response?.data?.message || error.message}`);
 		}
 	};
 
@@ -360,37 +382,74 @@ const Spambot = () => {
 			);
 		};
 
-		const handleDistributionError = (data) => {
-			console.error('[Spambot] Distribution error:', data);
-			
-			// Обновить активную
-			if (activeDistribution && data.distributionId === activeDistribution.distributionId) {
-				setActiveDistribution(prev => ({ ...prev, status: 'error', errorMessage: data.errorMessage }));
+	const handleDistributionError = (data) => {
+		console.error('[Spambot] Distribution error:', data);
+		
+		// Обновить активную
+		if (activeDistribution && data.distributionId === activeDistribution.distributionId) {
+			setActiveDistribution(prev => ({ ...prev, status: 'error', errorMessage: data.errorMessage }));
+		}
+		
+		// Обновить в истории
+		setDistributionHistory(prev =>
+			prev.map(dist =>
+				dist.distributionId === data.distributionId
+					? { ...dist, ...data, status: 'error' }
+					: dist
+			)
+		);
+	};
+
+	// ✅ NEW: Обработчик добавления в очередь
+	const handleDistributionQueued = (data) => {
+		console.log('[Spambot] Distribution queued:', data);
+		
+		// Добавить в начало истории
+		setDistributionHistory(prev => {
+			// Проверить если уже есть
+			const exists = prev.find(d => d.distributionId === data.distributionId || d.id === data.id);
+			if (exists) {
+				// Обновить существующую
+				return prev.map(d => 
+					(d.distributionId === data.distributionId || d.id === data.id)
+						? { ...d, ...data }
+						: d
+				);
 			}
-			
-			// Обновить в истории
-			setDistributionHistory(prev =>
-				prev.map(dist =>
-					dist.distributionId === data.distributionId
-						? { ...dist, ...data, status: 'error' }
-						: dist
-				)
-			);
-		};
+			// Добавить новую
+			return [data, ...prev];
+		});
+	};
 
-		socket.on('spambot:distribution:status', handleDistributionStatus);
-		socket.on('spambot:distribution:started', handleDistributionStarted);
-		socket.on('spambot:distribution:completed', handleDistributionCompleted);
-		socket.on('spambot:distribution:stopped', handleDistributionStopped);
-		socket.on('spambot:distribution:error', handleDistributionError);
+	// ✅ NEW: Обработчик удаления из очереди
+	const handleDistributionRemoved = (data) => {
+		console.log('[Spambot] Distribution removed:', data);
+		
+		// Удалить из истории
+		setDistributionHistory(prev =>
+			prev.filter(dist => 
+				dist.distributionId !== data.distributionId && dist.id !== data.id
+			)
+		);
+	};
 
-		return () => {
-			socket.off('spambot:distribution:status', handleDistributionStatus);
-			socket.off('spambot:distribution:started', handleDistributionStarted);
-			socket.off('spambot:distribution:completed', handleDistributionCompleted);
-			socket.off('spambot:distribution:stopped', handleDistributionStopped);
-			socket.off('spambot:distribution:error', handleDistributionError);
-		};
+	socket.on('spambot:distribution:status', handleDistributionStatus);
+	socket.on('spambot:distribution:started', handleDistributionStarted);
+	socket.on('spambot:distribution:completed', handleDistributionCompleted);
+	socket.on('spambot:distribution:stopped', handleDistributionStopped);
+	socket.on('spambot:distribution:error', handleDistributionError);
+	socket.on('spambot:distribution:queued', handleDistributionQueued);
+	socket.on('spambot:distribution:removed', handleDistributionRemoved);
+
+	return () => {
+		socket.off('spambot:distribution:status', handleDistributionStatus);
+		socket.off('spambot:distribution:started', handleDistributionStarted);
+		socket.off('spambot:distribution:completed', handleDistributionCompleted);
+		socket.off('spambot:distribution:stopped', handleDistributionStopped);
+		socket.off('spambot:distribution:error', handleDistributionError);
+		socket.off('spambot:distribution:queued', handleDistributionQueued);
+		socket.off('spambot:distribution:removed', handleDistributionRemoved);
+	};
 	}, [socket, isConnected, activeDistribution]);
 
 	// WebSocket - Обновление списка аккаунтов при создании нового (для админа)
@@ -469,23 +528,24 @@ const Spambot = () => {
 							)}
 						</div>
 
-						{/* Правая колонка: Очередь рассылок */}
-						<div className="lg:sticky lg:top-6 lg:self-start">
-							<DistributionQueue
-								distributions={queuedDistributions}
-								onStart={handleStartAllDistributions}
-								onRemove={handleRemoveFromQueue}
-								loading={startingDistribution}
-							/>
-						</div>
+					{/* Правая колонка: Очередь рассылок */}
+					<div className="lg:sticky lg:top-6 lg:self-start">
+						<DistributionQueue
+							distributions={queuedDistributions}
+							onStart={handleStartAllDistributions}
+							onRemove={handleRemoveFromLocalQueue}
+							loading={startingDistribution}
+						/>
 					</div>
+				</div>
 
-					{/* История рассылок (полная ширина внизу) */}
-					<DistributionHistory
-						distributions={distributionHistory}
-						loading={loadingHistory}
-						onStop={handleStopDistribution}
-					/>
+				{/* История рассылок (полная ширина внизу) */}
+				<DistributionHistory
+					distributions={distributionHistory}
+					loading={loadingHistory}
+					onStop={handleStopDistribution}
+					onRemoveFromQueue={handleRemoveFromQueue}
+				/>
 				</div>
 			</div>
 		</div>

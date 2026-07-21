@@ -75,10 +75,13 @@ const SpambotDistributionSchema = new Schema({
 	// Status tracking
 	status: { 
 		type: String, 
-		enum: ['pending', 'running', 'completed', 'error', 'stopped'],
-		default: 'pending',
+		enum: ['queued', 'running', 'completed', 'error', 'stopped'],
+		default: 'queued',
 		index: true 
 	},
+	
+	// Queue management
+	queuedAt: { type: Date, default: Date.now },
 	
 	// Progress
 	sentMessagesCount: { type: Number, default: 0 },
@@ -129,14 +132,14 @@ SpambotDistributionSchema.methods.updateStatus = function(statusData) {
 SpambotDistributionSchema.statics.getActiveDistributions = function(userId) {
 	return this.find({
 		user: userId,
-		status: { $in: ['pending', 'running'] }
+		status: { $in: ['queued', 'running'] }
 	}).populate('luxeeAccount', 'luxeeEmail');
 };
 
 SpambotDistributionSchema.statics.getAccountActiveDistributions = function(accountId) {
 	return this.find({
 		luxeeAccount: accountId,
-		status: { $in: ['pending', 'running'] }
+		status: { $in: ['queued', 'running'] }
 	});
 };
 

@@ -283,6 +283,17 @@ const processSingleChat = async ({
 			`🤖 Generating response (type: ${messageType})...`,
 		);
 
+		// ========== ЗАДЕРЖКА НА "ПЕЧАТАНИЕ" ==========
+		// Имитируем время чтения сообщения мужчины и печатания ответа (15-25 секунд)
+		const typingDelay = Math.floor(Math.random() * (25000 - 15000 + 1)) + 15000;
+		utils.log(
+			'Chat Processor',
+			`💭 Simulating reading and typing... (${Math.round(typingDelay / 1000)}s)`,
+		);
+		console.log(`[🚦 CHAT PROCESSOR] 💭 TYPING DELAY: ${Math.round(typingDelay / 1000)} seconds`);
+		await utils.sleep(typingDelay);
+		console.log('[🚦 CHAT PROCESSOR] ✅ Typing delay completed');
+
 		// ========== ГЕНЕРАЦИЯ И ОТПРАВКА ОТВЕТА ==========
 		console.log('[🚦 CHAT PROCESSOR] ========================================');
 		console.log('[🚦 CHAT PROCESSOR] 🤖 AI GENERATION & SEND START');
