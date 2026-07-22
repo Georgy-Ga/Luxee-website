@@ -12,6 +12,9 @@ const LuxeeAccountSchema = new Schema({
 	aiEnabled: { type: Boolean, default: false }, // AI для этого аккаунта (пользователь может выключить)
 	aiEnabledByAdmin: { type: Boolean, default: false }, // Разрешил ли админ использовать AI (по умолчанию выключен)
 	aiContext: { type: String }, // ID отдельного браузерного контекста для AI (для параллельной работы)
+	// Ручная активность пользователя (не AI, не Spambot)
+	manualLastActivity: { type: Date, default: null }, // Последняя ручная активность
+	isManuallyOnline: { type: Boolean, default: false }, // Онлайн ли аккаунт (ручной режим)
 });
 
 export default model('LuxeeAccount', LuxeeAccountSchema);

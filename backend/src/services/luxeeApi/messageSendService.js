@@ -15,6 +15,7 @@ import browserService from '../browser/browserService.js';
 import pageHelpers from '../browser/pageHelpers.js';
 import requestQueueService from '../browser/requestQueueService.js';
 import chatOpenService from './chatOpenService.js';
+import luxeeAccountOnlineService from '../luxeeAccountOnlineService.js';
 
 const messageSendService = {
 	/**
@@ -200,6 +201,15 @@ const messageSendService = {
 				console.log(
 					`[Message Send] ✅ Message sent successfully to chat ${chatId}`,
 				);
+
+				// 🎯 ТРЕКИНГ РУЧНОЙ АКТИВНОСТИ: Отправка сообщения = ручное действие
+				try {
+					await luxeeAccountOnlineService.trackManualActivity(userId, accountId);
+					console.log(`[Message Send] ✅ Manual activity tracked for user ${userId}`);
+				} catch (trackError) {
+					console.error('[Message Send] ⚠️ Error tracking manual activity:', trackError.message);
+					// Не критично, продолжаем
+				}
 
 				// ✅ ФОНОВАЯ обработка - НЕ ждём результата
 				// Проверяем статус и сохраняем в MongoDB БЕЗ блокировки

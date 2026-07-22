@@ -17,6 +17,7 @@ import LuxeeAccountModel from './src/models/LuxeeAccountModel.js';
 import { loadPromptsFromJson } from './src/services/profilePromptService.js';
 import spambotPollingService from './src/services/spambotPollingService.js';
 import aiScheduleService from './src/services/aiScheduleService.js';
+import luxeeAccountOnlineService from './src/services/luxeeAccountOnlineService.js';
 
 dotenv.config();
 
@@ -180,6 +181,17 @@ const start = async () => {
 				console.error('[Server] Error starting Spambot Polling Service:', error);
 			}
 		}, 9000); // Задержка 9 секунд (после AI recovery)
+
+		// 🎯 Запуск мониторинга онлайн статуса аккаунтов
+		setTimeout(() => {
+			try {
+				console.log('\n[Server] Starting Luxee Accounts Online Status Monitor...');
+				luxeeAccountOnlineService.startMonitoring();
+				console.log('[Server] ✓ Online Status Monitor started (updates every 1 minute)\n');
+			} catch (error) {
+				console.error('[Server] Error starting Online Status Monitor:', error);
+			}
+		}, 12000); // Задержка 12 секунд (после всех сервисов)
 	} catch (error) {
 		console.log(error);
 	}

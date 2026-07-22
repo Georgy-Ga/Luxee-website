@@ -2,6 +2,9 @@
 // Проверяет alert окна и закрывает их нажатием OK
 
 import aiAuto from '../aiAuto/index.js';
+import LuxeeAccount from '../../models/LuxeeAccountModel.js';
+
+const MANUAL_ACTIVITY_TIMEOUT = 15 * 60 * 1000; // 15 минут
 
 const keepAliveIntervals = new Map(); // accountId -> intervalId
 const keepAliveQueue = []; // Очередь для последовательной обработки
@@ -97,7 +100,23 @@ const keepAliveService = {
 					if (count > 0) {
 						const isVisible = await popupButton.isVisible().catch(() => false);
 						if (isVisible) {
-							console.log(`[Keep-Alive] 🔔 Closing "You're inactive" popup for account ${accountId}`);
+							console.log(`[Keep-Alive] 🔔 "You're inactive" popup detected for account ${accountId}`);
+							
+							// 🎯 ПРОВЕРКА РУЧНОЙ АКТИВНОСТИ: Если прошло 15+ минут - НЕ кликаем
+							try {
+								const account = await LuxeeAccount.findById(accountId);
+								if (account && account.manualLastActivity) {
+									const timeSinceActivity = Date.now() - account.manualLastActivity.getTime();
+									if (timeSinceActivity >= MANUAL_ACTIVITY_TIMEOUT) {
+										console.log(`[Keep-Alive] ⏰ Manual activity timeout (${Math.floor(timeSinceActivity / 60000)} min) - NOT clicking "I am online" for ${accountId}`);
+										continue; // НЕ кликаем, пропускаем
+									}
+									console.log(`[Keep-Alive] ✅ Recent manual activity (${Math.floor(timeSinceActivity / 60000)} min ago) - closing popup for ${accountId}`);
+								}
+							} catch (activityCheckError) {
+								console.error(`[Keep-Alive] ⚠️ Error checking manual activity for ${accountId}:`, activityCheckError.message);
+								// В случае ошибки проверяем AI Auto и продолжаем
+							}
 							
 							// 🛡️ БЕЗОПАСНОСТЬ: Проверка #1 - AI Auto не работает?
 							const lockStatus = aiAuto.getAccountLockStatus(accountId);

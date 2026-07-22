@@ -119,7 +119,14 @@ class AiScheduleController {
 	 */
 	async getMySchedule(req, res) {
 		try {
-			const userId = req.userId; // Из authMiddleware
+			const userId = req.user?.id; // Из authMiddleware (req.user содержит {id, email, role})
+			
+			if (!userId) {
+				return res.status(401).json({
+					success: false,
+					error: 'User not authenticated'
+				});
+			}
 			
 			const schedule = await aiScheduleService.getScheduleStatus(userId);
 			

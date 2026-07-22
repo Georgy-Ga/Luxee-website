@@ -48,6 +48,8 @@ router.post(
 	LuxeeController.restoreSession,
 );
 router.get('/luxee/profiles', authMiddleware, LuxeeController.getProfiles);
+router.post('/luxee/track-activity', authMiddleware, LuxeeController.trackManualActivity); // 🎯 Трекинг ручной активности
+router.get('/luxee/accounts/online-status', authMiddleware, LuxeeController.getAccountsOnlineStatus); // 🎯 Получить онлайн статус
 router.get(
 	'/luxee/page-content',
 	authMiddleware,

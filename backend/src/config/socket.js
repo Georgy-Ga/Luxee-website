@@ -58,6 +58,9 @@ export const SOCKET_EVENTS = {
 	DISTRIBUTION_STOPPED: 'spambot:distribution:stopped',
 	DISTRIBUTION_ERROR: 'spambot:distribution:error',
 	
+	// Сервер -> Клиент (Онлайн статус аккаунтов)
+	ACCOUNTS_ONLINE_STATUS: 'luxee:accounts:online-status',
+	
 	// Системные
 	ERROR: 'error',
 	RECONNECT: 'reconnect'

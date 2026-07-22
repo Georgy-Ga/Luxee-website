@@ -6,6 +6,8 @@
 import browserService from '../browser/browserService.js';
 import pageHelpers from '../browser/pageHelpers.js';
 import requestQueueService from '../browser/requestQueueService.js';
+import LuxeeAccount from '../../models/LuxeeAccountModel.js';
+import luxeeAccountOnlineService from '../luxeeAccountOnlineService.js';
 
 const chatOpenService = {
 	/**
@@ -197,6 +199,18 @@ const chatOpenService = {
 					console.log(`[Chat Open] Message ${idx}: from=${msg.from}, body=${msg.body?.substring(0, 50)}`);
 				});
 				console.log(`[Chat Open] =====================`);
+
+				// 🎯 ТРЕКИНГ РУЧНОЙ АКТИВНОСТИ: Просмотр чата = ручное действие
+				try {
+					const account = await LuxeeAccount.findById(accountId);
+					if (account) {
+						await luxeeAccountOnlineService.trackManualActivity(account.user.toString(), accountId);
+						console.log(`[Chat Open] ✅ Manual activity tracked for user ${account.user}`);
+					}
+				} catch (trackError) {
+					console.error('[Chat Open] ⚠️ Error tracking manual activity:', trackError.message);
+					// Не критично, продолжаем
+				}
 
 				return chatData;
 			} catch (error) {

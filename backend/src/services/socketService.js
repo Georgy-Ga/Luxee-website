@@ -411,6 +411,23 @@ getConnectedUsersCount() {
 
 		console.log(`[Socket Service] Distribution error event sent to user ${userId} + admins`);
 	}
+
+	/**
+	 * 🎯 Emit события изменения онлайн статуса аккаунтов
+	 * @param {string} userId - ID пользователя
+	 * @param {Object} statusData - Данные статуса { accounts: [...] }
+	 */
+	emitAccountsOnlineStatus(userId, statusData) {
+		if (!this.ensureInitialized()) return;
+
+		// Отправляем только конкретному пользователю
+		this.emitToUser(userId, SOCKET_EVENTS.ACCOUNTS_ONLINE_STATUS, {
+			...statusData,
+			timestamp: new Date().toISOString()
+		});
+
+		console.log(`[Socket Service] Accounts online status sent to user ${userId}`);
+	}
 }
 
 // Экспортируем singleton instance

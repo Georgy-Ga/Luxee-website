@@ -2,6 +2,7 @@ import PropTypes from 'prop-types';
 import AccountAIButton from './AccountAIButton';
 import ProfileItem from './ProfileItem';
 import AiScheduleStatus from './AiScheduleStatus';
+import { useLuxeeOnlineStatus } from '../../hooks/useLuxeeOnlineStatus';
 
 /**
  * Элемент аккаунта с профилями
@@ -17,11 +18,19 @@ const AccountItem = ({
   copiedId,
   onCopy,
 }) => {
+  const { trackActivity } = useLuxeeOnlineStatus();
+
+  // Обработчик клика на аккаунт - трекаем ручную активность
+  const handleAccountClick = () => {
+    trackActivity(account.accountId);
+    onToggle();
+  };
+
   return (
     <div className="mb-3 lg:mb-4">
       {/* Заголовок аккаунта */}
       <div className="flex items-center justify-between p-2 lg:p-3 rounded-lg bg-light-bg dark:bg-dark-bg hover:bg-light-hover dark:hover:bg-dark-hover cursor-pointer transition-colors">
-        <div className="flex-1 min-w-0" onClick={onToggle}>
+        <div className="flex-1 min-w-0" onClick={handleAccountClick}>
           <p className="font-medium text-gray-900 dark:text-white text-xs lg:text-sm truncate">
             {account.accountEmail}
           </p>

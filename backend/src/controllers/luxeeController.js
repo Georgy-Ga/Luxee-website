@@ -4,6 +4,7 @@ import messageCheckService from '../services/luxeeApi/messageCheckService/index.
 import messageSendService from '../services/luxeeApi/messageSendService.js';
 import profileChatsLoadService from '../services/luxeeApi/profileChatsLoadService.js';
 import chatOpenService from '../services/luxeeApi/chatOpenService.js';
+import luxeeAccountOnlineService from '../services/luxeeAccountOnlineService.js';
 import ApiError from '../exceptions/apiError.js';
 
 const LuxeeController = {
@@ -233,6 +234,37 @@ const LuxeeController = {
 				profileUid: parseInt(profileUid),
 				chatId,
 			});
+			
+			return res.json(result);
+		} catch (error) {
+			next(error);
+		}
+	},
+
+	// 🎯 Трекинг ручной активности (клики на аккаунты/профили)
+	trackManualActivity: async (req, res, next) => {
+		try {
+			const userId = req.user.id;
+			const { accountId } = req.body;
+
+			console.log(`[Luxee Controller] Track manual activity for user ${userId}, account ${accountId}`);
+			
+			const result = await luxeeAccountOnlineService.trackManualActivity(userId, accountId);
+			
+			return res.json(result);
+		} catch (error) {
+			next(error);
+		}
+	},
+
+	// 🎯 Получить онлайн статус аккаунтов пользователя
+	getAccountsOnlineStatus: async (req, res, next) => {
+		try {
+			const userId = req.user.id;
+
+			console.log(`[Luxee Controller] Get accounts online status for user ${userId}`);
+			
+			const result = await luxeeAccountOnlineService.getUserAccountsOnlineStatus(userId);
 			
 			return res.json(result);
 		} catch (error) {

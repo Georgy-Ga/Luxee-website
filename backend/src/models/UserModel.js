@@ -20,7 +20,13 @@ const UserSchema = new Schema({
 		},
 		lastToggleTime: { type: Date }, // Когда последний раз переключалось
 		nextToggleTime: { type: Date }, // Когда следующее переключение
-	}
+	},
+	
+	// Последняя ручная активность на Luxee аккаунтах (не AI, не Spambot)
+	luxeeAccountsManualActivity: {
+		type: Date,
+		default: null,
+	},
 })
 
 export default model('User', UserSchema);
