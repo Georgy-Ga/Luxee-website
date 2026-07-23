@@ -283,13 +283,68 @@ const processSingleChat = async ({
 			`🤖 Generating response (type: ${messageType})...`,
 		);
 
-		// ========== ЗАДЕРЖКА НА "ПЕЧАТАНИЕ" ==========
-		// Имитируем время чтения сообщения мужчины и печатания ответа (15-25 секунд)
-		const typingDelay = Math.floor(Math.random() * (25000 - 15000 + 1)) + 15000;
-		utils.log(
-			'Chat Processor',
-			`💭 Simulating reading and typing... (${Math.round(typingDelay / 1000)}s)`,
-		);
+	// ========== АДАПТИВНАЯ ЗАДЕРЖКА НА "ПЕЧАТАНИЕ" ==========
+	const MIN_DELAY = 7000;  // 7 секунд
+	const MAX_DELAY = 13000; // 13 секунд
+	const MIN_REALISTIC_TIME = 25000; // 25 секунд - минимальное реалистичное время ответа
+	const URGENT_THRESHOLD = 45000;   // 45 секунд - порог "срочности" (было 50000)
+	const MIN_TECHNICAL_DELAY = 500;  // 0.5 секунды - технический минимум
+
+	console.log('[🚦 CHAT PROCESSOR] ========================================');
+	console.log('[🚦 CHAT PROCESSOR] ⏱️  ADAPTIVE TYPING DELAY START');
+	
+	let typingDelay;
+	
+	// АДАПТИВНАЯ ЗАДЕРЖКА ТОЛЬКО ДЛЯ ОБЫЧНЫХ ЧАТОВ (НЕ CATCH UP)
+	if (!isCatchUp) {
+		// ✅ ПЕРЕСЧИТЫВАЕМ elapsed ЗДЕСЬ (после всех проверок/навигации)
+		// Это даёт более точное время, учитывая overhead на обработку
+		const elapsed = Date.now() - chat.lastActivity;
+			const targetDelay = MIN_DELAY + Math.random() * (MAX_DELAY - MIN_DELAY);
+			const calculatedDelay = targetDelay - elapsed;
+			
+			// Проверяем минимальное реалистичное время (25 секунд)
+			const projectedResponseTime = elapsed + Math.max(0, calculatedDelay);
+			
+		if (elapsed >= URGENT_THRESHOLD) {
+			// СРОЧНО: Сообщение висит 45+ секунд - отвечаем максимально быстро
+			typingDelay = MIN_TECHNICAL_DELAY;
+			console.log('[🚦 ADAPTIVE DELAY] ⚠️  URGENT MODE: Message is 45+ seconds old');
+			} else if (projectedResponseTime < MIN_REALISTIC_TIME) {
+				// Если ответим слишком быстро - ждём до 25 секунд
+				const additionalWait = MIN_REALISTIC_TIME - elapsed;
+				typingDelay = Math.max(MIN_TECHNICAL_DELAY, additionalWait);
+				console.log('[🚦 ADAPTIVE DELAY] ⏱️  Extending delay to meet 25s minimum');
+			} else {
+				// Используем вычисленную задержку
+				typingDelay = Math.max(MIN_TECHNICAL_DELAY, calculatedDelay);
+			}
+			
+			console.log(`[🚦 ADAPTIVE DELAY] Message age: ${Math.round(elapsed / 1000)}s`);
+			console.log(`[🚦 ADAPTIVE DELAY] Target delay range: ${MIN_DELAY / 1000}-${MAX_DELAY / 1000}s`);
+			console.log(`[🚦 ADAPTIVE DELAY] Random target: ${Math.round(targetDelay / 1000)}s`);
+			console.log(`[🚦 ADAPTIVE DELAY] Calculated delay: ${Math.round(calculatedDelay / 1000)}s`);
+			console.log(`[🚦 ADAPTIVE DELAY] Actual delay: ${Math.round(typingDelay / 1000)}s`);
+			console.log(`[🚦 ADAPTIVE DELAY] Projected response time: ${Math.round((elapsed + typingDelay) / 1000)}s from message`);
+			
+			utils.log(
+				'Chat Processor',
+				`⏱️  Adaptive typing delay: ${Math.round(typingDelay / 1000)}s (message age: ${Math.round(elapsed / 1000)}s)`,
+			);
+		} else {
+			// CATCH UP: обычная случайная задержка (БЕЗ адаптивной логики)
+			typingDelay = MIN_DELAY + Math.random() * (MAX_DELAY - MIN_DELAY);
+			
+			console.log('[🚦 CATCH UP DELAY] Using standard random delay');
+			console.log(`[🚦 CATCH UP DELAY] Range: ${MIN_DELAY / 1000}-${MAX_DELAY / 1000}s`);
+			console.log(`[🚦 CATCH UP DELAY] Actual delay: ${Math.round(typingDelay / 1000)}s`);
+			
+			utils.log(
+				'Chat Processor',
+				`⏱️  Catch Up typing delay: ${Math.round(typingDelay / 1000)}s`,
+			);
+		}
+		
 		console.log(`[🚦 CHAT PROCESSOR] 💭 TYPING DELAY: ${Math.round(typingDelay / 1000)} seconds`);
 		await utils.sleep(typingDelay);
 		console.log('[🚦 CHAT PROCESSOR] ✅ Typing delay completed');

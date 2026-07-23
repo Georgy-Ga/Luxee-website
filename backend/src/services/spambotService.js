@@ -34,9 +34,9 @@ class SpambotService {
 	async getRunningDistribution(accountId) {
 		const running = await SpambotDistributionModel.findOne({
 			luxeeAccount: accountId,
-			status: 'running'
+			status: 'running',
 		});
-		
+
 		return running;
 	}
 
@@ -89,15 +89,24 @@ class SpambotService {
 	 */
 	async startDistribution({ accountId, userId, userRole = 'user', config }) {
 		// 0. Валидация лимита рассылок
-		if (!config.limit || config.limit < 1 || config.limit > MAX_DISTRIBUTION_LIMIT) {
-			throw new Error(`Distribution limit must be between 1 and ${MAX_DISTRIBUTION_LIMIT}`);
+		if (
+			!config.limit ||
+			config.limit < 1 ||
+			config.limit > MAX_DISTRIBUTION_LIMIT
+		) {
+			throw new Error(
+				`Distribution limit must be between 1 and ${MAX_DISTRIBUTION_LIMIT}`,
+			);
 		}
-		
+
 		// 1. Проверка доступа к аккаунту
 		// Админ может запускать рассылки на любых аккаунтах
 		let account;
 		if (userRole === 'admin') {
-			account = await LuxeeAccountModel.findById(accountId).populate('user', 'email');
+			account = await LuxeeAccountModel.findById(accountId).populate(
+				'user',
+				'email',
+			);
 		} else {
 			account = await LuxeeAccountModel.findOne({
 				_id: accountId,
@@ -111,7 +120,7 @@ class SpambotService {
 
 		// 2. Проверить есть ли уже running рассылка
 		const shouldQueue = await spambotQueueService.shouldQueue(accountId);
-		
+
 		// 3. Создать запись в MongoDB с правильным статусом
 		const distribution = new SpambotDistributionModel({
 			user: account.user._id, // ID владельца аккаунта (не админа!)
@@ -141,14 +150,16 @@ class SpambotService {
 
 		// 4. Если нужно поставить в очередь - отправить событие и вернуть
 		if (shouldQueue) {
-			const position = await spambotQueueService.getQueuePosition(distribution._id);
+			const position = await spambotQueueService.getQueuePosition(
+				distribution._id,
+			);
 			console.log(
 				`[Spambot Service] Distribution queued (#${position}): ${distribution.distributionId} for account ${account.luxeeEmail}`,
 			);
-			
+
 			// Отправить WebSocket событие о добавлении в очередь
 			await spambotQueueService.emitQueuedEvent(distribution, position);
-			
+
 			return {
 				id: distribution._id,
 				distributionId: distribution.distributionId,
@@ -182,11 +193,13 @@ class SpambotService {
 					text: m.text,
 					interval: m.interval || 0,
 				})),
-				mail_message: config.mailMessage ? {
-					title: config.mailMessage.title,
-					text: config.mailMessage.text,
-					pictures_number: config.mailMessage.picturesNumber || [],
-				} : null,
+				mail_message: config.mailMessage
+					? {
+							title: config.mailMessage.title,
+							text: config.mailMessage.text,
+							pictures_number: config.mailMessage.picturesNumber || [],
+						}
+					: null,
 				exclude_ids: config.excludeIds || [],
 				specific_users: config.specificUsers || [],
 				limit: config.limit,
@@ -198,7 +211,7 @@ class SpambotService {
 			const response = await axios.post(
 				`${PYTHON_SERVICE_URL}/api/distribution/start`,
 				fullConfig,
-				{ timeout: 30000 }
+				{ timeout: 30000 },
 			);
 
 			const { distribution_id } = response.data;
@@ -245,8 +258,14 @@ class SpambotService {
 			distribution.completedAt = new Date();
 			await distribution.save();
 
-			console.error('[Spambot Service] Error starting distribution:', error.message);
-			console.error('[Spambot Service] Error details:', error.response?.data || error.stack);
+			console.error(
+				'[Spambot Service] Error starting distribution:',
+				error.message,
+			);
+			console.error(
+				'[Spambot Service] Error details:',
+				error.response?.data || error.stack,
+			);
 
 			// Отправить WebSocket событие об ошибке
 			socketService.emitDistributionError(account.user._id.toString(), {
@@ -261,9 +280,14 @@ class SpambotService {
 
 			let errorMessage = 'Unknown error';
 			if (error.response) {
-				errorMessage = error.response.data?.detail || error.response.data?.message || `HTTP ${error.response.status}`;
+				errorMessage =
+					error.response.data?.detail ||
+					error.response.data?.message ||
+					`HTTP ${error.response.status}`;
 			} else if (error.request) {
-				errorMessage = 'Python Spambot Service is not available. Make sure it is running on ' + PYTHON_SERVICE_URL;
+				errorMessage =
+					'Python Spambot Service is not available. Make sure it is running on ' +
+					PYTHON_SERVICE_URL;
 			} else {
 				errorMessage = error.message;
 			}
@@ -418,8 +442,12 @@ class SpambotService {
 			});
 
 			// Запустить следующую рассылку из очереди
-			console.log(`[Spambot Service] 🎯 Distribution stopped, checking queue for account ${distribution.luxeeAccount._id}`);
-			await spambotQueueService.startNextInQueue(distribution.luxeeAccount._id.toString());
+			console.log(
+				`[Spambot Service] 🎯 Distribution stopped, checking queue for account ${distribution.luxeeAccount._id}`,
+			);
+			await spambotQueueService.startNextInQueue(
+				distribution.luxeeAccount._id.toString(),
+			);
 
 			return {
 				id: distribution._id,
@@ -488,11 +516,13 @@ class SpambotService {
 
 		// Группировать по пользователям
 		const grouped = {};
-		
+
 		for (const account of accounts) {
 			// Пропустить аккаунты с удаленным пользователем (race condition или старые данные)
 			if (!account.user) {
-				console.warn(`[Spambot Service] ⚠️  Account ${account._id} (${account.luxeeEmail}) has no user, skipping...`);
+				console.warn(
+					`[Spambot Service] ⚠️  Account ${account._id} (${account.luxeeEmail}) has no user, skipping...`,
+				);
 				continue;
 			}
 
