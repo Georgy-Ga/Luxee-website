@@ -125,6 +125,7 @@ class SpambotService {
 		const distribution = new SpambotDistributionModel({
 			user: account.user._id, // ID владельца аккаунта (не админа!)
 			luxeeAccount: accountId,
+			accountEmail: account.luxeeEmail, // Сохраняем email для надежности
 			distributionId: `temp_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`, // Временный ID
 			config: {
 				profileUid: config.profileUid,
@@ -484,7 +485,6 @@ class SpambotService {
 		}
 
 		const distributions = await SpambotDistributionModel.find(query)
-			.populate('luxeeAccount', 'luxeeEmail')
 			.sort({ createdAt: -1 })
 			.limit(filters.limit || 50);
 
@@ -492,7 +492,7 @@ class SpambotService {
 			id: d._id,
 			distributionId: d.distributionId,
 			status: d.status,
-			accountEmail: d.luxeeAccount.luxeeEmail,
+			accountEmail: d.accountEmail || '❌ No Email',
 			profileName: d.config.profileName,
 			distributionType: d.config.distributionType,
 			sentMessagesCount: d.sentMessagesCount,
@@ -569,18 +569,17 @@ class SpambotService {
 		}
 
 		const distributions = await SpambotDistributionModel.find(query)
-			.populate('luxeeAccount', 'luxeeEmail')
 			.populate('user', 'email')
-			.sort({ createdAt: -1 }) // ✅ FIX: Самые новые рассылки сверху
+			.sort({ createdAt: -1 })
 			.limit(filters.limit || 100);
 
 		return distributions.map(d => ({
 			id: d._id,
 			distributionId: d.distributionId,
 			status: d.status,
-			accountEmail: d.luxeeAccount.luxeeEmail,
-			userEmail: d.user.email,
-			userId: d.user._id,
+			accountEmail: d.accountEmail || '❌ No Email',
+			userEmail: d.user?.email || '❌ User Deleted',
+			userId: d.user?._id || null,
 			profileName: d.config.profileName,
 			distributionType: d.config.distributionType,
 			sentMessagesCount: d.sentMessagesCount,

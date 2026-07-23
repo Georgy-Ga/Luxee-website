@@ -24,8 +24,15 @@ const SpambotDistributionSchema = new Schema({
 		index: true 
 	},
 	
+	// Account Email (денормализация для надежного хранения)
+	accountEmail: {
+		type: String,
+		required: false, // false для совместимости со старыми записями
+		index: true
+	},
+	
 	// Python Service ID
-	distributionId: { 
+	distributionId: {
 		type: String, 
 		required: true, 
 		unique: true,

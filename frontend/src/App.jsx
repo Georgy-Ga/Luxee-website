@@ -54,7 +54,8 @@ function App() {
           await loadUserAiData();
         }
       } catch (error) {
-        console.log('Not authenticated');
+        // Это нормально при первом заходе без refresh token
+        console.log('[Auth] No valid session found');
         setLoading(false);
       }
     };

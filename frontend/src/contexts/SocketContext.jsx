@@ -3,7 +3,7 @@
  * Предоставляет WebSocket соединение для всех компонентов
  */
 
-import { createContext, useContext, useEffect, useState, useCallback } from 'react';
+import { createContext, useContext, useEffect, useState, useRef } from 'react';
 import { io } from 'socket.io-client';
 import Cookies from 'js-cookie';
 
@@ -18,9 +18,9 @@ export const SocketProvider = ({ children }) => {
 	const [isConnected, setIsConnected] = useState(false);
 	const [connectionError, setConnectionError] = useState(null);
 	const [reconnectAttempt, setReconnectAttempt] = useState(0);
+	const socketRef = useRef(null);
 
 	// Инициализация Socket соединения
-	// ❌ НЕ добавлять socket в зависимости - это вызывает бесконечный цикл!
 	useEffect(() => {
 		const token = Cookies.get('accessToken');
 		
@@ -30,7 +30,7 @@ export const SocketProvider = ({ children }) => {
 		}
 
 		// Если уже есть подключение - не создаем новое
-		if (socket?.connected) {
+		if (socketRef.current?.connected) {
 			console.log('[Socket] Already connected');
 			return;
 		}
@@ -91,8 +91,10 @@ export const SocketProvider = ({ children }) => {
 		});
 
 		newSocket.on('connect_error', (error) => {
-			setReconnectAttempt((prev) => prev + 1);
-			console.error(`[Socket] Connection error (attempt ${prev + 1}):`, error.message);
+			setReconnectAttempt((prev) => {
+				console.error(`[Socket] Connection error (attempt ${prev + 1}):`, error.message);
+				return prev + 1;
+			});
 			setConnectionError(error.message);
 			setIsConnected(false);
 		});
@@ -115,27 +117,47 @@ export const SocketProvider = ({ children }) => {
 			setConnectionError(error.message || 'Unknown error');
 		});
 
+		socketRef.current = newSocket;
 		setSocket(newSocket);
 
 		// Cleanup при размонтировании
 		return () => {
 			console.log('[Socket] Cleaning up connection');
 			newSocket.close();
+			socketRef.current = null;
 			setSocket(null);
 		};
 	}, []); // ✅ Пустой массив - подключаемся только один раз при монтировании!
 
-	// Отключение при выходе (отсутствие токена)
+	// ✅ Мониторинг изменения токена (авторизация/выход)
 	useEffect(() => {
-		const token = Cookies.get('accessToken');
+		const checkToken = () => {
+			const token = Cookies.get('accessToken');
+			
+			// Если токен появился и нет подключения - подключаемся
+			if (token && !socketRef.current) {
+				console.log('[Socket] Token detected, reloading to initialize connection...');
+				// Небольшая задержка чтобы дать токену сохраниться
+				setTimeout(() => {
+					window.location.reload();
+				}, 500);
+			}
+			
+			// Если токен пропал и есть подключение - отключаемся
+			if (!token && socketRef.current) {
+				console.log('[Socket] Token removed, disconnecting...');
+				socketRef.current.close();
+				socketRef.current = null;
+				setSocket(null);
+				setIsConnected(false);
+			}
+		};
 		
-		if (!token && socket) {
-			console.log('[Socket] No token, disconnecting...');
-			socket.close();
-			setSocket(null);
-			setIsConnected(false);
-		}
-	}, []); // Мониторим токен вручную через интервал или события, а не через useEffect
+		// Проверяем токен каждую секунду
+		const interval = setInterval(checkToken, 1000);
+		
+		return () => clearInterval(interval);
+	}, []);
 
 	const value = {
 		socket,
@@ -153,7 +175,7 @@ export const SocketProvider = ({ children }) => {
 
 /**
  * Hook для использования Socket.io соединения
- * @returns {Object} - { socket, isConnected, connectionError, connectSocket, disconnectSocket }
+ * @returns {Object} - { socket, isConnected, connectionError, reconnectAttempt }
  */
 export const useSocket = () => {
 	const context = useContext(SocketContext);

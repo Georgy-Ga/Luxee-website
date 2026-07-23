@@ -369,15 +369,30 @@ const Spambot = () => {
 			console.log('[Spambot] Distribution started:', data);
 			setActiveDistribution(data);
 
-			// Добавить в начало истории
+			// ✅ FIX: Поиск по нескольким критериям для связи записей
+			// 1. По distributionId (новый UUID от Python)
+			// 2. По oldDistributionId (временный ID если запуск из очереди)
+			// 3. По MongoDB _id
 			setDistributionHistory(prev => {
-				// Проверить если уже есть
-				const exists = prev.find(d => d.distributionId === data.distributionId);
-				if (exists) {
-					return prev.map(dist =>
-						dist.distributionId === data.distributionId ? data : dist,
-					);
+				const existingIndex = prev.findIndex(d => 
+					d.distributionId === data.distributionId || // Обычное совпадение
+					d.distributionId === data.oldDistributionId || // Старый временный ID
+					(d.id && data.id && d.id === data.id) // По MongoDB _id
+				);
+				
+				if (existingIndex !== -1) {
+					// Обновляем существующую запись
+					const updated = [...prev];
+					updated[existingIndex] = {
+						...updated[existingIndex],
+						...data,
+					};
+					console.log('[Spambot] ✅ Updated existing distribution at index', existingIndex);
+					return updated;
 				}
+				
+				// Добавляем новую запись только если не нашли существующую
+				console.log('[Spambot] ➕ Adding new distribution to history');
 				return [data, ...prev];
 			});
 		};

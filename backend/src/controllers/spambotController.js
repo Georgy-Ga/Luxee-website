@@ -266,30 +266,31 @@ class SpambotController {
 		console.log('🚀🚀🚀 [Spambot Controller] AFTER startDistribution');
 		console.log('🚀🚀🚀 distribution:', JSON.stringify(distribution, null, 2));
 
-		// Отправить WebSocket событие о запуске
-		// ВАЖНО: Используем distribution.user (владелец аккаунта), а не req.user.id (кто запустил)
-		// Это обеспечивает что user получит уведомление, даже если админ запустил рассылку
-		console.log('[Spambot Controller] 📡 Sending WebSocket event:');
-		console.log('[Spambot Controller] 📡 Initiator (req.user.id):', req.user.id);
-		console.log('[Spambot Controller] 📡 Owner (distribution.user):', distribution.user);
-		console.log('[Spambot Controller] 📡 distributionId:', distribution.distributionId);
-		
-		// ВАЖНО: distribution.user это ObjectId, нужно конвертировать в string
-		const ownerUserId = distribution.user.toString();
-		console.log('[Spambot Controller] 💡 Converted to string:', ownerUserId);
-		
-		socketService.emitDistributionStarted(ownerUserId, {
-			distributionId: distribution.distributionId,
-			id: distribution.id,
-			status: distribution.status,
-			accountEmail: distribution.accountEmail,
-			profileName: distribution.config?.profileName || 'N/A',
-			distributionType: distribution.config?.distributionType || 'chat',
-			sentMessagesCount: distribution.sentMessagesCount || 0,
-			skippedClientsCount: distribution.skippedClientsCount || 0,
-			createdAt: distribution.createdAt?.toISOString() || new Date().toISOString(),
-			startedAt: distribution.startedAt?.toISOString() || new Date().toISOString(),
-		});
+		// ✅ FIX: НЕ отправляем WebSocket событие если статус 'queued'
+		// SpambotQueueService уже отправил событие 'spambot:distribution:queued'
+		// Отправляем только если статус 'running' (рассылка сразу запустилась)
+		if (distribution.status === 'running') {
+			console.log('[Spambot Controller] 📡 Sending WebSocket event (running):');
+			console.log('[Spambot Controller] 📡 Owner (distribution.user):', distribution.user);
+			console.log('[Spambot Controller] 📡 distributionId:', distribution.distributionId);
+			
+			const ownerUserId = distribution.user.toString();
+			
+			socketService.emitDistributionStarted(ownerUserId, {
+				distributionId: distribution.distributionId,
+				id: distribution.id,
+				status: distribution.status,
+				accountEmail: distribution.accountEmail,
+				profileName: distribution.config?.profileName || 'N/A',
+				distributionType: distribution.config?.distributionType || 'chat',
+				sentMessagesCount: distribution.sentMessagesCount || 0,
+				skippedClientsCount: distribution.skippedClientsCount || 0,
+				createdAt: distribution.createdAt?.toISOString() || new Date().toISOString(),
+				startedAt: distribution.startedAt?.toISOString() || new Date().toISOString(),
+			});
+		} else if (distribution.status === 'queued') {
+			console.log('[Spambot Controller] ⏳ Distribution queued - WebSocket event already sent by QueueService');
+		}
 
 			res.status(201).json({
 				success: true,

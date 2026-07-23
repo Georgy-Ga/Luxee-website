@@ -105,7 +105,7 @@ class SpambotQueueService {
 			distributionId: distribution.distributionId,
 			id: distribution._id,
 			status: 'queued',
-			accountEmail: distribution.luxeeAccount?.luxeeEmail || 'Unknown',
+			accountEmail: distribution.accountEmail || 'Unknown', // ✅ Используем денормализованное поле
 			profileName: distribution.config?.profileName || 'N/A',
 			distributionType: distribution.config?.distributionType || 'chat',
 			sentMessagesCount: 0,
@@ -141,9 +141,14 @@ class SpambotQueueService {
 			return null;
 		}
 
+		const oldDistributionId = next.distributionId; // Сохраняем временный ID
+		const mongoId = next._id.toString(); // MongoDB _id
+		
 		console.log(
-			`[Queue Service] 🚀 Starting next distribution: ${next.distributionId}`,
+			`[Queue Service] 🚀 Starting next distribution from queue:`,
 		);
+		console.log(`[Queue Service] 📝 MongoDB _id: ${mongoId}`);
+		console.log(`[Queue Service] 📝 Old distributionId (temp): ${oldDistributionId}`);
 
 		try {
 			// Импортировать SpambotService динамически чтобы избежать циклических зависимостей
@@ -229,10 +234,13 @@ class SpambotQueueService {
 			console.log(
 				`[Queue Service] ✅ Distribution ${next.distributionId} started from queue`,
 			);
+			console.log(`[Queue Service] 📤 New distributionId (real): ${next.distributionId}`);
 
-			// Отправить WebSocket событие
+			// ✅ FIX: Отправить WebSocket событие с информацией о старом и новом ID
+			// Frontend использует это чтобы обновить существующую запись вместо создания новой
 			socketService.emitDistributionStarted(next.user._id.toString(), {
 				distributionId: next.distributionId,
+				oldDistributionId: oldDistributionId, // ✅ Связь с временным ID!
 				id: next._id,
 				status: 'running',
 				accountEmail: account.luxeeEmail,
