@@ -238,8 +238,8 @@ const Spambot = () => {
 
 		setQueuedDistributions(prev => [...prev, distribution]);
 
-		// Очистить выбранный профиль для следующей рассылки
-		setSelectedProfile(null);
+		// НЕ очищаем selectedProfile - оставляем форму на месте
+		// Пользователь может добавить еще одну рассылку с тем же профилем
 
 		// Показать уведомление
 		console.log('[Spambot] Distribution added to queue:', distribution);
@@ -595,15 +595,15 @@ const Spambot = () => {
 							)}
 						</div>
 
-						{/* Правая колонка: Очередь рассылок */}
-						<div className='lg:sticky lg:top-6 lg:self-start'>
-							<DistributionQueue
-								distributions={queuedDistributions}
-								onStart={handleStartAllDistributions}
-								onRemove={handleRemoveFromLocalQueue}
-								loading={startingDistribution}
-							/>
-						</div>
+					{/* Правая колонка: Очередь рассылок */}
+					<div>
+						<DistributionQueue
+							distributions={queuedDistributions}
+							onStart={handleStartAllDistributions}
+							onRemove={handleRemoveFromLocalQueue}
+							loading={startingDistribution}
+						/>
+					</div>
 					</div>
 
 					{/* История рассылок (полная ширина внизу) */}

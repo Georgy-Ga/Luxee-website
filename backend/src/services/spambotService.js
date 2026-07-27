@@ -18,8 +18,9 @@ import socketService from './socketService.js';
 const PYTHON_SERVICE_URL =
 	process.env.SPAMBOT_SERVICE_URL || 'http://localhost:8001';
 
-// Константы
-const MAX_DISTRIBUTION_LIMIT = 30; // Максимальное количество рассылок
+// Константы - разные лимиты для Chat и Mail
+const MAX_CHAT_LIMIT = 30; // Максимальное количество рассылок для Chat
+const MAX_MAIL_LIMIT = 10; // Максимальное количество рассылок для Mail
 
 // In-memory блокировки (дополнительная защита)
 const accountLocks = new Map();
@@ -88,14 +89,16 @@ class SpambotService {
 	 * @returns {Promise<Object>} - Данные созданной рассылки
 	 */
 	async startDistribution({ accountId, userId, userRole = 'user', config }) {
-		// 0. Валидация лимита рассылок
+		// 0. Валидация лимита рассылок с учётом типа
+		const maxLimit = config.distributionType === 'mail' ? MAX_MAIL_LIMIT : MAX_CHAT_LIMIT;
+		
 		if (
 			!config.limit ||
 			config.limit < 1 ||
-			config.limit > MAX_DISTRIBUTION_LIMIT
+			config.limit > maxLimit
 		) {
 			throw new Error(
-				`Distribution limit must be between 1 and ${MAX_DISTRIBUTION_LIMIT}`,
+				`Distribution limit must be between 1 and ${maxLimit} for ${config.distributionType}`,
 			);
 		}
 

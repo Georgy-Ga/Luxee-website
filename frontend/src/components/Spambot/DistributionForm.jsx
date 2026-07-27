@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 
 /**
  * Форма конфигурации рассылки
@@ -15,7 +15,7 @@ const DistributionForm = ({ profile, account, onSubmit, loading }) => {
 	const [chatCondition, setChatCondition] = useState('all'); // 'all' | 'empty' | 'not_empty'
 	
 	// Фильтры - User type (Radio buttons)
-	const [userType, setUserType] = useState('all'); // 'all' | 'paid' | 'free' | 'specific'
+	const [userType, setUserType] = useState('paid'); // 'all' | 'paid' | 'free' | 'specific' - По умолчанию "Оплаченный"
 	const [specificUsers, setSpecificUsers] = useState(''); // Строка: "123, 456, 789"
 	
 	// Исключения
@@ -26,8 +26,17 @@ const DistributionForm = ({ profile, account, onSubmit, loading }) => {
 	const [filterUpdateLimit, setFilterUpdateLimit] = useState(10);
 	const [maxTimeMinutes, setMaxTimeMinutes] = useState(180);
 	
-	// Константы
-	const MAX_DISTRIBUTION_LIMIT = 30;
+	// Константы - разные лимиты для Chat и Mail
+	const MAX_CHAT_LIMIT = 30;
+	const MAX_MAIL_LIMIT = 10;
+
+	// Автокоррекция лимита при переключении типа рассылки
+	useEffect(() => {
+		const maxLimit = distributionType === 'chat' ? MAX_CHAT_LIMIT : MAX_MAIL_LIMIT;
+		if (limit > maxLimit) {
+			setLimit(maxLimit);
+		}
+	}, [distributionType, limit]);
 
 	if (!profile || !account) {
 		return null;
@@ -452,21 +461,22 @@ const DistributionForm = ({ profile, account, onSubmit, loading }) => {
 				<div className="grid grid-cols-1 md:grid-cols-3 gap-4">
 					<div>
 						<label className="block text-sm font-medium text-gray-900 dark:text-white mb-2">
-							Лимит на рассылку (макс. {MAX_DISTRIBUTION_LIMIT}):
+							Лимит на рассылку (макс. {distributionType === 'chat' ? MAX_CHAT_LIMIT : MAX_MAIL_LIMIT}):
 						</label>
 						<input
 							type="number"
 							value={limit}
 							onChange={(e) => {
 								const value = parseInt(e.target.value) || 1;
-								setLimit(Math.min(Math.max(value, 1), MAX_DISTRIBUTION_LIMIT));
+								const maxLimit = distributionType === 'chat' ? MAX_CHAT_LIMIT : MAX_MAIL_LIMIT;
+								setLimit(Math.min(Math.max(value, 1), maxLimit));
 							}}
 							min="1"
-							max={MAX_DISTRIBUTION_LIMIT}
+							max={distributionType === 'chat' ? MAX_CHAT_LIMIT : MAX_MAIL_LIMIT}
 							className="w-full px-3 py-2 rounded-lg border border-light-border dark:border-dark-border bg-white dark:bg-dark-bg text-gray-900 dark:text-white"
 						/>
 						<p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
-							Максимум {MAX_DISTRIBUTION_LIMIT} рассылок
+							Максимум {distributionType === 'chat' ? MAX_CHAT_LIMIT : MAX_MAIL_LIMIT} рассылок
 						</p>
 					</div>
 					<div>
