@@ -3,6 +3,7 @@ import useAuthStore from '../../stores/authStore';
 import UsersTab from './UsersTab';
 import LuxeeTab from './LuxeeTab';
 import AiTab from './AiTab';
+import BlacklistTab from './BlacklistTab';
 
 const AdminModal = ({ onClose }) => {
   const { user } = useAuthStore();
@@ -14,6 +15,7 @@ const AdminModal = ({ onClose }) => {
     { id: 'luxee', label: '🌐 Luxee аккаунты', component: LuxeeTab },
     ...(isAdmin ? [{ id: 'users', label: '👥 Пользователи', component: UsersTab }] : []),
     ...(isAdmin ? [{ id: 'ai', label: 'AI Управление', component: AiTab }] : []),
+    ...(isAdmin ? [{ id: 'blacklist', label: '🚫 Черные списки', component: BlacklistTab }] : []),
   ];
 
   const ActiveComponent = tabs.find(t => t.id === activeTab)?.component || LuxeeTab;

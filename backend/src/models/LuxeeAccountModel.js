@@ -15,6 +15,17 @@ const LuxeeAccountSchema = new Schema({
 	// Ручная активность пользователя (не AI, не Spambot)
 	manualLastActivity: { type: Date, default: null }, // Последняя ручная активность
 	isManuallyOnline: { type: Boolean, default: false }, // Онлайн ли аккаунт (ручной режим)
+	
+	// Черный список для AI (игнорировать определенных мужчин)
+	blacklist: {
+		enabled: { type: Boolean, default: false }, // Включен ли черный список
+		userIds: [{ type: String }], // Массив ID мужчин (userUid)
+		categories: {
+			newMessages: { type: Boolean, default: false }, // Игнорировать в новых сообщениях
+			catchUp: { type: Boolean, default: false }, // Игнорировать в Catch Up
+			activityCenter: { type: Boolean, default: false } // Игнорировать в Activity Center
+		}
+	}
 });
 
 export default model('LuxeeAccount', LuxeeAccountSchema);

@@ -113,6 +113,40 @@ export const luxeeApi = {
 		const response = await api.get('/luxee/accounts/online-status');
 		return response.data;
 	},
+
+	// ===== BLACKLIST (ЧЕРНЫЕ СПИСКИ AI) =====
+
+	// Получить черный список аккаунта
+	getBlacklist: async (accountId) => {
+		const response = await api.get(`/luxee/accounts/${accountId}/blacklist`);
+		return response.data;
+	},
+
+	// Обновить черный список (enabled + categories)
+	updateBlacklist: async (accountId, { enabled, userIds, categories }) => {
+		const response = await api.put(`/luxee/accounts/${accountId}/blacklist`, {
+			enabled,
+			userIds,
+			categories,
+		});
+		return response.data;
+	},
+
+	// Добавить userIds в черный список
+	addToBlacklist: async (accountId, userIds) => {
+		const response = await api.post(`/luxee/accounts/${accountId}/blacklist/add`, {
+			userIds,
+		});
+		return response.data;
+	},
+
+	// Удалить userIds из черного списка
+	removeFromBlacklist: async (accountId, userIds) => {
+		const response = await api.post(`/luxee/accounts/${accountId}/blacklist/remove`, {
+			userIds,
+		});
+		return response.data;
+	},
 };
 
 

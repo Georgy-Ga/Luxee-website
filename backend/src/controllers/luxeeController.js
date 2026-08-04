@@ -271,6 +271,174 @@ const LuxeeController = {
 			next(error);
 		}
 	},
+
+	// 🚫 Получить черный список аккаунта
+	getBlacklist: async (req, res, next) => {
+		try {
+			const { accountId } = req.params;
+			const LuxeeAccount = (await import('../models/LuxeeAccountModel.js')).default;
+
+			console.log(`[Luxee Controller] Get blacklist for account ${accountId}`);
+			
+			const account = await LuxeeAccount.findById(accountId);
+			
+			if (!account) {
+				return next(ApiError.NotFound('Аккаунт не найден'));
+			}
+
+			// Возвращаем черный список или значения по умолчанию
+			const blacklist = account.blacklist || {
+				enabled: false,
+				userIds: [],
+				categories: {
+					newMessages: false,
+					catchUp: false,
+					activityCenter: false
+				}
+			};
+			
+			return res.json(blacklist);
+		} catch (error) {
+			next(error);
+		}
+	},
+
+	// 🚫 Обновить черный список аккаунта
+	updateBlacklist: async (req, res, next) => {
+		try {
+			const { accountId } = req.params;
+			const { enabled, userIds, categories } = req.body;
+			const LuxeeAccount = (await import('../models/LuxeeAccountModel.js')).default;
+
+			console.log(`[Luxee Controller] Update blacklist for account ${accountId}`);
+			
+			const account = await LuxeeAccount.findById(accountId);
+			
+			if (!account) {
+				return next(ApiError.NotFound('Аккаунт не найден'));
+			}
+
+			// Обновляем черный список
+			account.blacklist = {
+				enabled: enabled !== undefined ? enabled : account.blacklist?.enabled || false,
+				userIds: userIds || account.blacklist?.userIds || [],
+				categories: {
+					newMessages: categories?.newMessages !== undefined ? categories.newMessages : account.blacklist?.categories?.newMessages || false,
+					catchUp: categories?.catchUp !== undefined ? categories.catchUp : account.blacklist?.categories?.catchUp || false,
+					activityCenter: categories?.activityCenter !== undefined ? categories.activityCenter : account.blacklist?.categories?.activityCenter || false
+				}
+			};
+
+			await account.save();
+			
+			console.log(`[Luxee Controller] ✅ Blacklist updated for account ${accountId}`);
+			
+			return res.json({
+				success: true,
+				blacklist: account.blacklist
+			});
+		} catch (error) {
+			next(error);
+		}
+	},
+
+	// 🚫 Добавить ID в черный список
+	addToBlacklist: async (req, res, next) => {
+		try {
+			const { accountId } = req.params;
+			const { userIds } = req.body;
+			const LuxeeAccount = (await import('../models/LuxeeAccountModel.js')).default;
+
+			if (!userIds || !Array.isArray(userIds) || userIds.length === 0) {
+				return next(ApiError.BadRequest('userIds должен быть непустым массивом'));
+			}
+
+			console.log(`[Luxee Controller] Add to blacklist for account ${accountId}:`, userIds);
+			
+			const account = await LuxeeAccount.findById(accountId);
+			
+			if (!account) {
+				return next(ApiError.NotFound('Аккаунт не найден'));
+			}
+
+			// Инициализируем blacklist если не существует
+			if (!account.blacklist) {
+				account.blacklist = {
+					enabled: false,
+					userIds: [],
+					categories: {
+						newMessages: false,
+						catchUp: false,
+						activityCenter: false
+					}
+				};
+			}
+
+			// Добавляем новые ID (избегаем дубликатов)
+			const existingIds = new Set(account.blacklist.userIds);
+			const newIds = userIds.filter(id => !existingIds.has(id));
+			
+			account.blacklist.userIds.push(...newIds);
+			await account.save();
+			
+			console.log(`[Luxee Controller] ✅ Added ${newIds.length} new IDs to blacklist`);
+			
+			return res.json({
+				success: true,
+				added: newIds.length,
+				blacklist: account.blacklist
+			});
+		} catch (error) {
+			next(error);
+		}
+	},
+
+	// 🚫 Удалить ID из черного списка
+	removeFromBlacklist: async (req, res, next) => {
+		try {
+			const { accountId } = req.params;
+			const { userIds } = req.body;
+			const LuxeeAccount = (await import('../models/LuxeeAccountModel.js')).default;
+
+			if (!userIds || !Array.isArray(userIds) || userIds.length === 0) {
+				return next(ApiError.BadRequest('userIds должен быть непустым массивом'));
+			}
+
+			console.log(`[Luxee Controller] Remove from blacklist for account ${accountId}:`, userIds);
+			
+			const account = await LuxeeAccount.findById(accountId);
+			
+			if (!account) {
+				return next(ApiError.NotFound('Аккаунт не найден'));
+			}
+
+			if (!account.blacklist || !account.blacklist.userIds) {
+				return res.json({
+					success: true,
+					removed: 0,
+					blacklist: account.blacklist
+				});
+			}
+
+			// Удаляем ID из списка
+			const idsToRemove = new Set(userIds);
+			const before = account.blacklist.userIds.length;
+			account.blacklist.userIds = account.blacklist.userIds.filter(id => !idsToRemove.has(id));
+			const removed = before - account.blacklist.userIds.length;
+			
+			await account.save();
+			
+			console.log(`[Luxee Controller] ✅ Removed ${removed} IDs from blacklist`);
+			
+			return res.json({
+				success: true,
+				removed,
+				blacklist: account.blacklist
+			});
+		} catch (error) {
+			next(error);
+		}
+	},
 };
 
 export default LuxeeController;

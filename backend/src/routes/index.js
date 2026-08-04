@@ -56,6 +56,32 @@ router.get(
 	LuxeeController.getPageContent,
 );
 
+// Blacklist routes (только для админов)
+router.get(
+	'/luxee/accounts/:accountId/blacklist',
+	authMiddleware,
+	roleMiddleware('admin'),
+	LuxeeController.getBlacklist,
+);
+router.put(
+	'/luxee/accounts/:accountId/blacklist',
+	authMiddleware,
+	roleMiddleware('admin'),
+	LuxeeController.updateBlacklist,
+);
+router.post(
+	'/luxee/accounts/:accountId/blacklist/add',
+	authMiddleware,
+	roleMiddleware('admin'),
+	LuxeeController.addToBlacklist,
+);
+router.post(
+	'/luxee/accounts/:accountId/blacklist/remove',
+	authMiddleware,
+	roleMiddleware('admin'),
+	LuxeeController.removeFromBlacklist,
+);
+
 // Message checking routes
 router.get(
 	'/luxee/messages/check-all',
