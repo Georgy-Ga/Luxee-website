@@ -1,0 +1,323 @@
+/**
+ * Мобильная адаптация
+ * Дополнительные стили для комфортной работы на маленьких экранах
+ */
+
+/* ============================================
+   ОБЩИЕ УЛУЧШЕНИЯ ДЛЯ МОБИЛЬНЫХ УСТРОЙСТВ
+   ============================================ */
+
+/* Увеличенная область нажатия для кнопок и ссылок на мобильных */
+@media (max-width: 768px) {
+  /* Минимальная высота touch-элементов 44px (рекомендация Apple HIG) */
+  button,
+  a,
+  input[type="button"],
+  input[type="submit"],
+  .touch-target {
+    min-height: 44px;
+    min-width: 44px;
+  }
+
+  /* Увеличенные отступы для улучшения читаемости */
+  .mobile-padding {
+    padding: 1rem;
+  }
+
+  /* Увеличенный шрифт для лучшей читаемости */
+  .mobile-text {
+    font-size: 1rem;
+    line-height: 1.5;
+  }
+}
+
+/* ============================================
+   АДАПТАЦИЯ ТАБЛИЦ ДЛЯ МОБИЛЬНЫХ
+   ============================================ */
+
+@media (max-width: 1024px) {
+  /* Скрываем таблицу и показываем карточный вид */
+  .table-to-cards {
+    display: block;
+  }
+
+  .table-to-cards thead {
+    display: none;
+  }
+
+  .table-to-cards tbody {
+    display: block;
+  }
+
+  .table-to-cards tr {
+    display: block;
+    margin-bottom: 1rem;
+    border: 1px solid;
+    border-radius: 0.5rem;
+    padding: 1rem;
+    background: var(--tw-bg-opacity);
+  }
+
+  .table-to-cards td {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 0.5rem 0;
+    border: none;
+  }
+
+  .table-to-cards td:before {
+    content: attr(data-label);
+    font-weight: 600;
+    margin-right: 1rem;
+    flex-shrink: 0;
+  }
+
+  .table-to-cards td:last-child {
+    border-bottom: none;
+    padding-bottom: 0;
+  }
+}
+
+/* ============================================
+   УЛУЧШЕНИЕ ФОРМ НА МОБИЛЬНЫХ
+   ============================================ */
+
+@media (max-width: 640px) {
+  /* Инпуты на всю ширину */
+  input[type="text"],
+  input[type="email"],
+  input[type="password"],
+  input[type="number"],
+  textarea,
+  select {
+    font-size: 16px; /* Предотвращает zoom на iOS */
+  }
+
+  /* Сетки становятся одноколоночными */
+  .grid-cols-2,
+  .grid-cols-3,
+  .md\\:grid-cols-2,
+  .md\\:grid-cols-3 {
+    grid-template-columns: repeat(1, minmax(0, 1fr)) !important;
+  }
+}
+
+/* ============================================
+   МОДАЛЬНЫЕ ОКНА НА МОБИЛЬНЫХ
+   ============================================ */
+
+@media (max-width: 768px) {
+  /* Модальные окна занимают почти весь экран */
+  .modal-mobile-fullscreen {
+    width: 100vw !important;
+    height: 100vh !important;
+    max-height: 100vh !important;
+    border-radius: 0 !important;
+    margin: 0 !important;
+  }
+}
+
+/* ============================================
+   SIDEBAR НА МОБИЛЬНЫХ
+   ============================================ */
+
+@media (max-width: 1024px) {
+  /* Улучшенная анимация sidebar */
+  .sidebar-mobile {
+    position: fixed;
+    top: 0;
+    left: 0;
+    height: 100vh;
+    width: 85vw;
+    max-width: 320px;
+    z-index: 40;
+    transform: translateX(-100%);
+    transition: transform 0.3s ease-in-out;
+  }
+
+  .sidebar-mobile.open {
+    transform: translateX(0);
+  }
+}
+
+/* ============================================
+   АККОРДЕОНЫ И РАСКРЫВАЮЩИЕСЯ СПИСКИ
+   ============================================ */
+
+@media (max-width: 768px) {
+  /* Увеличенные области для раскрытия */
+  .accordion-header {
+    padding: 1rem;
+    min-height: 56px;
+  }
+
+  /* Плавная анимация */
+  .accordion-content {
+    transition: max-height 0.3s ease-in-out, padding 0.3s ease-in-out;
+  }
+}
+
+/* ============================================
+   КАРТОЧКИ НА МОБИЛЬНЫХ
+   ============================================ */
+
+@media (max-width: 640px) {
+  .card {
+    border-radius: 0.75rem;
+    padding: 1rem;
+  }
+
+  .card-compact {
+    padding: 0.75rem;
+  }
+}
+
+/* ============================================
+   КНОПКИ И ДЕЙСТВИЯ НА МОБИЛЬНЫХ
+   ============================================ */
+
+@media (max-width: 640px) {
+  /* Группы кнопок становятся вертикальными */
+  .button-group-mobile {
+    flex-direction: column;
+  }
+
+  .button-group-mobile > * {
+    width: 100%;
+  }
+
+  /* Фиксированные кнопки внизу экрана */
+  .fixed-bottom-button {
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    padding: 1rem;
+    background: inherit;
+    border-top: 1px solid;
+    z-index: 30;
+  }
+}
+
+/* ============================================
+   УЛУЧШЕНИЕ СКРОЛЛБАРА НА МОБИЛЬНЫХ
+   ============================================ */
+
+@media (max-width: 768px) {
+  /* Тоньше скроллбар на мобильных */
+  .custom-scrollbar::-webkit-scrollbar {
+    width: 4px;
+    height: 4px;
+  }
+}
+
+/* ============================================
+   АДАПТАЦИЯ СЕТКИ SPAMBOT
+   ============================================ */
+
+@media (max-width: 1024px) {
+  /* 2-колоночная сетка становится 1-колоночной */
+  .spambot-grid {
+    grid-template-columns: 1fr !important;
+  }
+}
+
+/* ============================================
+   ГОРИЗОНТАЛЬНАЯ ПРОКРУТКА ДЛЯ ВКЛАДОК
+   ============================================ */
+
+@media (max-width: 640px) {
+  .tabs-container {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none; /* Firefox */
+    -ms-overflow-style: none; /* IE/Edge */
+  }
+
+  .tabs-container::-webkit-scrollbar {
+    display: none; /* Chrome/Safari */
+  }
+
+  /* Вкладки не переносятся */
+  .tabs-container > * {
+    flex-shrink: 0;
+  }
+}
+
+/* ============================================
+   УЛУЧШЕНИЕ ЧИТАЕМОСТИ ТЕКСТА
+   ============================================ */
+
+@media (max-width: 640px) {
+  /* Заголовки */
+  h1 {
+    font-size: 1.5rem;
+    line-height: 2rem;
+  }
+
+  h2 {
+    font-size: 1.25rem;
+    line-height: 1.75rem;
+  }
+
+  h3 {
+    font-size: 1.125rem;
+    line-height: 1.5rem;
+  }
+
+  /* Параграфы */
+  p {
+    font-size: 0.9375rem;
+    line-height: 1.5rem;
+  }
+
+  /* Мелкий текст все еще читаемый */
+  .text-xs {
+    font-size: 0.75rem;
+  }
+
+  .text-sm {
+    font-size: 0.875rem;
+  }
+}
+
+/* ============================================
+   ОПТИМИЗАЦИЯ ПРОИЗВОДИТЕЛЬНОСТИ
+   ============================================ */
+
+@media (max-width: 768px) {
+  /* Отключаем сложные анимации на слабых устройствах */
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.01ms !important;
+    }
+  }
+
+  /* Оптимизация для touch событий */
+  * {
+    -webkit-tap-highlight-color: transparent;
+    touch-action: manipulation;
+  }
+}
+
+/* ============================================
+   LANDSCAPE ОРИЕНТАЦИЯ
+   ============================================ */
+
+@media (max-width: 768px) and (orientation: landscape) {
+  /* Уменьшаем вертикальные отступы в landscape */
+  .mobile-padding {
+    padding-top: 0.5rem;
+    padding-bottom: 0.5rem;
+  }
+
+  /* Модальные окна меньше в landscape */
+  .modal-mobile-fullscreen {
+    max-height: 95vh !important;
+  }
+}

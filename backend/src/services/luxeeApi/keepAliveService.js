@@ -1,8 +1,8 @@
 // Keep-Alive сервис для поддержания активности контекстов
 // Проверяет alert окна и закрывает их нажатием OK
 
-import aiAuto from '../aiAuto/index.js';
 import LuxeeAccount from '../../models/LuxeeAccountModel.js';
+import aiAuto from '../aiAuto/index.js';
 
 const MANUAL_ACTIVITY_TIMEOUT = 15 * 60 * 1000; // 15 минут
 
@@ -26,7 +26,7 @@ const keepAliveService = {
 			const performKeepAlive = async () => {
 				// Добавляем в очередь
 				keepAliveQueue.push({ accountId, context });
-				
+
 				// Запускаем обработку очереди если ещё не запущена
 				if (!isProcessingQueue) {
 					keepAliveService.processQueue();
@@ -52,7 +52,7 @@ const keepAliveService = {
 	// Обработка очереди последовательно
 	processQueue: async () => {
 		if (isProcessingQueue) return;
-		
+
 		isProcessingQueue = true;
 
 		while (keepAliveQueue.length > 0) {
@@ -70,16 +70,20 @@ const keepAliveService = {
 				// Проверяем есть ли alert/dialog
 				try {
 					// Устанавливаем обработчик для dialog
-					const dialogPromise = new Promise((resolve) => {
-						const handler = async (dialog) => {
-							console.log(`[Keep-Alive] Dialog detected for account ${accountId}: ${dialog.message()}`);
+					const dialogPromise = new Promise(resolve => {
+						const handler = async dialog => {
+							console.log(
+								`[Keep-Alive] Dialog detected for account ${accountId}: ${dialog.message()}`,
+							);
 							await dialog.accept(); // Нажимаем OK
-							console.log(`[Keep-Alive] Dialog accepted for account ${accountId}`);
+							console.log(
+								`[Keep-Alive] Dialog accepted for account ${accountId}`,
+							);
 							page.off('dialog', handler);
 							resolve(true);
 						};
 						page.on('dialog', handler);
-						
+
 						// Таймаут 2 секунды - если нет dialog, продолжаем
 						setTimeout(() => {
 							page.off('dialog', handler);
@@ -89,7 +93,10 @@ const keepAliveService = {
 
 					await dialogPromise;
 				} catch (error) {
-					console.error(`[Keep-Alive] Error checking dialog for ${accountId}:`, error.message);
+					console.error(
+						`[Keep-Alive] Error checking dialog for ${accountId}:`,
+						error.message,
+					);
 				}
 
 				// Проверяем popup "You're inactive"
@@ -100,59 +107,83 @@ const keepAliveService = {
 					if (count > 0) {
 						const isVisible = await popupButton.isVisible().catch(() => false);
 						if (isVisible) {
-							console.log(`[Keep-Alive] 🔔 "You're inactive" popup detected for account ${accountId}`);
-							
+							console.log(
+								`[Keep-Alive] 🔔 "You're inactive" popup detected for account ${accountId}`,
+							);
+
 							// 🎯 ПРОВЕРКА РУЧНОЙ АКТИВНОСТИ: Если прошло 15+ минут - НЕ кликаем
 							try {
 								const account = await LuxeeAccount.findById(accountId);
 								if (account && account.manualLastActivity) {
-									const timeSinceActivity = Date.now() - account.manualLastActivity.getTime();
+									const timeSinceActivity =
+										Date.now() - account.manualLastActivity.getTime();
 									if (timeSinceActivity >= MANUAL_ACTIVITY_TIMEOUT) {
-										console.log(`[Keep-Alive] ⏰ Manual activity timeout (${Math.floor(timeSinceActivity / 60000)} min) - NOT clicking "I am online" for ${accountId}`);
+										console.log(
+											`[Keep-Alive] ⏰ Manual activity timeout (${Math.floor(timeSinceActivity / 60000)} min) - NOT clicking "I am online" for ${accountId}`,
+										);
 										continue; // НЕ кликаем, пропускаем
 									}
-									console.log(`[Keep-Alive] ✅ Recent manual activity (${Math.floor(timeSinceActivity / 60000)} min ago) - closing popup for ${accountId}`);
+									console.log(
+										`[Keep-Alive] ✅ Recent manual activity (${Math.floor(timeSinceActivity / 60000)} min ago) - closing popup for ${accountId}`,
+									);
 								}
 							} catch (activityCheckError) {
-								console.error(`[Keep-Alive] ⚠️ Error checking manual activity for ${accountId}:`, activityCheckError.message);
+								console.error(
+									`[Keep-Alive] ⚠️ Error checking manual activity for ${accountId}:`,
+									activityCheckError.message,
+								);
 								// В случае ошибки проверяем AI Auto и продолжаем
 							}
-							
+
 							// 🛡️ БЕЗОПАСНОСТЬ: Проверка #1 - AI Auto не работает?
 							const lockStatus = aiAuto.getAccountLockStatus(accountId);
 							if (lockStatus?.isLocked) {
-								console.log(`[Keep-Alive] ⏸️  AI Auto is processing ${accountId}, skipping offline→online fix`);
+								console.log(
+									`[Keep-Alive] ⏸️  AI Auto is processing ${accountId}, skipping offline→online fix`,
+								);
 								continue; // Пропускаем этот аккаунт
 							}
-							
+
 							await popupButton.click({ timeout: 3000 });
 							await page.waitForTimeout(500);
-							
+
 							// 🛡️ БЕЗОПАСНОСТЬ: Проверка #2 - AI Auto не начал работу?
 							const lockAfterClick = aiAuto.getAccountLockStatus(accountId);
 							if (lockAfterClick?.isLocked) {
-								console.log(`[Keep-Alive] ⚠️  AI Auto started during click, canceling reload`);
+								console.log(
+									`[Keep-Alive] ⚠️  AI Auto started during click, canceling reload`,
+								);
 								continue; // Пропускаем reload
 							}
-							
+
 							// ✅ RELOAD: Обновляем страницу для восстановления соединения
-							console.log(`[Keep-Alive] 🔄 Reloading page for account ${accountId} (offline→online recovery)`);
+							console.log(
+								`[Keep-Alive] 🔄 Reloading page for account ${accountId} (offline→online recovery)`,
+							);
 							const currentUrl = page.url();
-							await page.goto(currentUrl, { 
-								waitUntil: 'domcontentloaded', 
-								timeout: 30000 
+							await page.goto(currentUrl, {
+								waitUntil: 'domcontentloaded',
+								timeout: 30000,
 							});
 							await page.waitForTimeout(3000); // Ждём загрузки
-							console.log(`[Keep-Alive] ✅ Page reloaded for account ${accountId}`);
+							console.log(
+								`[Keep-Alive] ✅ Page reloaded for account ${accountId}`,
+							);
 						}
 					}
 				} catch (error) {
-					console.error(`[Keep-Alive] ⚠️  Error handling offline→online for ${accountId}:`, error.message);
+					console.error(
+						`[Keep-Alive] ⚠️  Error handling offline→online for ${accountId}:`,
+						error.message,
+					);
 				}
 
 				console.log(`[Keep-Alive] Check completed for account ${accountId}`);
 			} catch (error) {
-				console.error(`[Keep-Alive] Error for account ${accountId}:`, error.message);
+				console.error(
+					`[Keep-Alive] Error for account ${accountId}:`,
+					error.message,
+				);
 			}
 
 			// Небольшая задержка между аккаунтами

@@ -72,13 +72,13 @@ const DistributionHistory = ({ distributions, loading, onStop, onRemoveFromQueue
 	};
 
 	return (
-		<div className="bg-light-surface dark:bg-dark-surface rounded-lg p-4 border border-light-border dark:border-dark-border">
-			<h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">
+		<div className="bg-light-surface dark:bg-dark-surface rounded-lg p-3 lg:p-4 border border-light-border dark:border-dark-border">
+			<h3 className="text-base lg:text-lg font-semibold text-gray-900 dark:text-white mb-3 lg:mb-4">
 				История рассылок
 			</h3>
 
 			<div className="overflow-x-auto">
-				<table className="w-full">
+				<table className="w-full table-to-cards">
 					<thead>
 						<tr className="border-b border-light-border dark:border-dark-border">
 							<th className="text-left py-3 px-2 text-sm font-medium text-gray-700 dark:text-gray-300">
@@ -111,53 +111,56 @@ const DistributionHistory = ({ distributions, loading, onStop, onRemoveFromQueue
 						{distributions.map((dist, index) => (
 							<tr 
 								key={dist._id || `dist-${index}`}
-								className="border-b border-light-border dark:border-dark-border hover:bg-light-hover dark:hover:bg-dark-hover"
+								className="border-b border-light-border dark:border-dark-border hover:bg-light-hover dark:hover:bg-dark-hover bg-light-bg dark:bg-dark-bg"
 							>
-								<td className="py-3 px-2 text-sm text-gray-900 dark:text-white">
-									{formatDate(dist.createdAt)}
+								<td className="py-3 px-2 text-sm text-gray-900 dark:text-white" data-label="Дата">
+									<span className="lg:hidden font-normal">{formatDate(dist.createdAt)}</span>
+									<span className="hidden lg:inline">{formatDate(dist.createdAt)}</span>
 								</td>
-								<td className="py-3 px-2 text-sm text-gray-700 dark:text-gray-300">
-									<div className="max-w-[180px] truncate" title={dist.accountEmail}>
+								<td className="py-3 px-2 text-sm text-gray-700 dark:text-gray-300" data-label="Аккаунт">
+									<div className="max-w-full lg:max-w-[180px] truncate" title={dist.accountEmail}>
 										{dist.accountEmail || 'N/A'}
 									</div>
 								</td>
-								<td className="py-3 px-2 text-sm text-gray-900 dark:text-white">
-									<div className="max-w-[150px] truncate">
+								<td className="py-3 px-2 text-sm text-gray-900 dark:text-white" data-label="Профиль">
+									<div className="max-w-full lg:max-w-[150px] truncate">
 										{dist.profileName || 'N/A'}
 									</div>
 								</td>
-								<td className="py-3 px-2 text-sm text-gray-700 dark:text-gray-300">
+								<td className="py-3 px-2 text-sm text-gray-700 dark:text-gray-300" data-label="Тип">
 									{dist.distributionType === 'chat' ? 'Чат' : 'Почта'}
 								</td>
-								<td className="py-3 px-2">
+								<td className="py-3 px-2" data-label="Статус">
 									<span className={`inline-flex items-center px-2 py-1 rounded text-xs font-medium ${getStatusColor(dist.status)}`}>
 										{getStatusText(dist.status)}
 									</span>
 								</td>
-								<td className="py-3 px-2 text-sm text-gray-700 dark:text-gray-300">
+								<td className="py-3 px-2 text-sm text-gray-700 dark:text-gray-300" data-label="Отправлено">
 									{dist.sentMessagesCount || 0}
 								</td>
-								<td className="py-3 px-2 text-sm text-gray-700 dark:text-gray-300">
+								<td className="py-3 px-2 text-sm text-gray-700 dark:text-gray-300" data-label="Пропущено">
 									{dist.skippedClientsCount || 0}
 								</td>
-								<td className="py-3 px-2">
-									{dist.status === 'running' && (
-										<button
-											onClick={() => onStop(dist.distributionId)}
-											className="px-3 py-1 text-xs rounded-lg border border-red-300 dark:border-red-700 text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20"
-										>
-											Остановить
-										</button>
-									)}
-									{dist.status === 'queued' && onRemoveFromQueue && (
-										<button
-											onClick={() => onRemoveFromQueue(dist.id || dist._id)}
-											className="px-3 py-1 text-xs rounded-lg border border-orange-300 dark:border-orange-700 text-orange-600 dark:text-orange-400 hover:bg-orange-50 dark:hover:bg-orange-900/20"
-											title="Удалить из очереди"
-										>
-											✖ Удалить
-										</button>
-									)}
+								<td className="py-3 px-2" data-label="Действия">
+									<div className="flex flex-col sm:flex-row gap-2">
+										{dist.status === 'running' && (
+											<button
+												onClick={() => onStop(dist.distributionId)}
+												className="px-3 py-2 text-xs lg:text-sm rounded-lg border border-red-300 dark:border-red-700 text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 whitespace-nowrap min-h-[44px] sm:min-h-0"
+											>
+												Остановить
+											</button>
+										)}
+										{dist.status === 'queued' && onRemoveFromQueue && (
+											<button
+												onClick={() => onRemoveFromQueue(dist.id || dist._id)}
+												className="px-3 py-2 text-xs lg:text-sm rounded-lg border border-orange-300 dark:border-orange-700 text-orange-600 dark:text-orange-400 hover:bg-orange-50 dark:hover:bg-orange-900/20 whitespace-nowrap min-h-[44px] sm:min-h-0"
+												title="Удалить из очереди"
+											>
+												✖ Удалить
+											</button>
+										)}
+									</div>
 								</td>
 							</tr>
 						))}

@@ -7,18 +7,29 @@ import { getProfilePrompt } from '../profilePromptService.js';
  * Построить контекст профиля для AI
  */
 export const buildProfileContext = (profile, customRules) => {
+	// 🔍 DEBUG: Логируем входные данные профиля
+	console.log('📍 [buildProfileContext] Profile data received:');
+	console.log('  - username:', profile?.username || 'N/A');
+	console.log('  - age:', profile?.age || 'N/A');
+	console.log('  - country:', profile?.country || 'N/A');
+	console.log('  - city:', profile?.city || 'N/A');
+	console.log('  - uid:', profile?.uid || 'N/A');
+	
 	let profileContext = `My profile information:
 - Name: ${profile?.username || 'not specified'}`;
 
 	// ✅ Добавляем только если есть данные
 	if (profile?.age) {
 		profileContext += `\n- Age: ${profile.age}`;
+		console.log('  ✅ Age added to context');
 	}
 	if (profile?.country) {
 		profileContext += `\n- Country: ${profile.country}`;
+		console.log('  ✅ Country added to context');
 	}
 	if (profile?.city) {
 		profileContext += `\n- City: ${profile.city}`;
+		console.log('  ✅ City added to context');
 	}
 
 	// Добавляем кастомные правила если есть (customRules это массив объектов)

@@ -27,6 +27,44 @@ const lastCatchUpCounts = new Map(); // accountId → lastCount
 const processAccountMessages = async (accountId, userId, page) => {
 	const startTime = Date.now();
 
+	// ========== ПРОВЕРКА ПЕРЕЗАПУСКА AI КОНТЕКСТА (КАЖДЫЕ 2 ЧАСА) ==========
+	try {
+		const aiContextId = `${accountId}_ai`;
+		const { default: browserService } = await import('../browser/browserService.js');
+		
+		if (browserService.shouldRestartAiContext(aiContextId)) {
+			const age = browserService.getContextAge(aiContextId);
+			const ageHours = age ? (age / (60 * 60 * 1000)).toFixed(1) : 'unknown';
+			
+			utils.log(
+				'AI Auto',
+				`🔄 AI context is ${ageHours}h old, restarting for account ${accountId}...`,
+			);
+
+			try {
+				await browserService.restartAiContext(aiContextId);
+				utils.log('AI Auto', `✅ AI context restarted successfully for account ${accountId}`);
+				
+				// После перезапуска получаем новую страницу
+				const newContext = browserService.getContext(aiContextId);
+				if (newContext) {
+					const pages = newContext.pages();
+					if (pages.length > 0) {
+						// Обновляем page для дальнейшего использования
+						page = pages[0];
+						utils.log('AI Auto', `✅ Using new page after context restart`);
+					}
+				}
+			} catch (restartError) {
+				utils.logError('AI Auto', 'Failed to restart AI context:', restartError);
+				// Продолжаем работу со старым контекстом
+			}
+		}
+	} catch (checkError) {
+		// Игнорируем ошибки проверки - продолжаем работу
+		console.error('[AI Auto] Error checking context restart:', checkError);
+	}
+
 	// ========== ПРОВЕРКА БЛОКИРОВКИ ==========
 	if (processingLocks.has(accountId)) {
 		const lock = processingLocks.get(accountId);

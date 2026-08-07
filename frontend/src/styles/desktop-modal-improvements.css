@@ -1,0 +1,201 @@
+/**
+ * Desktop Modal & Forms Improvements
+ * Точечные улучшения только для модальных окон и форм на больших экранах
+ * Не затрагивает общие компоненты - только AdminModal, Spambot и подобные
+ */
+
+@media (min-width: 1280px) {
+  
+  /* ===== МОДАЛЬНЫЕ ОКНА ===== */
+  
+  /* Увеличиваем размер модального окна AdminModal */
+  .fixed.inset-0 > div {
+    max-width: 1400px !important; /* вместо 1024px (4xl) */
+  }
+  
+  /* Контент внутри модальных окон - больше padding */
+  .fixed.inset-0 .bg-light-bg,
+  .fixed.inset-0 .bg-light-surface {
+    /* Увеличиваем внутренний контент модалок */
+  }
+  
+  /* Крестик закрытия модального окна - БОЛЬШЕ */
+  .fixed.inset-0 button[aria-label="Закрыть"],
+  .fixed.inset-0 > div > div:first-child > button:last-child {
+    min-width: 52px !important;
+    min-height: 52px !important;
+    font-size: 2.5rem !important; /* Увеличиваем × */
+  }
+  
+  /* Заголовки в модальных окнах */
+  .fixed.inset-0 h2,
+  .fixed.inset-0 h3,
+  .fixed.inset-0 h4 {
+    line-height: 1.4;
+  }
+
+  /* Карточки внутри модальных окон (BlacklistTab, LuxeeTab и т.д.) */
+  .fixed.inset-0 .bg-white.dark\:bg-dark-surface,
+  .fixed.inset-0 .bg-blue-50 {
+    padding: 1.25rem !important; /* вместо 0.75rem на lg */
+  }
+
+  /* Формы внутри модальных окон */
+  .fixed.inset-0 form {
+    /* Spacing между полями */
+  }
+  
+  .fixed.inset-0 form input,
+  .fixed.inset-0 form select,
+  .fixed.inset-0 form textarea {
+    padding: 0.875rem 1rem !important; /* чуть больше */
+    font-size: 1rem !important;
+    min-height: 44px !important;
+  }
+
+  .fixed.inset-0 form button {
+    padding: 0.875rem 1.5rem !important;
+    font-size: 1rem !important;
+    min-height: 44px !important;
+  }
+
+  /* Лейблы в формах */
+  .fixed.inset-0 label {
+    font-size: 1rem !important;
+    margin-bottom: 0.5rem;
+  }
+
+  /* Текст описаний под элементами */
+  .fixed.inset-0 p.text-xs {
+    font-size: 0.875rem !important;
+  }
+
+  /* Списки в модальных окнах */
+  .fixed.inset-0 .space-y-2 > * + * {
+    margin-top: 0.75rem;
+  }
+
+  .fixed.inset-0 .space-y-3 > * + * {
+    margin-top: 1rem;
+  }
+
+  .fixed.inset-0 .space-y-4 > * + * {
+    margin-top: 1.25rem;
+  }
+
+  /* Toggle switches в модальных окнах */
+  .fixed.inset-0 button[role="switch"] {
+    /* Размер будет из компонента Toggle */
+  }
+
+  /* Элементы списка с ID в BlacklistTab */
+  .fixed.inset-0 .flex.items-center.justify-between.p-2 {
+    padding: 0.875rem 1rem !important;
+  }
+
+  /* Информационные блоки */
+  .fixed.inset-0 .bg-blue-50 ul {
+    line-height: 1.6;
+  }
+
+  /* ===== SPAMBOT СТРАНИЦА ===== */
+  
+  /* Увеличиваем максимальную ширину контейнера Spambot */
+  .max-w-7xl {
+    max-width: 1600px !important; /* вместо 1280px (7xl) */
+  }
+  
+  /* Убираем ограничения ширины колонок в таблице истории */
+  .max-w-full.lg\:max-w-\[180px\],
+  .max-w-full.lg\:max-w-\[150px\] {
+    max-width: none !important; /* Показываем весь текст */
+  }
+  
+  /* Увеличиваем кнопки в истории рассылок */
+  .px-3.py-2.text-xs {
+    padding: 0.75rem 1.25rem !important;
+    font-size: 0.875rem !important;
+  }
+  
+  /* Контейнеры в Spambot */
+  .bg-light-surface.dark\:bg-dark-surface.rounded-lg.p-3 {
+    padding: 1rem !important;
+  }
+
+  /* Инпуты в Spambot */
+  [class*="spambot"] input,
+  [class*="spambot"] select,
+  [class*="spambot"] textarea {
+    font-size: 1rem !important;
+    padding: 0.75rem 1rem !important;
+  }
+
+  /* ===== AI SCHEDULE НАСТРОЙКИ ===== */
+  
+  /* Карточки с пресетами */
+  .btn-outline.py-3 {
+    padding: 1rem !important;
+  }
+
+  /* Инпуты для времени */
+  input[type="number"].w-20,
+  input[type="number"].w-full {
+    padding: 0.75rem !important;
+    font-size: 1rem !important;
+  }
+}
+
+/* Для очень больших экранов (2K+) - еще чуть больше */
+@media (min-width: 1920px) {
+  
+  /* Модальные окна еще шире на 2K */
+  .fixed.inset-0 > div {
+    max-width: 1600px !important;
+  }
+  
+  /* Крестик еще больше на 2K */
+  .fixed.inset-0 button[aria-label="Закрыть"],
+  .fixed.inset-0 > div > div:first-child > button:last-child {
+    min-width: 60px !important;
+    min-height: 60px !important;
+    font-size: 3rem !important;
+  }
+  
+  /* Spambot контейнер еще шире */
+  .max-w-7xl {
+    max-width: 1800px !important;
+  }
+  
+  .fixed.inset-0 .bg-white.dark\:bg-dark-surface,
+  .fixed.inset-0 .bg-blue-50 {
+    padding: 1.5rem !important;
+  }
+
+  .fixed.inset-0 form input,
+  .fixed.inset-0 form select,
+  .fixed.inset-0 form textarea {
+    padding: 1rem 1.25rem !important;
+    font-size: 1.125rem !important;
+    min-height: 52px !important;
+  }
+
+  .fixed.inset-0 form button {
+    padding: 1rem 1.75rem !important;
+    font-size: 1.125rem !important;
+    min-height: 52px !important;
+  }
+
+  .fixed.inset-0 label {
+    font-size: 1.125rem !important;
+  }
+
+  .fixed.inset-0 p.text-xs {
+    font-size: 1rem !important;
+  }
+  
+  /* Кнопки в истории рассылок еще больше */
+  .px-3.py-2.text-xs {
+    padding: 0.875rem 1.5rem !important;
+    font-size: 1rem !important;
+  }
+}

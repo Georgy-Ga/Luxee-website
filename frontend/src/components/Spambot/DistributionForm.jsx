@@ -176,22 +176,22 @@ const DistributionForm = ({ profile, account, onSubmit, loading }) => {
 	};
 
 	return (
-		<div className="bg-light-surface dark:bg-dark-surface rounded-lg p-4 border border-light-border dark:border-dark-border">
-			<h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">
+		<div className="bg-light-surface dark:bg-dark-surface rounded-lg p-3 sm:p-4 border border-light-border dark:border-dark-border">
+			<h3 className="text-base sm:text-lg font-semibold text-gray-900 dark:text-white mb-3 sm:mb-4">
 				Шаг 3: Настройте рассылку
 			</h3>
 
-			<form onSubmit={handleSubmit} className="space-y-6">
+			<form onSubmit={handleSubmit} className="space-y-4 sm:space-y-6">
 				{/* Тип сообщения */}
 				<div>
-					<label className="block text-sm font-medium text-gray-900 dark:text-white mb-2">
+					<label className="block text-xs sm:text-sm font-medium text-gray-900 dark:text-white mb-2">
 						Тип сообщения:
 					</label>
-					<div className="flex gap-4">
+					<div className="flex gap-3 sm:gap-4">
 						<button
 							type="button"
 							onClick={() => setDistributionType('chat')}
-							className={`flex-1 py-2 px-4 rounded-lg border-2 transition-all ${
+							className={`flex-1 py-3 px-4 rounded-lg border-2 transition-all text-sm sm:text-base min-h-[48px] ${
 								distributionType === 'chat'
 									? 'border-purple-600 dark:border-purple-400 bg-purple-50 dark:bg-purple-900/20 text-purple-700 dark:text-purple-300'
 									: 'border-light-border dark:border-dark-border text-gray-700 dark:text-gray-300 hover:border-purple-300 dark:hover:border-purple-600'
@@ -202,7 +202,7 @@ const DistributionForm = ({ profile, account, onSubmit, loading }) => {
 						<button
 							type="button"
 							onClick={() => setDistributionType('mail')}
-							className={`flex-1 py-2 px-4 rounded-lg border-2 transition-all ${
+							className={`flex-1 py-3 px-4 rounded-lg border-2 transition-all text-sm sm:text-base min-h-[48px] ${
 								distributionType === 'mail'
 									? 'border-purple-600 dark:border-purple-400 bg-purple-50 dark:bg-purple-900/20 text-purple-700 dark:text-purple-300'
 									: 'border-light-border dark:border-dark-border text-gray-700 dark:text-gray-300 hover:border-purple-300 dark:hover:border-purple-600'
@@ -216,18 +216,18 @@ const DistributionForm = ({ profile, account, onSubmit, loading }) => {
 				{/* Сообщения для чата */}
 				{distributionType === 'chat' && (
 					<div>
-						<label className="block text-sm font-medium text-gray-900 dark:text-white mb-2">
+						<label className="block text-xs sm:text-sm font-medium text-gray-900 dark:text-white mb-2">
 							Сообщения:
 						</label>
 						<div className="space-y-3">
 							{messages.map((message, index) => (
-								<div key={index} className="flex gap-2">
+								<div key={index} className="flex flex-col sm:flex-row gap-2">
 									<input
 										type="text"
 										value={message.text}
 										onChange={(e) => handleMessageChange(index, 'text', e.target.value)}
 										placeholder={`Сообщение ${index + 1}`}
-										className="flex-1 px-3 py-2 rounded-lg border border-light-border dark:border-dark-border bg-white dark:bg-dark-bg text-gray-900 dark:text-white"
+										className="flex-1 px-3 py-3 sm:py-2 rounded-lg border border-light-border dark:border-dark-border bg-white dark:bg-dark-bg text-gray-900 dark:text-white text-base"
 									/>
 									<input
 										type="number"
@@ -235,13 +235,13 @@ const DistributionForm = ({ profile, account, onSubmit, loading }) => {
 										onChange={(e) => handleMessageChange(index, 'interval', e.target.value)}
 										placeholder="Интервал (сек)"
 										min="0"
-										className="w-32 px-3 py-2 rounded-lg border border-light-border dark:border-dark-border bg-white dark:bg-dark-bg text-gray-900 dark:text-white"
+										className="w-full sm:w-32 px-3 py-3 sm:py-2 rounded-lg border border-light-border dark:border-dark-border bg-white dark:bg-dark-bg text-gray-900 dark:text-white text-base"
 									/>
 									{messages.length > 1 && (
 										<button
 											type="button"
 											onClick={() => handleRemoveMessage(index)}
-											className="px-3 py-2 rounded-lg border border-red-300 dark:border-red-700 text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20"
+											className="px-3 py-3 sm:py-2 rounded-lg border border-red-300 dark:border-red-700 text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 min-h-[48px] sm:min-h-0"
 										>
 											✖
 										</button>
@@ -253,13 +253,13 @@ const DistributionForm = ({ profile, account, onSubmit, loading }) => {
 							type="button"
 							onClick={handleAddMessage}
 							disabled={messages.length >= 7}
-							className={`mt-2 px-4 py-2 rounded-lg border transition-colors ${
+							className={`mt-3 px-4 py-3 rounded-lg border transition-colors w-full sm:w-auto text-sm sm:text-base min-h-[48px] ${
 								messages.length >= 7
 									? 'border-gray-300 dark:border-gray-600 text-gray-400 dark:text-gray-500 cursor-not-allowed'
 									: 'border-light-border dark:border-dark-border text-gray-700 dark:text-gray-300 hover:bg-light-hover dark:hover:bg-dark-hover'
 							}`}
 						>
-							+ Добавить сообщение {messages.length >= 7 && '(максимум 7)'}
+							+ Добавить сообщение {messages.length >= 7 && '(макс. 7)'}
 						</button>
 					</div>
 				)}
@@ -268,7 +268,7 @@ const DistributionForm = ({ profile, account, onSubmit, loading }) => {
 				{distributionType === 'mail' && (
 					<div className="space-y-4">
 						<div>
-							<label className="block text-sm font-medium text-gray-900 dark:text-white mb-2">
+							<label className="block text-xs sm:text-sm font-medium text-gray-900 dark:text-white mb-2">
 								Заголовок:
 							</label>
 							<input
@@ -276,11 +276,11 @@ const DistributionForm = ({ profile, account, onSubmit, loading }) => {
 								value={mailTitle}
 								onChange={(e) => setMailTitle(e.target.value)}
 								placeholder="Введите заголовок"
-								className="w-full px-3 py-2 rounded-lg border border-light-border dark:border-dark-border bg-white dark:bg-dark-bg text-gray-900 dark:text-white"
+								className="w-full px-3 py-3 sm:py-2 rounded-lg border border-light-border dark:border-dark-border bg-white dark:bg-dark-bg text-gray-900 dark:text-white text-base"
 							/>
 						</div>
 						<div>
-							<label className="block text-sm font-medium text-gray-900 dark:text-white mb-2">
+							<label className="block text-xs sm:text-sm font-medium text-gray-900 dark:text-white mb-2">
 								Текст (150-3500 символов):
 								<span className="ml-2 text-xs text-gray-500 dark:text-gray-400">
 									{mailText.length} / 3500
@@ -291,11 +291,11 @@ const DistributionForm = ({ profile, account, onSubmit, loading }) => {
 								onChange={(e) => setMailText(e.target.value)}
 								placeholder="Введите текст письма"
 								rows={4}
-								className="w-full px-3 py-2 rounded-lg border border-light-border dark:border-dark-border bg-white dark:bg-dark-bg text-gray-900 dark:text-white"
+								className="w-full px-3 py-3 sm:py-2 rounded-lg border border-light-border dark:border-dark-border bg-white dark:bg-dark-bg text-gray-900 dark:text-white text-base resize-y min-h-[120px]"
 							/>
 						</div>
 						<div>
-							<label className="block text-sm font-medium text-gray-900 dark:text-white mb-2">
+							<label className="block text-xs sm:text-sm font-medium text-gray-900 dark:text-white mb-2">
 								Картинки (номера через запятую):
 							</label>
 							<input
@@ -303,7 +303,7 @@ const DistributionForm = ({ profile, account, onSubmit, loading }) => {
 								value={mailPictures}
 								onChange={(e) => setMailPictures(e.target.value)}
 								placeholder="1, 2, 3"
-								className="w-full px-3 py-2 rounded-lg border border-light-border dark:border-dark-border bg-white dark:bg-dark-bg text-gray-900 dark:text-white"
+								className="w-full px-3 py-3 sm:py-2 rounded-lg border border-light-border dark:border-dark-border bg-white dark:bg-dark-bg text-gray-900 dark:text-white text-base"
 							/>
 							<p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
 								Пример: 1, 2, 3 (номера фотографий профиля)

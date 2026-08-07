@@ -540,22 +540,22 @@ const Spambot = () => {
 		<div className='h-screen flex flex-col bg-light-bg dark:bg-dark-bg'>
 			<Header />
 
-			<div className='flex-1 overflow-auto p-4 lg:p-6'>
-				<div className='max-w-7xl mx-auto space-y-6'>
+			<div className='flex-1 overflow-auto p-3 sm:p-4 lg:p-6'>
+				<div className='max-w-7xl mx-auto space-y-4 sm:space-y-6'>
 					{/* Заголовок */}
-					<div className='bg-light-surface dark:bg-dark-surface rounded-lg p-4 border border-light-border dark:border-dark-border'>
-						<h2 className='text-2xl font-bold text-gray-900 dark:text-white'>
+					<div className='bg-light-surface dark:bg-dark-surface rounded-lg p-3 sm:p-4 border border-light-border dark:border-dark-border'>
+						<h2 className='text-xl sm:text-2xl font-bold text-gray-900 dark:text-white'>
 							Массовые рассылки
 						</h2>
-						<p className='text-sm text-gray-600 dark:text-gray-400 mt-1'>
+						<p className='text-xs sm:text-sm text-gray-600 dark:text-gray-400 mt-1'>
 							Отправка сообщений клиентам в чат или почту
 						</p>
 					</div>
 
 					{/* 2-колоночный layout: Форма слева, Очередь справа */}
-					<div className='grid grid-cols-1 lg:grid-cols-2 gap-6'>
+					<div className='grid grid-cols-1 lg:grid-cols-2 gap-4 sm:gap-6 spambot-grid'>
 						{/* Левая колонка: Форма настройки */}
-						<div className='space-y-6'>
+						<div className='space-y-4 sm:space-y-6'>
 							{/* Шаг 1: Выбор аккаунта (разный UI для админа) */}
 							{isAdmin ? (
 								<AdminAccountSelector

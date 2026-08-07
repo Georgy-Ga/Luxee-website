@@ -10,8 +10,8 @@ const NavigationButtons = () => {
   
   const isActive = (path) => location.pathname === path;
 
-  // Базовые стили для кнопок
-  const baseButtonClass = "hidden sm:block px-2 lg:px-4 py-1.5 lg:py-2 text-xs lg:text-sm font-medium transition-all duration-200";
+  // Базовые стили для кнопок (показываем на всех экранах)
+  const baseButtonClass = "px-2 sm:px-3 lg:px-4 py-1.5 lg:py-2 text-xs sm:text-sm font-medium transition-all duration-200 min-h-[44px] flex items-center";
   
   // Стили для неактивной кнопки
   const inactiveClass = "text-gray-600 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white border-b-2 border-transparent hover:border-gray-300 dark:hover:border-gray-600";

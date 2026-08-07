@@ -29,23 +29,23 @@ const MessageInput = ({ onSend, isSending }) => {
 	};
 
 	return (
-		<form onSubmit={handleSubmit} className="p-4 border-t border-light-border dark:border-dark-border bg-light-surface dark:bg-dark-surface">
+		<form onSubmit={handleSubmit} className="p-3 sm:p-4 border-t border-light-border dark:border-dark-border bg-light-surface dark:bg-dark-surface">
 			<div className="flex gap-2 items-end">
 				<textarea
 					ref={textareaRef}
 					value={message}
 					onChange={(e) => setMessage(e.target.value)}
 					onKeyDown={handleKeyDown}
-					placeholder="Введите сообщение... (Enter для отправки, Shift+Enter для новой строки)"
-					className="input-field resize-none overflow-hidden"
+					placeholder="Введите сообщение..."
+					className="input-field resize-none overflow-hidden text-base"
 					rows="1"
 					disabled={isSending}
-					style={{ minHeight: '40px', maxHeight: '200px' }}
+					style={{ minHeight: '44px', maxHeight: '200px', fontSize: '16px' }}
 				/>
 				<button
 					type="submit"
 					disabled={!message.trim() || isSending}
-					className="btn-primary px-4 py-2 disabled:opacity-50 disabled:cursor-not-allowed flex-shrink-0"
+					className="btn-primary px-4 py-3 disabled:opacity-50 disabled:cursor-not-allowed flex-shrink-0 min-h-[44px] text-xl"
 				>
 					{isSending ? '⏳' : '📤'}
 				</button>

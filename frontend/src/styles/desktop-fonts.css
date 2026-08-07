@@ -1,0 +1,150 @@
+/**
+ * Desktop Font Size Adjustments
+ * Увеличиваем шрифты для больших экранов (1280px+)
+ * На мобильных остаются текущие размеры
+ */
+
+/* Увеличиваем базовые размеры шрифтов на desktop */
+@media (min-width: 1280px) {
+  /* Базовые текстовые классы */
+  .text-xs {
+    font-size: 0.875rem !important; /* было 0.75rem */
+  }
+
+  .text-sm {
+    font-size: 1rem !important; /* было 0.875rem */
+  }
+
+  .text-base {
+    font-size: 1.125rem !important; /* было 1rem */
+  }
+
+  .text-lg {
+    font-size: 1.25rem !important; /* было 1.125rem */
+  }
+
+  .text-xl {
+    font-size: 1.5rem !important; /* было 1.25rem */
+  }
+
+  .text-2xl {
+    font-size: 1.875rem !important; /* было 1.5rem */
+  }
+
+  /* Увеличиваем инпуты и текстареа */
+  input[type="text"],
+  input[type="email"],
+  input[type="password"],
+  input[type="number"],
+  textarea,
+  select {
+    font-size: 1rem !important;
+  }
+
+  /* Увеличиваем кнопки */
+  button {
+    font-size: 1rem !important;
+  }
+
+  /* Увеличиваем лейблы */
+  label {
+    font-size: 1rem !important;
+  }
+
+  /* Увеличиваем placeholder */
+  ::placeholder {
+    font-size: 1rem !important;
+  }
+
+  /* Специфичные компоненты */
+  
+  /* Сообщения в чате */
+  .message-body {
+    font-size: 1.125rem !important;
+  }
+
+  /* Имена в sidebar */
+  .account-email,
+  .profile-name {
+    font-size: 1rem !important;
+  }
+
+  /* Метаданные (даты, счетчики и т.д.) - оставляем чуть меньше */
+  .metadata-text {
+    font-size: 0.875rem !important;
+  }
+
+  /* Бейджи и маленькие индикаторы */
+  .badge-text {
+    font-size: 0.875rem !important;
+  }
+
+  /* Заголовки модальных окон */
+  .modal-title {
+    font-size: 1.5rem !important;
+  }
+
+  /* Табы */
+  .tab-button {
+    font-size: 1rem !important;
+  }
+
+  /* Таблицы */
+  table th,
+  table td {
+    font-size: 1rem !important;
+  }
+
+  /* Toast уведомления */
+  .toast-message {
+    font-size: 1rem !important;
+  }
+}
+
+/* Дополнительное увеличение для очень больших экранов (1920px+) */
+@media (min-width: 1920px) {
+  .text-xs {
+    font-size: 1rem !important;
+  }
+
+  .text-sm {
+    font-size: 1.125rem !important;
+  }
+
+  .text-base {
+    font-size: 1.25rem !important;
+  }
+
+  .text-lg {
+    font-size: 1.5rem !important;
+  }
+
+  .text-xl {
+    font-size: 1.75rem !important;
+  }
+
+  .text-2xl {
+    font-size: 2rem !important;
+  }
+
+  input[type="text"],
+  input[type="email"],
+  input[type="password"],
+  input[type="number"],
+  textarea,
+  select {
+    font-size: 1.125rem !important;
+  }
+
+  button {
+    font-size: 1.125rem !important;
+  }
+
+  label {
+    font-size: 1.125rem !important;
+  }
+
+  .message-body {
+    font-size: 1.25rem !important;
+  }
+}

@@ -7,12 +7,16 @@ let browserInstance = null;
 const contexts = new Map();
 // Map для хранения времени последней активности: accountId -> timestamp
 const contextLastActivity = new Map();
+// Map для хранения времени создания контекста: accountId -> timestamp
+const contextCreationTime = new Map();
 // Флаг для отслеживания краша браузера
 let browserCrashed = false;
 // Флаг для предотвращения множественных восстановлений
 let isRecovering = false;
 // TTL для неактивных контекстов (30 минут в миллисекундах)
 const CONTEXT_TTL = 30 * 60 * 1000;
+// TTL для автоперезапуска AI контекста (2 часа в миллисекундах)
+const AI_CONTEXT_RESTART_INTERVAL = 2 * 60 * 60 * 1000; // 2 hours
 // Интервал проверки неактивных контекстов (5 минут)
 const CLEANUP_INTERVAL = 5 * 60 * 1000;
 // Интервал для автоочистки
@@ -138,8 +142,10 @@ const browserService = {
 			}
 
 			contexts.set(accountId, context);
-			// Обновить время последней активности
-			contextLastActivity.set(accountId, Date.now());
+			// Обновить время последней активности и создания
+			const now = Date.now();
+			contextLastActivity.set(accountId, now);
+			contextCreationTime.set(accountId, now);
 			return context;
 		} catch (error) {
 			console.error('[Browser Service] Error creating context:', error);
@@ -371,6 +377,94 @@ const browserService = {
 			return true;
 		} catch (error) {
 			return false;
+		}
+	},
+
+	// Проверить нужен ли перезапуск AI контекста (старше 2 часов)
+	shouldRestartAiContext: (accountId) => {
+		// Проверяем только AI контексты (accountId заканчивается на _ai)
+		if (!accountId.endsWith('_ai')) {
+			return false;
+		}
+
+		const creationTime = contextCreationTime.get(accountId);
+		if (!creationTime) {
+			return false;
+		}
+
+		const now = Date.now();
+		const age = now - creationTime;
+		
+		return age >= AI_CONTEXT_RESTART_INTERVAL;
+	},
+
+	// Получить возраст контекста
+	getContextAge: (accountId) => {
+		const creationTime = contextCreationTime.get(accountId);
+		if (!creationTime) {
+			return null;
+		}
+		return Date.now() - creationTime;
+	},
+
+	// Перезапустить AI контекст (закрыть и создать заново)
+	restartAiContext: async (accountId) => {
+		try {
+			if (!accountId.endsWith('_ai')) {
+				throw new Error('Only AI contexts can be restarted with this method');
+			}
+
+			const age = browserService.getContextAge(accountId);
+			const ageMinutes = age ? Math.round(age / 60000) : 'unknown';
+			
+			console.log(`[Browser Service] 🔄 Restarting AI context ${accountId} (age: ${ageMinutes} minutes)`);
+
+			// Получаем оригинальный accountId (убираем _ai)
+			const originalAccountId = accountId.replace('_ai', '');
+
+			// Импортируем LuxeeAccountModel динамически
+			const { default: LuxeeAccountModel } = await import('../../models/LuxeeAccountModel.js');
+			
+			// Получаем аккаунт для восстановления sessionData
+			const account = await LuxeeAccountModel.findById(originalAccountId);
+			if (!account) {
+				throw new Error(`Account ${originalAccountId} not found`);
+			}
+
+			if (!account.sessionData) {
+				throw new Error(`Account ${originalAccountId} has no session data`);
+			}
+
+			// Закрываем старый контекст
+			await browserService.closeContext(accountId);
+			console.log(`[Browser Service] ✅ Old AI context closed: ${accountId}`);
+
+			// Очищаем время создания
+			contextCreationTime.delete(accountId);
+
+			// Создаём новый контекст с той же сессией
+			const sessionData = JSON.parse(account.sessionData);
+			const newContext = await browserService.createContext({
+				accountId: accountId,
+				sessionData: sessionData,
+			});
+
+			console.log(`[Browser Service] ✅ New AI context created: ${accountId}`);
+
+			// Навигируем на страницу чатов
+			const { default: pageHelpers } = await import('./pageHelpers.js');
+			const page = await pageHelpers.getOrCreatePage(newContext);
+			await pageHelpers.navigateTo({
+				page,
+				url: 'https://luxee.io/chats/',
+			});
+
+			console.log(`[Browser Service] ✅ AI context restarted successfully: ${accountId}`);
+			
+			return { success: true, accountId, age };
+		} catch (error) {
+			console.error(`[Browser Service] ❌ Error restarting AI context ${accountId}:`, error);
+			throw error;
 		}
 	},
 

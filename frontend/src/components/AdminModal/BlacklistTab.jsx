@@ -148,9 +148,7 @@ const BlacklistTab = () => {
   };
 
   const handleRemoveUserId = (userId) => {
-    if (confirm(`Удалить ${userId} из черного списка?`)) {
-      removeMutation.mutate([userId]);
-    }
+    removeMutation.mutate([userId]);
   };
 
   return (
