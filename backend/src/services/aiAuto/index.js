@@ -127,13 +127,41 @@ const processAccountMessages = async (accountId, userId, page) => {
 
 		// ========== ОСНОВНАЯ ЛОГИКА ==========
 
-		// 1️⃣ Получить активный профиль
-		const activeProfile = await utils.getActiveProfile(page);
-
-		if (!activeProfile) {
-			utils.log('AI Auto', `❌ No active profile found`);
-			return { processed: false, reason: 'no_active_profile' };
+		// 🔄 ПРОВЕРКА И СИНХРОНИЗАЦИЯ КЕША ПРОФИЛЕЙ (один раз при старте)
+		try {
+			const { default: profileCacheSyncService } = await import('../luxeeApi/profileCacheSyncService.js');
+			const { default: profileCacheService } = await import('../luxeeApi/profileCacheService.js');
+			
+			// Проверяем есть ли профили в кеше
+			const cachedProfiles = await profileCacheService.getAllProfiles(accountId);
+			
+			if (!cachedProfiles || cachedProfiles.length === 0) {
+				utils.log('AI Auto', '📦 Cache is empty, syncing profiles...');
+				
+				// Получить sessionData из аккаунта
+				const syncResult = await profileCacheSyncService.syncProfileCache(
+					accountId,
+					account.sessionData
+				);
+				
+				if (syncResult.success) {
+					utils.log('AI Auto', `✅ Cache synced: ${syncResult.profilesCount} profiles`);
+				} else {
+					utils.log('AI Auto', `⚠️  Cache sync failed, will retry later`);
+				}
+			}
+		} catch (syncError) {
+			// Не критично - продолжаем работу
+			utils.logError('AI Auto', 'Cache sync error:', syncError);
 		}
+
+	// 1️⃣ Получить активный профиль + кеш из БД
+	const activeProfile = await utils.getActiveProfile(page, accountId);
+
+	if (!activeProfile) {
+		utils.log('AI Auto', `❌ No active profile found`);
+		return { processed: false, reason: 'no_active_profile' };
+	}
 
 		utils.log(
 			'AI Auto',
@@ -196,9 +224,9 @@ const processAccountMessages = async (accountId, userId, page) => {
 				if (switched) {
 					utils.log('AI Auto', `✅ Switched back to ${targetName}`);
 
-					// Retry scanning - теперь API синхронизирован!
-					const reloadedProfile = await utils.getActiveProfile(page);
-					if (reloadedProfile) {
+				// Retry scanning - теперь API синхронизирован!
+				const reloadedProfile = await utils.getActiveProfile(page, accountId);
+				if (reloadedProfile) {
 						activeChats = await profileScanner.getAllChatsForProfile(
 							page,
 							reloadedProfile.allUids || [reloadedProfile.uid],
@@ -881,14 +909,14 @@ const processAccountMessages = async (accountId, userId, page) => {
 							`🖱️  Processing notification: ${notification.manName} (${notification.activityType})`,
 						);
 
-						// Получаем активный профиль ДО клика
-						const activeProfile = await utils.getActiveProfile(page);
+					// Получаем активный профиль ДО клика
+					const activeProfile = await utils.getActiveProfile(page, accountId);
 
-						if (!activeProfile) {
-							utils.log('AI Auto', '❌ No active profile for Activity Center');
-							await activityCenterScanner.closeActivityCenter(page);
-							return { processed: false, reason: 'no_active_profile' };
-						}
+					if (!activeProfile) {
+						utils.log('AI Auto', '❌ No active profile for Activity Center');
+						await activityCenterScanner.closeActivityCenter(page);
+						return { processed: false, reason: 'no_active_profile' };
+					}
 
 						// ✅ Кликаем на уведомление → чат откроется автоматически
 						const clickResult = await activityCenterScanner.clickNotification(

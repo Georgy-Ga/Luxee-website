@@ -45,64 +45,83 @@ const luxeeScraperService = {
 			// Ждём загрузки контента
 			await page.waitForTimeout(2000);
 			
-			// Парсим данные со страницы
-			const { data: profilesData } = await pageHelpers.extractData({
-				page,
-				extractor: () => {
-					const data = {
-						username: null,
-						profilesCount: 0,
-						hasProfiles: false,
-						pageTitle: document.title,
-						url: window.location.href,
-					};
-					
-					// Получаем имя пользователя
-					const usernameEl = document.querySelector('.profile_info h2');
-					if (usernameEl) {
-						data.username = usernameEl.textContent.trim();
-					}
-					
-					// Проверяем наличие профилей
-					const noProfilesAlert = document.querySelector('.alert.alert-info');
-					if (noProfilesAlert && noProfilesAlert.textContent.includes('There are no profiles yet')) {
-						data.hasProfiles = false;
-						data.profilesCount = 0;
-					} else {
-						data.hasProfiles = true;
-					}
-					
-					// Получаем навигационное меню
-					const menuItems = [];
-					document.querySelectorAll('#sidebar-menu .nav.side-menu > li').forEach(item => {
-						const link = item.querySelector('a');
-						if (link) {
-							const icon = link.querySelector('i');
-							const span = link.querySelector('span');
-							menuItems.push({
-								text: span ? span.textContent.trim() : '',
-								icon: icon ? icon.className : '',
-								href: link.getAttribute('href'),
+		// Парсим данные со страницы
+		const { data: profilesData } = await pageHelpers.extractData({
+			page,
+			extractor: () => {
+				const profiles = [];
+				
+				// Парсим плитки профилей (.profile-tile-wrap-outside)
+				document.querySelectorAll('.profile-tile-wrap-outside').forEach(tile => {
+					try {
+						const link = tile.querySelector('a.profile-tile-wrap__img');
+						const username = tile.querySelector('.username')?.textContent?.trim();
+						const location = tile.querySelector('.location')?.textContent?.trim();
+						const ageText = tile.querySelector('.age')?.textContent?.trim(); // "37 yrs"
+						const uidText = tile.querySelector('.uid')?.textContent?.trim(); // "Uid: 609024"
+						
+						// Извлекаем числа
+						const age = ageText ? parseInt(ageText.match(/\d+/)?.[0]) : null;
+						const uid = uidText ? parseInt(uidText.match(/\d+/)?.[0]) : null;
+						
+						// URL картинки из style background-image
+						const style = link?.getAttribute('style') || '';
+						const imageUrlMatch = style.match(/url\(["']?([^"')]+)["']?\)/);
+						const imageUrl = imageUrlMatch ? imageUrlMatch[1] : null;
+						
+						// URL профиля
+						const profileUrl = link?.getAttribute('href'); // "/profile/update/609024/"
+						
+						// Disabled?
+						const actionDiv = tile.querySelector('.profile-tile-wrap__action');
+						const isDisabled = actionDiv?.textContent?.includes('Disabled') || false;
+						
+						if (uid && username) {
+							profiles.push({
+								uid,
+								username,
+								age,
+								country: location,
+								imageUrl,
+								profileUrl,
+								isDisabled,
 							});
 						}
-					});
-					data.menuItems = menuItems;
-					
-					return data;
-				},
-			});
+					} catch (error) {
+						console.error('[Luxee Scraper] Error parsing profile tile:', error);
+					}
+				});
+				
+				return {
+					profiles,
+					profilesCount: profiles.length,
+					hasProfiles: profiles.length > 0,
+					pageTitle: document.title,
+					url: window.location.href,
+				};
+			},
+		});
 			
-			// Обновляем активность аккаунта
-			account.lastActivity = new Date();
-			await account.save();
-			
-			console.log('[Luxee Scraper] Profiles data retrieved:', profilesData);
-			
-			return {
-				success: true,
-				data: profilesData,
-				accountEmail: account.luxeeEmail,
-			};
+		// Синхронизируем профили в кеш
+		if (profilesData.profiles && profilesData.profiles.length > 0) {
+			const { default: profileCacheService } = await import('./profileCacheService.js');
+			await profileCacheService.syncProfilesFromList(accountId, profilesData.profiles);
+		}
+		
+		// Обновляем активность аккаунта
+		account.lastActivity = new Date();
+		await account.save();
+		
+		console.log('[Luxee Scraper] Profiles data retrieved:', {
+			count: profilesData.profilesCount,
+			hasProfiles: profilesData.hasProfiles,
+		});
+		
+		return {
+			success: true,
+			data: profilesData,
+			accountEmail: account.luxeeEmail,
+		};
 		} catch (error) {
 			console.error('[Luxee Scraper] Error:', error);
 			throw error;

@@ -1,0 +1,78 @@
+- generic [ref=e3]:
+  - banner [ref=e4]:
+    - generic [ref=e5]:
+      - img "Luxee logo" [ref=e7]
+      - generic [ref=e8]:
+        - button "Contact Us" [ref=e9] [cursor=pointer]
+        - button "Log In" [ref=e10] [cursor=pointer]
+  - generic [ref=e14]:
+    - generic [ref=e15]:
+      - generic [ref=e16]:
+        - text: Sign up and discover new opportunities with
+        - generic [ref=e17]: Luxee offers
+      - button "Sign up" [ref=e18] [cursor=pointer]
+    - generic [ref=e19]:
+      - generic [ref=e20] [cursor=pointer]:
+        - img "headset" [ref=e21]
+        - paragraph [ref=e22]: 24/7 customer service
+      - generic [ref=e23] [cursor=pointer]:
+        - img "timer" [ref=e24]
+        - paragraph [ref=e25]: Quick approval
+      - generic [ref=e26] [cursor=pointer]:
+        - img "person" [ref=e27]
+        - paragraph [ref=e28]: Individual approach
+      - generic [ref=e29] [cursor=pointer]:
+        - img "people" [ref=e30]
+        - paragraph [ref=e31]: Growing client base
+      - generic [ref=e32] [cursor=pointer]:
+        - img "wand" [ref=e33]
+        - paragraph [ref=e34]: Easy start
+      - generic [ref=e35] [cursor=pointer]:
+        - img "credit-card" [ref=e36]
+        - paragraph [ref=e37]: High payouts
+      - generic [ref=e38] [cursor=pointer]:
+        - img "window-apps" [ref=e39]
+        - paragraph [ref=e40]: User-friendly interface
+      - generic [ref=e41] [cursor=pointer]:
+        - img "people-star" [ref=e42]
+        - paragraph [ref=e43]: Bonus & referral programs
+  - generic [ref=e45]:
+    - generic [ref=e46]:
+      - generic [ref=e50] [cursor=pointer]:
+        - heading "High payouts" [level=4] [ref=e52]
+        - paragraph [ref=e54]: We offer a very competitive rate within the market
+      - generic [ref=e58] [cursor=pointer]:
+        - heading "User-friendly interface" [level=4] [ref=e60]
+        - paragraph [ref=e62]: We have a convenient admin panel where our partners can comfortably work and track everything on web or mobile platforms
+      - generic [ref=e66] [cursor=pointer]:
+        - heading "24/7 customer service" [level=4] [ref=e68]
+        - paragraph [ref=e70]: We are ready to help you at any time
+      - generic [ref=e74] [cursor=pointer]:
+        - heading "Individual approach" [level=4] [ref=e76]
+        - paragraph [ref=e78]: Together with our managers, you will be able to increase earnings on our project
+    - generic [ref=e79]:
+      - generic [ref=e83] [cursor=pointer]:
+        - heading "Easy start" [level=4] [ref=e85]
+        - paragraph [ref=e87]: You may start cooperation with us easy and fast
+      - generic [ref=e91] [cursor=pointer]:
+        - heading "Bonus & referral programs" [level=4] [ref=e93]
+        - paragraph [ref=e95]: We always offer various bonus programs and we pay for the new partners you invite
+      - generic [ref=e99] [cursor=pointer]:
+        - heading "Quick approval" [level=4] [ref=e101]
+        - paragraph [ref=e103]: Our managers are always online to approve new requests on time
+      - generic [ref=e107] [cursor=pointer]:
+        - heading "Growing client base" [level=4] [ref=e109]
+        - paragraph [ref=e111]: We are expanding our client base to meet the high-quality demand with the same supply
+  - generic [ref=e113]:
+    - heading "Apply for a partnership right now" [level=2] [ref=e114]
+    - generic [ref=e115]:
+      - button "Apply Now" [ref=e116] [cursor=pointer]
+      - button "Contact Us" [ref=e117] [cursor=pointer]
+  - contentinfo [ref=e118]:
+    - generic [ref=e119]:
+      - generic [ref=e120]:
+        - generic [ref=e121]: "Contact us via Telegram:"
+        - link [ref=e123] [cursor=pointer]:
+          - /url: https://t.me/luxee_io
+          - img "telegram-icon" [ref=e124]
+      - generic [ref=e125]: Copyright © 2026, Luxee. All rights reserved

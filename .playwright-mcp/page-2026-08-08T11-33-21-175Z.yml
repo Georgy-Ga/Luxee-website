@@ -1,0 +1,183 @@
+- generic [ref=f20e3]:
+  - generic [ref=f20e5]:
+    - link " Models admin" [ref=f20e7] [cursor=pointer]:
+      - /url: /
+      - generic [ref=f20e8]: 
+      - text: Models admin
+    - generic:
+      - img "..." [ref=f20e11]
+      - generic [ref=f20e12]:
+        - text: Welcome,
+        - heading "Translator.04" [level=2] [ref=f20e13]
+    - generic [ref=f20e15]:
+      - heading "General" [level=3] [ref=f20e16]
+      - list [ref=f20e17]:
+        - listitem [ref=f20e18] [cursor=pointer]:
+          - link " Support " [ref=f20e19]:
+            - /url: "#"
+            - generic [ref=f20e20]: 
+            - generic [ref=f20e21]: Support
+            - generic [ref=f20e22]: 
+        - listitem [ref=f20e23] [cursor=pointer]:
+          - link " Profiles" [ref=f20e24]:
+            - /url: /profile/
+            - generic [ref=f20e25]: 
+            - text: Profiles
+        - listitem [ref=f20e26] [cursor=pointer]:
+          - link " Icebreakers" [ref=f20e27]:
+            - /url: /icebreaker/
+            - generic [ref=f20e28]: 
+            - text: Icebreakers
+        - listitem [ref=f20e29] [cursor=pointer]:
+          - link " Campaigns " [ref=f20e30]:
+            - /url: "#"
+            - generic [ref=f20e31]: 
+            - text: Campaigns
+            - generic [ref=f20e32]: 
+          - text:  
+        - listitem [ref=f20e33] [cursor=pointer]:
+          - link " Communication " [ref=f20e34]:
+            - /url: "#"
+            - generic [ref=f20e35]: 
+            - generic [ref=f20e36]: Communication
+            - generic [ref=f20e37]: 
+        - listitem [ref=f20e38] [cursor=pointer]:
+          - link " Clients " [ref=f20e39]:
+            - /url: "#"
+            - generic [ref=f20e40]: 
+            - text: Clients
+            - generic [ref=f20e41]: 
+          - text:  
+        - listitem [ref=f20e42] [cursor=pointer]:
+          - link " News feed" [ref=f20e43]:
+            - /url: /news/
+            - generic [ref=f20e44]: 
+            - generic [ref=f20e45]: News feed
+        - listitem [ref=f20e46] [cursor=pointer]:
+          - link " Gifts" [ref=f20e47]:
+            - /url: /gifts/
+            - generic [ref=f20e48]: 
+            - generic [ref=f20e49]: Gifts
+        - listitem [ref=f20e50] [cursor=pointer]:
+          - link " Request Contacts" [ref=f20e51]:
+            - /url: /contact-requests/
+            - generic [ref=f20e52]: 
+            - generic [ref=f20e53]: Request Contacts
+        - listitem [ref=f20e54] [cursor=pointer]:
+          - link " Statistic" [ref=f20e55]:
+            - /url: /statistic/
+            - generic [ref=f20e56]: 
+            - text: Statistic
+  - generic [ref=f20e57]:
+    - navigation:
+      - generic [ref=f20e58]: 
+      - list [ref=f20e61]:
+        - listitem [ref=f20e62]:
+          - link "Translator.04 " [ref=f20e63] [cursor=pointer]:
+            - /url: javascript:;
+            - text: Translator.04
+            - generic [ref=f20e64]: 
+          - text: 
+        - listitem [ref=f20e65]:
+          - link [ref=f20e67] [cursor=pointer]:
+            - /url: javascript:;
+            - img "Activity" [ref=f20e68]
+      - list [ref=f20e69]:
+        - listitem [ref=f20e70]:
+          - link "" [ref=f20e71] [cursor=pointer]:
+            - /url: /
+        - listitem [ref=f20e73]: / Profiles
+  - main [ref=f20e74]:
+    - generic [ref=f20e77]:
+      - heading "Profiles" [level=2] [ref=f20e79]
+      - generic [ref=f20e82]:
+        - generic [ref=f20e83]:
+          - generic [ref=f20e84]: "Action:"
+          - combobox [ref=f20e85]:
+            - option [selected]
+            - option "Set online"
+            - option "Set offline"
+            - option "Set online (All profiles)"
+            - option "Set offline (All profiles)"
+        - generic [ref=f20e86]:
+          - generic [ref=f20e87]: "Gender:"
+          - combobox [ref=f20e88]:
+            - option "All" [selected]
+            - option "Female"
+            - option "Male"
+        - generic [ref=f20e92]:
+          - text: Showing
+          - strong [ref=f20e93]: 1-3
+          - text: of
+          - strong [ref=f20e94]: "3"
+          - text: items.
+        - generic [ref=f20e95]:
+          - generic [ref=f20e97]:
+            - 'link "79 Luciana Ukraine 37 yrs Uid: 609024" [ref=f20e98] [cursor=pointer]':
+              - /url: /profile/update/609024/
+              - generic [ref=f20e99]:
+                - generic [ref=f20e100]:
+                  - generic [ref=f20e101]: "79"
+                  - generic [ref=f20e102]: Luciana
+                  - generic [ref=f20e103]: Ukraine
+                - generic [ref=f20e104]:
+                  - generic [ref=f20e105]: 37 yrs
+                  - generic [ref=f20e106]: "Uid: 609024"
+            - generic [ref=f20e107]:
+              - checkbox [ref=f20e109]
+              - generic [ref=f20e110]:
+                - button [ref=f20e111] [cursor=pointer]
+                - text:    
+              - generic [ref=f20e114]: Loading...
+            - generic [ref=f20e116]:
+              - generic [ref=f20e117]: Active
+              - generic [ref=f20e118]: Synchronized
+              - generic [ref=f20e120]:
+                - generic [ref=f20e121]: Created 29.04.2023 02:31
+                - generic [ref=f20e122]: Updated 24.03.2026 17:03
+          - generic [ref=f20e124]:
+            - 'link "391 Victoria Ukraine 36 yrs Uid: 609022" [ref=f20e125] [cursor=pointer]':
+              - /url: /profile/update/609022/
+              - generic [ref=f20e126]:
+                - generic [ref=f20e127]:
+                  - generic [ref=f20e128]: "391"
+                  - generic [ref=f20e129]: Victoria
+                  - generic [ref=f20e130]: Ukraine
+                - generic [ref=f20e131]:
+                  - generic [ref=f20e132]: 36 yrs
+                  - generic [ref=f20e133]: "Uid: 609022"
+            - generic [ref=f20e134]:
+              - checkbox [ref=f20e136]
+              - generic [ref=f20e137]:
+                - button [ref=f20e138] [cursor=pointer]
+                - text:    
+              - generic [ref=f20e141]: Loading...
+            - generic [ref=f20e143]:
+              - generic [ref=f20e144]: Active
+              - generic [ref=f20e145]: Synchronized
+              - generic [ref=f20e147]:
+                - generic [ref=f20e148]: Created 29.04.2023 01:59
+                - generic [ref=f20e149]: Updated 19.03.2026 13:49
+          - generic [ref=f20e151]:
+            - 'link "240 Margarita Ukraine 30 yrs Uid: 608434" [ref=f20e152] [cursor=pointer]':
+              - /url: /profile/update/608434/
+              - generic [ref=f20e153]:
+                - generic [ref=f20e154]:
+                  - generic [ref=f20e155]: "240"
+                  - generic [ref=f20e156]: Margarita
+                  - generic [ref=f20e157]: Ukraine
+                - generic [ref=f20e158]:
+                  - generic [ref=f20e159]: 30 yrs
+                  - generic [ref=f20e160]: "Uid: 608434"
+            - generic [ref=f20e161]:
+              - checkbox [ref=f20e163]
+              - generic [ref=f20e164]:
+                - button [ref=f20e165] [cursor=pointer]
+                - text:    
+              - generic [ref=f20e168]: Loading...
+            - generic [ref=f20e170]:
+              - generic [ref=f20e171]: Active
+              - generic [ref=f20e172]: Synchronized
+              - generic [ref=f20e174]:
+                - generic [ref=f20e175]: Created 18.01.2023 03:18
+                - generic [ref=f20e176]: Updated 04.06.2026 11:23
