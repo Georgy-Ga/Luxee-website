@@ -9,6 +9,7 @@
 const AI_AUTO_RESPONSE_GLOBALLY_DISABLED = false;
 
 import LuxeeAccountModel from '../models/LuxeeAccountModel.js';
+import aiAuto from './aiAuto/index.js';
 import aiManagementService from './aiManagementService/index.js';
 import aiResponseService from './aiResponseService.js';
 import answeredChatService from './answeredChatService.js';
@@ -17,7 +18,6 @@ import pageHelpers from './browser/pageHelpers.js';
 import chatMessagesExtractorService from './luxeeApi/chatMessagesExtractorService.js';
 import chatNavigationService from './luxeeApi/chatNavigationService.js';
 import keepAliveService from './luxeeApi/keepAliveService.js';
-import aiAuto from './aiAuto/index.js';
 
 // Хранилище активных процессов автоответов
 const activeAutoResponders = new Map(); // accountId -> { intervalId, isProcessing }
@@ -85,194 +85,235 @@ const aiAutoResponseService = {
 						return;
 					}
 
-				console.log(`[Pending] ✅ All checks passed, navigating to chat...`);
+					console.log(`[Pending] ✅ All checks passed, navigating to chat...`);
 
-				// 📜 Получаем AI контекст
-				const aiContext = await aiBrowserContextService.getAiContext(accountId);
-				const historyPage = await pageHelpers.getOrCreatePage(aiContext);
+					// 📜 Получаем AI контекст
+					const aiContext =
+						await aiBrowserContextService.getAiContext(accountId);
+					const historyPage = await pageHelpers.getOrCreatePage(aiContext);
 
-				// 🔄 Навигация к нужному чату для загрузки данных
-				console.log(`[Pending] 📍 Current chat: ${await historyPage.evaluate(() => {
-					return window.modelsChat?.getChats?.active?.identity || 'unknown';
-				})}`);
-				console.log(`[Pending] 🎯 Target chat: ${chatId}`);
-				
-				// Проверяем совпадает ли текущий чат с целевым
-				const currentChatId = await historyPage.evaluate(() => {
-					return window.modelsChat?.getChats?.active?.identity;
-				});
-				
-				if (currentChatId !== chatId) {
-					console.log(`[Pending] 🔄 Chat mismatch! Opening target chat ${chatId}...`);
-					
-					try {
-						// 🔧 ФИКС: Правильный формат URL
-						// chatId = "profileUidOuter_userUid" (например "2400232_2797375")
-						const [profileUidOuter, userUid] = chatId.split('_');
-						
-						// ownerUid = inner UID профиля (profileUid из параметра - это inner UID)
-						// profileUid = outer UID профиля из chatId
-						const targetUrl = `https://luxee.io/chats/?ownerUid=${profileUid}&profileUid=${profileUidOuter}&userUid=${userUid}`;
-						
-						console.log(`[Pending] 🌐 Navigating to: ${targetUrl}`);
-						
-						await historyPage.goto(targetUrl, { 
-							waitUntil: 'domcontentloaded', 
-							timeout: 10000 
-						});
-						
-						// КРИТИЧНО: Ждём загрузки чата
-						await historyPage.waitForTimeout(2000);
-						
-						// Проверяем что навигация успешна
-						const newChatId = await historyPage.evaluate(() => {
-							return window.modelsChat?.getChats?.active?.identity;
-						});
-						
-						if (newChatId === chatId) {
-							console.log(`[Pending] ✅ Successfully navigated to chat ${chatId}`);
-						} else {
-							console.log(`[Pending] ⚠️  Navigation completed but chat mismatch: expected ${chatId}, got ${newChatId}`);
+					// 🔄 Навигация к нужному чату для загрузки данных
+					console.log(
+						`[Pending] 📍 Current chat: ${await historyPage.evaluate(() => {
+							return window.modelsChat?.getChats?.active?.identity || 'unknown';
+						})}`,
+					);
+					console.log(`[Pending] 🎯 Target chat: ${chatId}`);
+
+					// Проверяем совпадает ли текущий чат с целевым
+					const currentChatId = await historyPage.evaluate(() => {
+						return window.modelsChat?.getChats?.active?.identity;
+					});
+
+					if (currentChatId !== chatId) {
+						console.log(
+							`[Pending] 🔄 Chat mismatch! Opening target chat ${chatId}...`,
+						);
+
+						try {
+							// 🔧 ФИКС: Правильный формат URL
+							// chatId = "profileUidOuter_userUid" (например "2400232_2797375")
+							const [profileUidOuter, userUid] = chatId.split('_');
+
+							// ownerUid = inner UID профиля (profileUid из параметра - это inner UID)
+							// profileUid = outer UID профиля из chatId
+							const targetUrl = `https://luxee.io/chats/?ownerUid=${profileUid}&profileUid=${profileUidOuter}&userUid=${userUid}`;
+
+							console.log(`[Pending] 🌐 Navigating to: ${targetUrl}`);
+
+							await historyPage.goto(targetUrl, {
+								waitUntil: 'domcontentloaded',
+								timeout: 10000,
+							});
+
+							// КРИТИЧНО: Ждём загрузки чата
+							await historyPage.waitForTimeout(2000);
+
+							// Проверяем что навигация успешна
+							const newChatId = await historyPage.evaluate(() => {
+								return window.modelsChat?.getChats?.active?.identity;
+							});
+
+							if (newChatId === chatId) {
+								console.log(
+									`[Pending] ✅ Successfully navigated to chat ${chatId}`,
+								);
+							} else {
+								console.log(
+									`[Pending] ⚠️  Navigation completed but chat mismatch: expected ${chatId}, got ${newChatId}`,
+								);
+								pendingResponses.delete(chatId);
+								return;
+							}
+						} catch (navError) {
+							console.error(
+								`[Pending] ❌ Failed to navigate:`,
+								navError.message,
+							);
 							pendingResponses.delete(chatId);
 							return;
 						}
-					} catch (navError) {
-						console.error(`[Pending] ❌ Failed to navigate:`, navError.message);
+					} else {
+						console.log(`[Pending] ✅ Already on target chat`);
+					}
+
+					// ✅ ИСПРАВЛЕНИЕ: Проверяем unAnswered напрямую из API
+					console.log(`[Pending] 📜 Checking unAnswered status...`);
+					const isUnAnswered = await historyPage.evaluate(() => {
+						return window.modelsChat?.getChats?.active?.unAnswered;
+					});
+
+					console.log(`[Pending] 📊 unAnswered status:`, isUnAnswered);
+
+					// Если unAnswered === false или undefined - пропускаем
+					if (isUnAnswered !== true) {
+						console.log(`[Pending] 🔍 Check result: SKIP ❌`);
+						console.log(
+							`[Pending] 📝 Reason: unAnswered=${isUnAnswered} - already replied or error`,
+						);
+						console.log(`[Pending] ⏭️  Skipping chat ${chatId}`);
 						pendingResponses.delete(chatId);
 						return;
 					}
-				} else {
-					console.log(`[Pending] ✅ Already on target chat`);
-				}
 
-				// ✅ ИСПРАВЛЕНИЕ: Проверяем unAnswered напрямую из API
-				console.log(`[Pending] 📜 Checking unAnswered status...`);
-				const isUnAnswered = await historyPage.evaluate(() => {
-					return window.modelsChat?.getChats?.active?.unAnswered;
-				});
+					console.log(`[Pending] ✅ unAnswered=true - need to reply`);
 
-				console.log(`[Pending] 📊 unAnswered status:`, isUnAnswered);
+					// 🔧 ФИКС 2: Получаем историю ПОСЛЕ навигации из getChat.list[chatId]
+					console.log(
+						`[Pending] 📜 Extracting chat history from getChat.list...`,
+					);
+					const history = await historyPage.evaluate(() => {
+						try {
+							const chatId = window.modelsChat?.getChats?.active?.identity;
+							const messages = window.modelsChat?.getChat?.list?.[chatId];
 
-				// Если unAnswered === false или undefined - пропускаем
-				if (isUnAnswered !== true) {
-					console.log(`[Pending] 🔍 Check result: SKIP ❌`);
-					console.log(`[Pending] 📝 Reason: unAnswered=${isUnAnswered} - already replied or error`);
-					console.log(`[Pending] ⏭️  Skipping chat ${chatId}`);
-					pendingResponses.delete(chatId);
-					return;
-				}
+							if (!messages || messages.length === 0) {
+								return {
+									error: 'No messages found in getChat.list',
+									messages: [],
+								};
+							}
 
-				console.log(`[Pending] ✅ unAnswered=true - need to reply`);
+							console.log(
+								`[Browser] 📊 Found ${messages.length} messages in getChat.list[${chatId}]`,
+							);
 
-				// 🔧 ФИКС 2: Получаем историю ПОСЛЕ навигации из getChat.list[chatId]
-				console.log(`[Pending] 📜 Extracting chat history from getChat.list...`);
-				const history = await historyPage.evaluate(() => {
-					try {
-						const chatId = window.modelsChat?.getChats?.active?.identity;
-						const messages = window.modelsChat?.getChat?.list?.[chatId];
-						
-						if (!messages || messages.length === 0) {
-							return { error: 'No messages found in getChat.list', messages: [] };
+							// Преобразуем в нужный формат
+							const formattedMessages = messages.map(msg => ({
+								text: msg.body || '',
+								author:
+									msg.author?.first_name || msg.author?.username || 'Unknown',
+								authorUid: msg.author?.uid,
+								gender: msg.author?.gender, // 1=male, 2=female
+								created: msg.created,
+								media: msg.media || [],
+								type: msg.type,
+								messageType: 'text',
+							}));
+
+							const lastMessage =
+								formattedMessages[formattedMessages.length - 1];
+
+							// Находим имя мужчины из сообщений
+							const manMessage = formattedMessages.find(m => m.gender === 1);
+							const manName = manMessage?.author || 'Man';
+
+							return {
+								messages: formattedMessages,
+								lastMessage: lastMessage,
+								totalCount: messages.length,
+								chatId: chatId,
+								manName: manName,
+							};
+						} catch (error) {
+							return { error: error.message, messages: [] };
 						}
+					});
 
-						console.log(`[Browser] 📊 Found ${messages.length} messages in getChat.list[${chatId}]`);
+					console.log(`[Pending] 📊 History result:`, {
+						error: history.error,
+						messagesCount: history.messages?.length,
+						chatId: history.chatId,
+					});
 
-						// Преобразуем в нужный формат
-						const formattedMessages = messages.map(msg => ({
-							text: msg.body || '',
-							author: msg.author?.first_name || msg.author?.username || 'Unknown',
-							authorUid: msg.author?.uid,
-							gender: msg.author?.gender, // 1=male, 2=female
-							created: msg.created,
-							media: msg.media || [],
-							type: msg.type,
-							messageType: 'text'
-						}));
+					if (history.error) {
+						console.log(
+							`[Pending] ⚠️  Could not get chat history: ${history.error}`,
+						);
+						console.log(`[Pending] Falling back to old method...`);
 
-						const lastMessage = formattedMessages[formattedMessages.length - 1];
+						// Fallback - используем старый метод
+						const result = await aiResponseService.generateAndSend({
+							userId,
+							accountId,
+							profileUid,
+							chatId,
+							profile,
+							manMessage: chat.lastManMessage.body,
+							messageType: 1,
+							conversationHistory: [],
+						});
 
-						// Находим имя мужчины из сообщений
-						const manMessage = formattedMessages.find(m => m.gender === 1);
-						const manName = manMessage?.author || 'Man';
-
-						return {
-							messages: formattedMessages,
-							lastMessage: lastMessage,
-							totalCount: messages.length,
-							chatId: chatId,
-							manName: manName
-						};
-					} catch (error) {
-						return { error: error.message, messages: [] };
+						if (result.success) {
+							console.log(
+								`[Pending] ✅ Successfully sent AI response to ${chat.memberUsername}`,
+							);
+						} else {
+							console.log(
+								`[Pending] ✗ Failed to send: ${result.reason || 'Unknown error'}`,
+							);
+						}
+						pendingResponses.delete(chatId);
+						return;
 					}
-				});
 
-				console.log(`[Pending] 📊 History result:`, {
-					error: history.error,
-					messagesCount: history.messages?.length,
-					chatId: history.chatId
-				});
+					// ✅ ИСПРАВЛЕНО: Убрана проверка gender - доверяем только unAnswered из API
+					const lastMessage = history.lastMessage;
+					console.log(
+						`[Pending] 💬 Generating response to: "${lastMessage?.text?.substring(0, 50)}..."`,
+					);
 
-				if (history.error) {
-					console.log(`[Pending] ⚠️  Could not get chat history: ${history.error}`);
-					console.log(`[Pending] Falling back to old method...`);
+					// Форматируем историю для AI
+					const formattedHistory = history.messages
+						.map(msg => {
+							const isFromProfile = msg.gender === 2;
+							const speakerName = isFromProfile
+								? profile.username
+								: history.manName;
+							return `${speakerName}: ${msg.text}`;
+						})
+						.join('\n');
 
-					// Fallback - используем старый метод
+					console.log(`[Pending] ✅ Should reply to man's message`);
+					console.log(
+						`[Pending] � History: ${history.messages.length} messages, last from: ${lastMessage.author}`,
+					);
+					console.log(`[Pending] 💬 Generating AI response...`);
+
+					// Генерируем и отправляем с историей
 					const result = await aiResponseService.generateAndSend({
 						userId,
 						accountId,
 						profileUid,
 						chatId,
 						profile,
-						manMessage: chat.lastManMessage.body,
+						manMessage: lastMessage.text,
 						messageType: 1,
-						conversationHistory: [],
+						conversationHistory: history.messages,
+						formattedHistory,
+						profileName: profile.username,
+						manName: history.manName,
 					});
 
 					if (result.success) {
-						console.log(`[Pending] ✅ Successfully sent AI response to ${chat.memberUsername}`);
+						console.log(
+							`[Pending] ✅ Successfully sent AI response to ${chat.memberUsername}`,
+						);
 					} else {
-						console.log(`[Pending] ✗ Failed to send: ${result.reason || 'Unknown error'}`);
+						console.log(
+							`[Pending] ✗ Failed to send: ${result.reason || 'Unknown error'}`,
+						);
 					}
-					pendingResponses.delete(chatId);
-					return;
-				}
-
-			// ✅ ИСПРАВЛЕНО: Убрана проверка gender - доверяем только unAnswered из API
-			const lastMessage = history.lastMessage;
-			console.log(`[Pending] 💬 Generating response to: "${lastMessage?.text?.substring(0, 50)}..."`);
-
-				// Форматируем историю для AI
-				const formattedHistory = history.messages.map((msg) => {
-					const isFromProfile = msg.gender === 2;
-					const speakerName = isFromProfile ? profile.username : history.manName;
-					return `${speakerName}: ${msg.text}`;
-				}).join('\n');
-
-				console.log(`[Pending] ✅ Should reply to man's message`);
-				console.log(`[Pending] � History: ${history.messages.length} messages, last from: ${lastMessage.author}`);
-				console.log(`[Pending] 💬 Generating AI response...`);
-
-				// Генерируем и отправляем с историей
-				const result = await aiResponseService.generateAndSend({
-					userId,
-					accountId,
-					profileUid,
-					chatId,
-					profile,
-					manMessage: lastMessage.text,
-					messageType: 1,
-					conversationHistory: history.messages,
-					formattedHistory,
-					profileName: profile.username,
-					manName: history.manName,
-				});
-
-				if (result.success) {
-					console.log(`[Pending] ✅ Successfully sent AI response to ${chat.memberUsername}`);
-				} else {
-					console.log(`[Pending] ✗ Failed to send: ${result.reason || 'Unknown error'}`);
-				}
 
 					// Удаляем из очереди
 					pendingResponses.delete(chatId);
@@ -648,9 +689,9 @@ const aiAutoResponseService = {
 						console.log('═'.repeat(80));
 						console.log('');
 
-					// 🕐 НОВАЯ ЛОГИКА: Планируем ответ с задержкой 15-20 секунд
-					const randomDelay =
-						Math.floor(Math.random() * (20000 - 15000 + 1)) + 15000;
+						// 🕐 НОВАЯ ЛОГИКА: Планируем ответ с задержкой 15-20 секунд
+						const randomDelay =
+							Math.floor(Math.random() * (20000 - 15000 + 1)) + 15000;
 
 						const scheduled =
 							await aiAutoResponseService._schedulePendingResponse(

@@ -66,7 +66,7 @@ class SpambotService {
 					username: account.luxeeEmail,
 					password: account.luxeePassword,
 				},
-				timeout: 90000, // 90 секунд (операция долгая - login + парсинг профилей)
+				timeout: 180000, // 180 секунд (операция долгая - login + парсинг профилей)
 			});
 
 			return response.data.profiles;
@@ -613,7 +613,7 @@ class SpambotService {
 					username: account.luxeeEmail,
 					password: account.luxeePassword,
 				},
-				timeout: 90000, // 90 секунд (операция долгая - login + парсинг профилей)
+				timeout: 180000, // 180 секунд (операция долгая - login + парсинг профилей)
 			});
 
 			return response.data.profiles;

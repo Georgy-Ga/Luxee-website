@@ -39,7 +39,7 @@ console.log('[API] Using API URL:', API_URL);
 const api = axios.create({
   baseURL: API_URL,
   withCredentials: true, // Для отправки cookies (refresh token)
-  timeout: 90000, // ✅ FIX: 90 секунд timeout (загрузка профилей spambot требует больше времени)
+  timeout: 180000, // ✅ FIX: 180 секунд (логин + парсинг профилей spambot может идти дольше 90с)
 });
 
 // Флаг для предотвращения множественных запросов на обновление токена
