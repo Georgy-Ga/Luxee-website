@@ -19,6 +19,27 @@ def extract_profiles(username: str, password: str) -> list[Profile]:
         luxee.logout()
 
 
+def extract_profiles_limits(username: str, password: str) -> dict:
+    """
+    Извлечь только дневные лимиты рассылок по анкетам без полного парсинга анкет.
+
+    Формат: { str(owner_uid): {"chat": {max, count}, "mail": {max, count}} }
+
+    Используется для лёгкого обновления лимитов (напр. после завершения рассылки).
+    """
+    luxee = Luxee(username, password)
+    try:
+        logger.info("Extracting profiles limits...")
+        limits_map = luxee.get_profiles_limits()
+        logger.info(f"Extracted limits for {len(limits_map)} profiles.")
+        return limits_map
+    except Exception as e:
+        logger.exception(e)
+        raise e
+    finally:
+        luxee.logout()
+
+
 class DistributionProcess:
     def __init__(self):
         self.luxee: Luxee = None

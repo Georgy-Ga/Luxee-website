@@ -70,6 +70,13 @@ router.get('/admin/distributions', roleMiddleware('admin'), spambotController.ge
 router.get('/admin/profiles', roleMiddleware('admin'), spambotController.getAdminProfiles);
 
 /**
+ * GET /api/spambot/admin/profile-limits?accountId=X
+ *
+ * ADMIN: Получить дневные лимиты рассылок по анкетам любого аккаунта
+ */
+router.get('/admin/profile-limits', roleMiddleware('admin'), spambotController.getAdminProfileLimits);
+
+/**
  * ========================================
  * USER ROUTES
  * ========================================
@@ -96,6 +103,13 @@ router.get('/admin/profiles', roleMiddleware('admin'), spambotController.getAdmi
  * }
  */
 router.get('/profiles', spambotController.getProfiles);
+
+/**
+ * GET /api/spambot/profile-limits?accountId=X
+ *
+ * Получить дневные лимиты рассылок по анкетам аккаунта
+ */
+router.get('/profile-limits', spambotController.getProfileLimits);
 
 /**
  * GET /api/spambot/accounts/:accountId/availability

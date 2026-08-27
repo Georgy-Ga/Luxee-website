@@ -22,6 +22,11 @@ const PYTHON_SERVICE_URL =
 const MAX_CHAT_LIMIT = 30; // Максимальное количество рассылок для Chat
 const MAX_MAIL_LIMIT = 10; // Максимальное количество рассылок для Mail
 
+// Сколько рассылок максимум показываем в истории.
+// Активные (queued/running) всегда попадают в выдачу, именно поэтому здесь
+// может быть больше: активные не режутся лимитом, а завершённые добираются до этой границы.
+const HISTORY_FETCH_LIMIT = 100;
+
 // In-memory блокировки (дополнительная защита)
 const accountLocks = new Map();
 
@@ -74,6 +79,74 @@ class SpambotService {
 			console.error('[Spambot Service] Error getting profiles:', error.message);
 			throw new Error(
 				`Failed to get profiles: ${error.response?.data?.detail || error.message}`,
+			);
+		}
+	}
+
+	/**
+	 * Получить дневные лимиты рассылок по анкетам аккаунта (для пользователя)
+	 *
+	 * @param {string} accountId - ID Luxee аккаунта
+	 * @param {string} userId - ID пользователя
+	 * @returns {Promise<Object>} - { owner_uid: {chat: {max, count}, mail: {max, count}} }
+	 */
+	async getProfilesLimits(accountId, userId) {
+		// Проверка прав доступа
+		const account = await LuxeeAccountModel.findOne({
+			_id: accountId,
+			user: userId,
+		});
+
+		if (!account) {
+			throw new Error('Account not found or access denied');
+		}
+
+		try {
+			// Запрос к Python Service (лёгкий - только лимиты)
+			const response = await axios.get(`${PYTHON_SERVICE_URL}/api/limits`, {
+				params: {
+					username: account.luxeeEmail,
+					password: account.luxeePassword,
+				},
+				timeout: 180000,
+			});
+
+			return response.data?.data || {};
+		} catch (error) {
+			console.error('[Spambot Service] Error getting profile limits:', error.message);
+			throw new Error(
+				`Failed to get profile limits: ${error.response?.data?.detail || error.message}`,
+			);
+		}
+	}
+
+	/**
+	 * ADMIN: Получить дневные лимиты рассылок по анкетам любого аккаунта
+	 *
+	 * @param {string} accountId - ID Luxee аккаунта
+	 * @returns {Promise<Object>} - { owner_uid: {chat: {max, count}, mail: {max, count}} }
+	 */
+	async getAdminProfileLimits(accountId) {
+		const account = await LuxeeAccountModel.findById(accountId);
+
+		if (!account) {
+			throw new Error('Account not found');
+		}
+
+		try {
+			const response = await axios.get(`${PYTHON_SERVICE_URL}/api/limits`, {
+				params: {
+					username: account.luxeeEmail,
+					password: account.luxeePassword,
+				},
+				timeout: 180000,
+			});
+
+			return response.data?.data || {};
+		} catch (error) {
+			console.error('[Spambot Service] Error getting profile limits (admin):', error.message);
+			throw new Error(
+				`Failed to get profile limits: ${error.response?.data?.detail || error.message}`,
 			);
 		}
 	}
@@ -477,20 +550,62 @@ class SpambotService {
 	 * @returns {Promise<Array>} - Список рассылок
 	 */
 	async getUserDistributions(userId, filters = {}) {
-		const query = { user: userId };
+		const baseQuery = { user: userId };
 
 		if (filters.accountId) {
-			query.luxeeAccount = filters.accountId;
+			baseQuery.luxeeAccount = filters.accountId;
 		}
 
+		// Если явно запрошен конкретный статус (например "running") - используем
+		// старую простую логику с фильтром, чтобы не ломать спец. запросы.
 		if (filters.status) {
-			query.status = filters.status;
+			return this._queryAndMapDistributions({
+				...baseQuery,
+				status: filters.status,
+			}, filters.limit || HISTORY_FETCH_LIMIT);
 		}
 
+		const totalLimit = filters.limit || HISTORY_FETCH_LIMIT;
+
+		// 1. Активные (queued/running) - ВСЕГДА попадают в выдачу, лимит не режет.
+		const activeQuery = { ...baseQuery, status: { $in: ['queued', 'running'] } };
+		// 2. Завершённые (completed/stopped/error) - добираем до общего лимита.
+		const finishedQuery = {
+			...baseQuery,
+			status: { $in: ['completed', 'stopped', 'error'] },
+		};
+
+		const active = await SpambotDistributionModel.find(activeQuery)
+			.sort({ createdAt: -1 });
+
+		const finishedLimit = Math.max(totalLimit - active.length, 0);
+		const finished = finishedLimit > 0
+			? await SpambotDistributionModel.find(finishedQuery)
+				.sort({ createdAt: -1 })
+				.limit(finishedLimit)
+			: [];
+
+		const distributions = [...active, ...finished]
+			.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+
+		return this._mapDistributionDocs(distributions);
+	}
+
+	/**
+	 * Вспомогательный запрос с учётом лимита и маппингом (для фильтра по статусу).
+	 */
+	async _queryAndMapDistributions(query, limit) {
 		const distributions = await SpambotDistributionModel.find(query)
 			.sort({ createdAt: -1 })
-			.limit(filters.limit || 50);
+			.limit(limit);
 
+		return this._mapDistributionDocs(distributions);
+	}
+
+	/**
+	 * Преобразует документы SpambotDistribution в безопасный формат для ответа.
+	 */
+	_mapDistributionDocs(distributions) {
 		return distributions.map(d => ({
 			id: d._id,
 			distributionId: d.distributionId,
@@ -561,21 +676,68 @@ class SpambotService {
 	 * @returns {Promise<Array>} - Список всех рассылок с информацией о пользователе
 	 */
 	async getAllDistributions(filters = {}) {
-		const query = {};
-
-		if (filters.status) {
-			query.status = filters.status;
-		}
+		const baseQuery = {};
 
 		if (filters.userId) {
-			query.user = filters.userId;
+			baseQuery.user = filters.userId;
 		}
 
+		if (filters.accountId) {
+			baseQuery.luxeeAccount = filters.accountId;
+		}
+
+		// Если явно запрошен конкретный статус - старая простая логика.
+		if (filters.status) {
+			return this._queryAndMapAdminDistributions(
+				{ ...baseQuery, status: filters.status },
+				filters.limit || HISTORY_FETCH_LIMIT,
+			);
+		}
+
+		const totalLimit = filters.limit || HISTORY_FETCH_LIMIT;
+
+		// 1. Активные (queued/running) - ВСЕГДА в выдаче.
+		const activeQuery = { ...baseQuery, status: { $in: ['queued', 'running'] } };
+		// 2. Завершённые (completed/stopped/error) - добираем до общего лимита.
+		const finishedQuery = {
+			...baseQuery,
+			status: { $in: ['completed', 'stopped', 'error'] },
+		};
+
+		const active = await SpambotDistributionModel.find(activeQuery)
+			.populate('user', 'email')
+			.sort({ createdAt: -1 });
+
+		const finishedLimit = Math.max(totalLimit - active.length, 0);
+		const finished = finishedLimit > 0
+			? await SpambotDistributionModel.find(finishedQuery)
+				.populate('user', 'email')
+				.sort({ createdAt: -1 })
+				.limit(finishedLimit)
+			: [];
+
+		const distributions = [...active, ...finished]
+			.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+
+		return this._mapAdminDistributionDocs(distributions);
+	}
+
+	/**
+	 * Вспомогательный запрос с учётом лимита и маппингом (admin, для фильтра по статусу).
+	 */
+	async _queryAndMapAdminDistributions(query, limit) {
 		const distributions = await SpambotDistributionModel.find(query)
 			.populate('user', 'email')
 			.sort({ createdAt: -1 })
-			.limit(filters.limit || 100);
+			.limit(limit);
 
+		return this._mapAdminDistributionDocs(distributions);
+	}
+
+	/**
+	 * Преобразует документы SpambotDistribution (с populate user) в безопасный формат.
+	 */
+	_mapAdminDistributionDocs(distributions) {
 		return distributions.map(d => ({
 			id: d._id,
 			distributionId: d.distributionId,

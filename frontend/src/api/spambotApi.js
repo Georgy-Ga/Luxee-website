@@ -18,6 +18,18 @@ export const spambotApi = {
 	},
 
 	/**
+	 * Получить дневные лимиты рассылок по анкетам аккаунта
+	 * @param {string} accountId - ID Luxee аккаунта
+	 * @returns {Promise<Object>} - { owner_uid: {chat: {max, count}, mail: {max, count}} }
+	 */
+	async getProfileLimits(accountId) {
+		const response = await apiClient.get('/spambot/profile-limits', {
+			params: { accountId },
+		});
+		return response.data.limits;
+	},
+
+	/**
 	 * Проверить доступность аккаунта для рассылки
 	 * @param {string} accountId - ID Luxee аккаунта
 	 * @returns {Promise<Object>} - {available: boolean, reason?: string, activeDistributions?: Array}
@@ -125,5 +137,17 @@ export const spambotApi = {
 			params: { accountId },
 		});
 		return response.data.profiles;
+	},
+
+	/**
+	 * ADMIN: Получить дневные лимиты рассылок по анкетам любого аккаунта
+	 * @param {string} accountId - ID Luxee аккаунта
+	 * @returns {Promise<Object>} - { owner_uid: {chat: {max, count}, mail: {max, count}} }
+	 */
+	async getAdminProfileLimits(accountId) {
+		const response = await apiClient.get('/spambot/admin/profile-limits', {
+			params: { accountId },
+		});
+		return response.data.limits;
 	},
 };

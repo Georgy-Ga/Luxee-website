@@ -18,7 +18,7 @@ if str(CORE_DIR) not in sys.path:
     sys.path.insert(0, str(CORE_DIR))
 
 # Import core functionality
-from core.src.process import DistributionProcess, extract_profiles
+from core.src.process import DistributionProcess, extract_profiles, extract_profiles_limits
 from core.src.models import Distribution, Profile, Message, MailMessage
 from core.src.logger import logger
 
@@ -100,7 +100,8 @@ class SpambotService:
                     name=p.name,
                     age=age_int,
                     location=p.location,
-                    image_url=p.image_url
+                    image_url=p.image_url,
+                    limits=getattr(p, "limits", None) or None,
                 ))
             
             logger.info(f"[Service] Found {len(profile_list)} profiles")
@@ -108,6 +109,30 @@ class SpambotService:
             
         except Exception as e:
             logger.error(f"[Service] Error getting profiles: {e}")
+            raise
+
+    async def get_profile_limits(self, username: str, password: str) -> dict:
+        """
+        Получить дневные лимиты рассылок по анкетам аккаунта.
+
+        Формат: { str(owner_uid): {"chat": {max, count}, "mail": {max, count}} }
+
+        Лёгкий метод - не парсит все анкеты, а собирает только лимиты.
+        Используется для обновления лимитов без перезагрузки всего списка анкет.
+        """
+        try:
+            logger.info(f"[Service] Getting profile limits for user: {username}")
+            loop = asyncio.get_event_loop()
+            limits_map = await loop.run_in_executor(
+                None,
+                extract_profiles_limits,
+                username,
+                password,
+            )
+            logger.info(f"[Service] Got limits for {len(limits_map)} profiles")
+            return {"success": True, "data": limits_map}
+        except Exception as e:
+            logger.error(f"[Service] Error getting profile limits: {e}")
             raise
     
     def _update_distribution_status(

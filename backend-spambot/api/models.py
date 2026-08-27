@@ -154,6 +154,7 @@ class ProfileInfo(BaseModel):
     age: int = Field(..., description="Profile age")
     location: str = Field(..., description="Profile location")
     image_url: str = Field(..., description="Profile image URL")
+    limits: Optional[dict] = Field(None, description="Daily distribution limits per channel ({chat|mail}: {max, count})")
     
     class Config:
         json_schema_extra = {

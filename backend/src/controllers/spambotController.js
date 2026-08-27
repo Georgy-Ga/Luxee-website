@@ -41,6 +41,38 @@ class SpambotController {
 	}
 
 	/**
+	 * GET /api/spambot/profile-limits?accountId=X
+	 *
+	 * Получить дневные лимиты рассылок по анкетам аккаунта
+	 */
+	async getProfileLimits(req, res) {
+		try {
+			const { accountId } = req.query;
+			const userId = req.user.id;
+
+			if (!accountId) {
+				return res.status(400).json({
+					success: false,
+					message: 'accountId is required',
+				});
+			}
+
+			const limits = await spambotService.getProfilesLimits(accountId, userId);
+
+			res.json({
+				success: true,
+				limits,
+			});
+		} catch (error) {
+			console.error('[Spambot Controller] Error in getProfileLimits:', error);
+			res.status(500).json({
+				success: false,
+				message: error.message,
+			});
+		}
+	}
+
+	/**
 	 * GET /api/spambot/admin/accounts
 	 *
 	 * ADMIN: Получить все Luxee аккаунты, сгруппированные по пользователям
@@ -118,6 +150,37 @@ class SpambotController {
 			});
 		} catch (error) {
 			console.error('[Spambot Controller] Error in getAdminProfiles:', error);
+			res.status(500).json({
+				success: false,
+				message: error.message,
+			});
+		}
+	}
+
+	/**
+	 * GET /api/spambot/admin/profile-limits?accountId=X
+	 *
+	 * ADMIN: Получить дневные лимиты рассылок по анкетам любого аккаунта
+	 */
+	async getAdminProfileLimits(req, res) {
+		try {
+			const { accountId } = req.query;
+
+			if (!accountId) {
+				return res.status(400).json({
+					success: false,
+					message: 'accountId is required',
+				});
+			}
+
+			const limits = await spambotService.getAdminProfileLimits(accountId);
+
+			res.json({
+				success: true,
+				limits,
+			});
+		} catch (error) {
+			console.error('[Spambot Controller] Error in getAdminProfileLimits:', error);
 			res.status(500).json({
 				success: false,
 				message: error.message,
@@ -350,7 +413,7 @@ class SpambotController {
 				distributions = await spambotService.getAllDistributions({
 					accountId,
 					status,
-					limit: limit ? parseInt(limit) : 100,
+					limit: limit ? parseInt(limit) : 200,
 				});
 				console.log(
 					`[Spambot Controller] ✅ Admin: Found ${distributions.length} distributions (all users)`,
@@ -364,7 +427,7 @@ class SpambotController {
 				distributions = await spambotService.getUserDistributions(userId, {
 					accountId,
 					status,
-					limit: limit ? parseInt(limit) : 50,
+					limit: limit ? parseInt(limit) : 100,
 				});
 				console.log(
 					`[Spambot Controller] ✅ User: Found ${distributions.length} distributions`,

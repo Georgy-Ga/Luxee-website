@@ -90,3 +90,51 @@ class LuxeeRequests:
         return self._requests.get(
             "https://luxee.io/api/v2/communication/available-profiles", headers=headers, params=params
         )
+
+    # ------------------------------------------------------------------
+    # Лёгкие "once" варианты для массового сбора лимитов.
+    # БЕЗ тяжёлого ретрай-декоратора (delay=10, retries=10) чтобы при
+    # последовательном обходе нескольких клиентов не уходить в
+    # "шторм ретраев" по 100 сек на каждый запрос.
+    # Существующие методы выше НЕ меняются (их использует рассылка).
+    # ------------------------------------------------------------------
+
+    def get_clients_list_once(self, purchased: bool = None) -> str:
+        """Тот же clients/list, но без тяжёлого ретрая (для сбора лимитов)."""
+        if purchased is True:
+            purchased = Purchased.payed
+        elif purchased is False:
+            purchased = Purchased.free
+        else:
+            purchased = ""
+        params = {
+            "token": "0",
+            "ClientsFilterForm[s_gender]": Gender.male,
+            "ClientsFilterForm[s_prefer_gender]": Gender.female,
+            "ClientsFilterForm[country_id]": "",
+            "ClientsFilterForm[age_from]": "",
+            "ClientsFilterForm[age_to]": "",
+            "ClientsFilterForm[is_online]": IsOnline.online,
+            "ClientsFilterForm[purchased]": purchased,
+            "ClientsFilterForm[range]": "",
+        }
+
+        result = self._requests.get("https://luxee.io/clients/list", params=params)
+
+        # Extract token
+        self._clients_list_page_available_profiles_token = extract_token_that_closest_to_string(result,
+                                                                                                "available-profiles")
+        return result
+
+    def get_available_profiles_once(self, client_id: int) -> dict:
+        """Тот же available-profiles, но без тяжёлого ретрая (для сбора лимитов)."""
+        params = {
+            "user_uid": client_id,
+            "_": str(int(time.time() * 1000)),
+        }
+        headers = {
+            "Token": self._clients_list_page_available_profiles_token,
+        }
+        return self._requests.get(
+            "https://luxee.io/api/v2/communication/available-profiles", headers=headers, params=params
+        )

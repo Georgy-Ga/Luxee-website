@@ -146,10 +146,133 @@ class Luxee:
             for profile in profiles:
                 settings_str = self.requests.get_profile_settings(profile.owner_uid)
                 profile.apps = self.__extract_profile_apps_from_settings_page(settings_str)
+            self._attach_profiles_limits(profiles)
             return profiles
         except Exception as e:
             save_selenium_error(self.browser, e)
             raise e
+
+    def get_profiles_limits(
+        self,
+        expected_uids: set = None,
+        max_clients: int = 15,
+        empty_streak_limit: int = 3,
+    ) -> dict:
+        """Вернуть карту дневных лимитов по анкетам.
+
+        Формат: { str(import_uid): {"chat": {max, count}, "mail": {max, count}} }
+
+        - Использует ту же requests-сессию (контекст/куки остаются открытыми,
+          БЕЗ повторного логина и закрытия браузера).
+        - Итерируется по клиентам: каждый запрос available-profiles для конкретного
+          клиента возвращает лимиты для подмножества анкет, поэтому идём по нескольким
+          клиентам и постепенно добираем оставшиеся анкеты.
+        - Ранний выход: если собраны лимиты для всех ожидаемых анкет (expected_uids),
+          либо если несколько клиентов подряд не дали новых данных.
+        """
+        try:
+            clients_html = self.requests.get_clients_list_once()
+        except Exception as e:
+            logger.warning(f"[Limits] Failed to load clients list: {e}")
+            return {}
+
+        clients = self.__extract_clients(clients_html)
+        if not clients:
+            logger.info("[Limits] No clients available to derive limits, skipping")
+            return {}
+
+        expected = set(expected_uids) if expected_uids else None
+        collected = {}
+        empty_streak = 0
+
+        for client in clients[:max_clients]:
+            if expected is not None and expected.issubset(collected.keys()):
+                logger.info("[Limits] Collected limits for all expected profiles, stopping early")
+                break
+
+            try:
+                result = self.requests.get_available_profiles_once(client.uid)
+                data = (result or {}).get("data", []) if isinstance(result, dict) else []
+            except Exception as e:
+                logger.warning(f"[Limits] Failed for client {client.uid} (non-fatal): {e}")
+                continue
+
+            found_new = False
+            for item in data:
+                key = str(item.get("import_uid"))
+                limits = item.get("limits")
+                if (
+                    key
+                    and key != "None"
+                    and isinstance(limits, dict)
+                    and limits
+                    and key not in collected
+                ):
+                    collected[key] = limits
+                    found_new = True
+
+            if found_new:
+                empty_streak = 0
+                # Щадящая пауза между клиентами, чтобы не спамить luxee
+                time.sleep(1.0)
+            else:
+                empty_streak += 1
+                if empty_streak >= empty_streak_limit:
+                    logger.info("[Limits] Several clients returned no new limits, stopping")
+                    break
+
+        logger.info(f"[Limits] Collected limits for {len(collected)} profiles ({len(clients)} clients scanned)")
+        return collected
+
+    def _attach_profiles_limits(self, profiles: list[Profile]) -> None:
+        """Best-effort: обогащает анкеты данными о дневных лимитах.
+
+        - Делает до 2 проходов сбора лимитов в рамках ОДНОЙ сессии/контекста
+          (без повторного логина и закрытия браузера).
+        - Данные, собранные на первом проходе, сохраняются и не теряются;
+          на втором проходе добираются только оставшиеся анкеты.
+        - Анкеты, для которых так и не нашлось данных, помечаются меткой
+          {"no_information": True} в chat/mail (на фронте отображается как
+          "chat: no information" / "mail: no information").
+
+        НЕ должен ронять загрузку профилей - любые ошибки логируются и
+        пропускаются (анкеты возвращаются с пустыми/без-информации лимитами).
+        """
+        expected_uids = {str(p.owner_uid) for p in profiles}
+
+        # Проход 1: собираем максимально возможное количество анкет
+        try:
+            limits_map = self.get_profiles_limits(expected_uids=expected_uids)
+        except Exception as e:
+            logger.warning(f"[Limits] Failed to fetch limits (pass 1): {e}")
+            limits_map = {}
+
+        # Проход 2: добираем только оставшиеся (та же сессия, без релогина)
+        missing = [p for p in profiles if not limits_map.get(str(p.owner_uid))]
+        if missing:
+            try:
+                extra = self.get_profiles_limits(
+                    expected_uids={str(m.owner_uid) for m in missing}
+                )
+            except Exception as e:
+                logger.warning(f"[Limits] Failed to fetch limits (pass 2): {e}")
+                extra = {}
+            limits_map.update(extra)
+
+        # Применяем собранные лимиты к анкетам; для оставшихся - метка "нет информации"
+        for profile in profiles:
+            data = limits_map.get(str(profile.owner_uid))
+            if data:
+                profile.limits = data
+            else:
+                profile.limits = {
+                    "chat": {"no_information": True},
+                    "mail": {"no_information": True},
+                }
+
+        logger.info(
+            f"[Limits] Attached limits to {sum(1 for p in profiles if p.limits and not p.limits.get('chat', {}).get('no_information'))}/{len(profiles)} profiles"
+        )
 
     def __extract_clients(self, html_page: str) -> list[Client]:
         soup = BeautifulSoup(html_page, "html.parser")

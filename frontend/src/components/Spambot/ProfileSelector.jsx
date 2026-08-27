@@ -1,6 +1,41 @@
 /**
  * Компонент выбора профиля модели для рассылки
  */
+
+// Каналы рассылки, лимиты которых показываем под каждой анкетой
+const CHANNELS = [
+	{ key: 'chat', label: 'chat' },
+	{ key: 'mail', label: 'mail' },
+];
+
+// Возвращает строку лимита для одного канала: "chat: 30/30", "chat: исчерпан", "chat: no information".
+const getChannelLimitLabel = (profile, channelKey, channelLabel) => {
+	if (!profile || !profile.limits) {
+		return null;
+	}
+
+	const lim = profile.limits[channelKey];
+	if (!lim) {
+		return null;
+	}
+
+	if (lim.no_information) {
+		return { text: `${channelLabel}: no information`, faded: true };
+	}
+
+	const { max, count } = lim;
+	if (typeof max === 'undefined') {
+		return null;
+	}
+
+	const available = Math.max((max || 0) - (count || 0), 0);
+	if (available <= 0) {
+		return { text: `${channelLabel}: исчерпан`, exhausted: true };
+	}
+
+	return { text: `${channelLabel}: ${available}/${max}` };
+};
+
 const ProfileSelector = ({ 
 	profiles, 
 	selectedProfile, 
@@ -112,6 +147,21 @@ const ProfileSelector = ({
 								<div className="text-xs text-gray-500 dark:text-gray-500 mt-1">
 									ID: {profile.uid}
 								</div>
+								{CHANNELS.map(ch => {
+									const res = getChannelLimitLabel(profile, ch.key, ch.label);
+									return res ? (
+										<div
+											key={ch.key}
+											className={`text-xs mt-1 ${
+												res.exhausted || res.faded
+													? 'text-red-500 dark:text-red-400 font-medium'
+													: 'text-gray-500 dark:text-gray-500'
+											}`}
+										>
+											{res.text}
+										</div>
+									) : null;
+								})}
 							</div>
 						</div>
 					</button>

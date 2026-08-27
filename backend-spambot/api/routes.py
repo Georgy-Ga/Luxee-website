@@ -108,3 +108,24 @@ async def get_profiles(
             status_code=500,
             detail=f"Failed to get profiles: {str(e)}"
         )
+
+
+@router.get("/limits")
+async def get_profile_limits(
+    username: str = Query(..., description="Luxee username"),
+    password: str = Query(..., description="Luxee password")
+):
+    """
+    Get daily distribution limits per profile (анкета).
+
+    Returns { data: { str(owner_uid): {"chat": {max, count}, "mail": {max, count}} } }
+
+    Lightweight - used to refresh limits without re-fetching all profiles.
+    """
+    try:
+        return await spambot_service.get_profile_limits(username, password)
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to get profile limits: {str(e)}"
+        )

@@ -192,7 +192,7 @@ const Spambot = () => {
 		console.log('[Spambot] 📚 Loading distribution history...');
 		setLoadingHistory(true);
 		try {
-			const data = await spambotApi.getDistributions({ limit: 20 });
+			const data = await spambotApi.getDistributions({ limit: 100 });
 			console.log(`[Spambot] ✅ Loaded ${data.length} distributions`);
 			if (data.length > 0) {
 				console.log(
@@ -344,6 +344,61 @@ const Spambot = () => {
 	useEffect(() => {
 		if (!socket || !isConnected) return;
 
+		// Обновление ТОЛЬКО лимитов анкет выбранного аккаунта (без перезагрузки всего списка).
+		// Используется после завершения/остановки рассылки, чтобы не дёргать полную загрузку профилей.
+		const refreshProfilesLimits = async () => {
+			if (!selectedAccount) return;
+
+			try {
+				const limits = isAdmin
+					? await spambotApi.getAdminProfileLimits(selectedAccount._id)
+					: await spambotApi.getProfileLimits(selectedAccount._id);
+
+				if (!limits) return;
+
+				// Вспомогательная проверка: есть ли у лимита реальные данные (max/count).
+				const hasRealLimits = data => {
+					if (!data) return false;
+					const chat = data.chat;
+					const mail = data.mail;
+					return (
+						(chat && typeof chat.max === 'number') ||
+						(mail && typeof mail.max === 'number')
+					);
+				};
+
+				setProfiles(prev =>
+					prev.map(p => {
+						const l = limits[p.owner_uid];
+						// Обновляем только если сервер вернул реальные данные (есть max/count).
+						// Пустой {} или "no information" НЕ затирают уже имеющиеся лимиты анкеты.
+						if (!hasRealLimits(l)) return p;
+						return { ...p, limits: l };
+					}),
+				);
+
+				// Обновить лимиты в кэше localStorage, не трогая остальные поля анкет
+				try {
+					const cacheKey = `spambot_profiles_${selectedAccount._id}`;
+					const cached = localStorage.getItem(cacheKey);
+					if (cached) {
+						const updated = JSON.parse(cached).map(p => {
+							const l = limits[p.owner_uid];
+							// Аналогично: пустой {} или "no information" не затирают кэш
+							return hasRealLimits(l) ? { ...p, limits: l } : p;
+						});
+						localStorage.setItem(cacheKey, JSON.stringify(updated));
+					}
+				} catch (e) {
+					console.error('[Spambot] Error caching limits:', e);
+				}
+
+				console.log('[Spambot] ✅ Profiles limits refreshed');
+			} catch (error) {
+				console.error('[Spambot] ❌ Error refreshing profiles limits:', error);
+			}
+		};
+
 		const handleDistributionStatus = data => {
 			console.log('[Spambot] Distribution status update:', data);
 
@@ -416,6 +471,9 @@ const Spambot = () => {
 						: dist,
 				),
 			);
+
+			// Лимиты расходуются рассылкой - обновляем только лимиты без полной перезагрузки
+			refreshProfilesLimits();
 		};
 
 		const handleDistributionStopped = data => {
@@ -437,6 +495,9 @@ const Spambot = () => {
 						: dist,
 				),
 			);
+
+			// При остановке лимиты могли сдвинуться - обновляем только лимиты
+			refreshProfilesLimits();
 		};
 
 		const handleDistributionError = data => {
@@ -462,6 +523,9 @@ const Spambot = () => {
 						: dist,
 				),
 			);
+
+			// При ошибке лимиты могли не измениться, но подстрахуемся свежими данными
+			refreshProfilesLimits();
 		};
 
 		// ✅ NEW: Обработчик добавления в очередь
@@ -517,7 +581,7 @@ const Spambot = () => {
 			socket.off('spambot:distribution:queued', handleDistributionQueued);
 			socket.off('spambot:distribution:removed', handleDistributionRemoved);
 		};
-	}, [socket, isConnected, activeDistribution]);
+	}, [socket, isConnected, activeDistribution, selectedAccount]);
 
 	// WebSocket - Обновление списка аккаунтов при создании нового (для админа)
 	useEffect(() => {

@@ -8,6 +8,7 @@ class Profile:
         self.is_disabled: bool = is_disabled
         self.uid: int = None
         self.apps: list[str] = []  # Инициализируем пустым списком, заполняется в get_profiles()
+        self.limits: dict = {}  # Дневные лимиты рассылок ({chat|mail}: {max, count}), заполняются в get_profiles()
 
     def __str__(self):
         return self.display_name()
