@@ -413,6 +413,49 @@ getConnectedUsersCount() {
 	}
 
 	/**
+	 * Emit события создания шаблона рассылки
+	 * Отправляется владельцу аккаунта + всем админам.
+	 * @param {string} userId - ID владельца luxee-аккаунта
+	 * @param {Object} data - { id, account, templateCount }
+	 */
+	emitTemplateCreated(userId, data) {
+		if (!this.ensureInitialized()) return;
+		this.emitToUserAndAdmins(userId, SOCKET_EVENTS.TEMPLATE_CREATED, {
+			...data,
+			timestamp: new Date().toISOString(),
+		});
+		console.log(`[Socket Service] Template created event sent to user ${userId} + admins`);
+	}
+
+	/**
+	 * Emit события обновления шаблона рассылки
+	 * @param {string} userId - ID владельца luxee-аккаунта
+	 * @param {Object} data - { id, account, templateCount }
+	 */
+	emitTemplateUpdated(userId, data) {
+		if (!this.ensureInitialized()) return;
+		this.emitToUserAndAdmins(userId, SOCKET_EVENTS.TEMPLATE_UPDATED, {
+			...data,
+			timestamp: new Date().toISOString(),
+		});
+		console.log(`[Socket Service] Template updated event sent to user ${userId} + admins`);
+	}
+
+	/**
+	 * Emit события удаления шаблона рассылки
+	 * @param {string} userId - ID владельца luxee-аккаунта
+	 * @param {Object} data - { id, account, templateCount }
+	 */
+	emitTemplateDeleted(userId, data) {
+		if (!this.ensureInitialized()) return;
+		this.emitToUserAndAdmins(userId, SOCKET_EVENTS.TEMPLATE_DELETED, {
+			...data,
+			timestamp: new Date().toISOString(),
+		});
+		console.log(`[Socket Service] Template deleted event sent to user ${userId} + admins`);
+	}
+
+	/**
 	 * 🎯 Emit события изменения онлайн статуса аккаунтов
 	 * @param {string} userId - ID пользователя
 	 * @param {Object} statusData - Данные статуса { accounts: [...] }

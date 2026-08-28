@@ -9,6 +9,9 @@ import DistributionForm from '../components/Spambot/DistributionForm';
 import DistributionHistory from '../components/Spambot/DistributionHistory';
 import DistributionQueue from '../components/Spambot/DistributionQueue';
 import ProfileSelector from '../components/Spambot/ProfileSelector';
+import TemplateEditor from '../components/Spambot/TemplateEditor';
+import TemplatePickerModal from '../components/Spambot/TemplatePickerModal';
+import Modal from '../components/ui/Modal';
 import { useSocket } from '../contexts/SocketContext';
 import useAuthStore from '../stores/authStore';
 
@@ -29,6 +32,12 @@ const Spambot = () => {
 	const [distributionHistory, setDistributionHistory] = useState([]);
 	const [loadingHistory, setLoadingHistory] = useState(false);
 	const [startingDistribution, setStartingDistribution] = useState(false);
+
+	// Шаблоны рассылок
+	const [templateCounts, setTemplateCounts] = useState({});
+	const [templatePickerAccount, setTemplatePickerAccount] = useState(null);
+	const [showCreateTemplate, setShowCreateTemplate] = useState(false);
+	const [templateEditor, setTemplateEditor] = useState(null); // { account, templateId }
 
 	// Очередь рассылок (с сохранением в localStorage)
 	const [queuedDistributions, setQueuedDistributions] = useState(() => {
@@ -221,6 +230,20 @@ const Spambot = () => {
 			}
 		}
 	}, [selectedProfile, selectedAccount]);
+
+	// Загрузка счётчиков шаблонов по аккаунтам (для бейджей на Шаге 1)
+	const loadTemplateCounts = async () => {
+		try {
+			const counts = await spambotApi.getTemplateCounts();
+			setTemplateCounts(counts || {});
+		} catch (error) {
+			console.error('[Spambot] Error loading template counts:', error);
+		}
+	};
+
+	useEffect(() => {
+		loadTemplateCounts();
+	}, []);
 
 	// Добавить рассылку в очередь
 	const handleAddToQueue = config => {
@@ -591,6 +614,7 @@ const Spambot = () => {
 			console.log('[Spambot] New account created:', data);
 			// Обновить список аккаунтов
 			refetchAccounts();
+			loadTemplateCounts();
 		};
 
 		socket.on('luxee:account:created', handleAccountCreated);
@@ -599,6 +623,29 @@ const Spambot = () => {
 			socket.off('luxee:account:created', handleAccountCreated);
 		};
 	}, [socket, isConnected, isAdmin, refetchAccounts]);
+
+	// WebSocket - Обновление счётчиков шаблонов в реальном времени
+	useEffect(() => {
+		if (!socket || !isConnected) return;
+
+		const handleTemplateEvent = data => {
+			if (!data || !data.account) return;
+			setTemplateCounts(prev => ({
+				...prev,
+				[data.account]: data.templateCount ?? 0,
+			}));
+		};
+
+		socket.on('spambot:template:created', handleTemplateEvent);
+		socket.on('spambot:template:updated', handleTemplateEvent);
+		socket.on('spambot:template:deleted', handleTemplateEvent);
+
+		return () => {
+			socket.off('spambot:template:created', handleTemplateEvent);
+			socket.off('spambot:template:updated', handleTemplateEvent);
+			socket.off('spambot:template:deleted', handleTemplateEvent);
+		};
+	}, [socket, isConnected]);
 
 	return (
 		<div className='h-screen flex flex-col bg-light-bg dark:bg-dark-bg'>
@@ -627,6 +674,8 @@ const Spambot = () => {
 									selectedAccount={selectedAccount}
 									onSelect={setSelectedAccount}
 									loading={accountsLoading}
+									templateCounts={templateCounts}
+									onUseTemplate={setTemplatePickerAccount}
 								/>
 							) : (
 								<AccountSelector
@@ -634,8 +683,20 @@ const Spambot = () => {
 									selectedAccount={selectedAccount}
 									onSelect={setSelectedAccount}
 									loading={accountsLoading}
+									templateCounts={templateCounts}
+									onUseTemplate={setTemplatePickerAccount}
 								/>
 							)}
+
+							{/* Кнопка «Создать шаблон» (рядом с Шагом 1) */}
+							<div className="bg-light-surface dark:bg-dark-surface rounded-lg p-3 sm:p-4 border border-light-border dark:border-dark-border">
+								<button
+									onClick={() => setShowCreateTemplate(true)}
+									className="w-full py-3 px-6 rounded-lg border border-purple-300 dark:border-purple-700 text-purple-600 dark:text-purple-400 hover:bg-purple-50 dark:hover:bg-purple-900/20 transition-colors font-medium text-sm sm:text-base"
+								>
+									+ Создать шаблон
+								</button>
+							</div>
 
 							{/* Шаг 2: Выбор профиля */}
 							<ProfileSelector
@@ -679,6 +740,65 @@ const Spambot = () => {
 					/>
 				</div>
 			</div>
+
+			{/* Модалка выбора шаблона аккаунта */}
+			<TemplatePickerModal
+				account={templatePickerAccount}
+				onClose={() => setTemplatePickerAccount(null)}
+				onSelect={template => {
+					const account = templatePickerAccount;
+					setTemplatePickerAccount(null);
+					setTemplateEditor({ account, templateId: template.id });
+				}}
+				onCreateNew={() => {
+					const account = templatePickerAccount;
+					setTemplatePickerAccount(null);
+					setTemplateEditor({ account, templateId: null });
+				}}
+			/>
+
+			{/* Модалка выбора аккаунта для создания шаблона */}
+			<Modal
+				isOpen={showCreateTemplate}
+				onClose={() => setShowCreateTemplate(false)}
+				title="Создать шаблон — выберите аккаунт"
+				size="lg"
+			>
+				{isAdmin ? (
+					<AdminAccountSelector
+						usersWithAccounts={accounts}
+						selectedAccount={null}
+						onSelect={account => {
+							setShowCreateTemplate(false);
+							setTemplateEditor({ account, templateId: null });
+						}}
+						loading={accountsLoading}
+						title="Выберите аккаунт"
+					/>
+				) : (
+					<AccountSelector
+						accounts={accounts}
+						selectedAccount={null}
+						onSelect={account => {
+							setShowCreateTemplate(false);
+							setTemplateEditor({ account, templateId: null });
+						}}
+						loading={accountsLoading}
+						title="Выберите аккаунт"
+					/>
+				)}
+			</Modal>
+
+			{/* Редактор шаблона */}
+			{templateEditor && (
+				<TemplateEditor
+					account={templateEditor.account}
+					templateId={templateEditor.templateId}
+					onClose={() => setTemplateEditor(null)}
+					onSaved={() => loadTemplateCounts()}
+					onApplied={() => setTemplateEditor(null)}
+				/>
+			)}
 		</div>
 	);
 };

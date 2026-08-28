@@ -127,6 +127,90 @@ export const spambotApi = {
 		return response.data.distributions;
 	},
 
+	// ========================================
+	// TEMPLATES (ШАБЛОНЫ РАССЫЛОК)
+	// ========================================
+
+	/**
+	 * Создать шаблон рассылки
+	 * @param {string} accountId - ID Luxee аккаунта
+	 * @param {Object} data - { name, chat, mail }
+	 * @returns {Promise<Object>} - Созданный шаблон
+	 */
+	async createTemplate(accountId, data) {
+		const response = await apiClient.post('/spambot/templates', {
+			accountId,
+			...data,
+		});
+		return response.data.template;
+	},
+
+	/**
+	 * Получить список шаблонов аккаунта
+	 * @param {string} accountId - ID Luxee аккаунта
+	 * @returns {Promise<Array>} - Список шаблонов
+	 */
+	async getTemplates(accountId) {
+		const response = await apiClient.get('/spambot/templates', {
+			params: { accountId },
+		});
+		return response.data.templates;
+	},
+
+	/**
+	 * Получить количество шаблонов по аккаунтам (для бейджей)
+	 * @returns {Promise<Object>} - { accountId: count }
+	 */
+	async getTemplateCounts() {
+		const response = await apiClient.get('/spambot/templates/counts');
+		return response.data.counts;
+	},
+
+	/**
+	 * Получить один шаблон (с валидацией анкет при validate)
+	 * @param {string} id - ID шаблона
+	 * @param {Object} options - { validate?: boolean }
+	 * @returns {Promise<Object>} - { template, validation }
+	 */
+	async getTemplate(id, { validate = false } = {}) {
+		const response = await apiClient.get(`/spambot/templates/${id}`, {
+			params: validate ? { validate: 1 } : {},
+		});
+		return response.data;
+	},
+
+	/**
+	 * Обновить шаблон
+	 * @param {string} id - ID шаблона
+	 * @param {Object} data - { name, chat, mail }
+	 * @returns {Promise<Object>} - Обновлённый шаблон
+	 */
+	async updateTemplate(id, data) {
+		const response = await apiClient.put(`/spambot/templates/${id}`, data);
+		return response.data.template;
+	},
+
+	/**
+	 * Удалить шаблон
+	 * @param {string} id - ID шаблона
+	 * @returns {Promise<Object>} - Результат удаления
+	 */
+	async deleteTemplate(id) {
+		const response = await apiClient.delete(`/spambot/templates/${id}`);
+		return response.data;
+	},
+
+	/**
+	 * Применить шаблон — создать пачку рассылок
+	 * @param {string} id - ID шаблона
+	 * @param {Object} payload - { chat, mail } (текущее состояние редактора)
+	 * @returns {Promise<Object>} - { createdCount, removedProfiles, distributions }
+	 */
+	async applyTemplate(id, payload = {}) {
+		const response = await apiClient.post(`/spambot/templates/${id}/apply`, payload);
+		return response.data;
+	},
+
 	/**
 	 * ADMIN: Получить профили для любого аккаунта
 	 * @param {string} accountId - ID Luxee аккаунта

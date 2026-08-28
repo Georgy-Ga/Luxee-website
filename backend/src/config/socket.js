@@ -57,6 +57,11 @@ export const SOCKET_EVENTS = {
 	DISTRIBUTION_COMPLETED: 'spambot:distribution:completed',
 	DISTRIBUTION_STOPPED: 'spambot:distribution:stopped',
 	DISTRIBUTION_ERROR: 'spambot:distribution:error',
+
+	// Сервер -> Клиент (Spambot шаблоны)
+	TEMPLATE_CREATED: 'spambot:template:created',
+	TEMPLATE_UPDATED: 'spambot:template:updated',
+	TEMPLATE_DELETED: 'spambot:template:deleted',
 	
 	// Сервер -> Клиент (Онлайн статус аккаунтов)
 	ACCOUNTS_ONLINE_STATUS: 'luxee:accounts:online-status',

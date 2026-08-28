@@ -1,5 +1,6 @@
 import express from 'express';
 import spambotController from '../controllers/spambotController.js';
+import spambotTemplateController from '../controllers/spambotTemplateController.js';
 import authMiddleware from '../middleware/authMiddleware.js';
 import roleMiddleware from '../middleware/roleMiddleware.js';
 
@@ -253,5 +254,62 @@ router.post('/distributions/:id/stop', spambotController.stopDistribution);
  * }
  */
 router.delete('/distributions/:id', spambotController.deleteDistribution);
+
+/**
+ * ========================================
+ * TEMPLATE ROUTES
+ * ========================================
+ */
+
+/**
+ * GET /api/spambot/templates/counts
+ *
+ * Количество шаблонов по аккаунтам (для бейджей на Шаге 1).
+ * user — только свои аккаунты, admin — все.
+ */
+router.get('/templates/counts', spambotTemplateController.getTemplateCounts);
+
+/**
+ * POST /api/spambot/templates
+ *
+ * Создать шаблон.
+ * Body: { accountId, name, chat: {settings, profiles}, mail: {settings, profiles} }
+ */
+router.post('/templates', spambotTemplateController.createTemplate);
+
+/**
+ * GET /api/spambot/templates?accountId=X
+ *
+ * Список шаблонов аккаунта (с проверкой прав).
+ */
+router.get('/templates', spambotTemplateController.getTemplates);
+
+/**
+ * GET /api/spambot/templates/:id?validate=1
+ *
+ * Получить один шаблон. При validate=1 возвращает также removed/missing анкеты.
+ */
+router.get('/templates/:id', spambotTemplateController.getTemplate);
+
+/**
+ * PUT /api/spambot/templates/:id
+ *
+ * Обновить шаблон.
+ */
+router.put('/templates/:id', spambotTemplateController.updateTemplate);
+
+/**
+ * DELETE /api/spambot/templates/:id
+ *
+ * Удалить шаблон.
+ */
+router.delete('/templates/:id', spambotTemplateController.deleteTemplate);
+
+/**
+ * POST /api/spambot/templates/:id/apply
+ *
+ * Применить шаблон — создать пачку рассылок (по одной на заполненную анкету).
+ */
+router.post('/templates/:id/apply', spambotTemplateController.applyTemplate);
 
 export default router;
