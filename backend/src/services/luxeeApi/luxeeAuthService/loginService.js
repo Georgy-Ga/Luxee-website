@@ -182,6 +182,16 @@ export const login = async ({ userId, luxeeEmail, luxeePassword }) => {
 				aiEnabled: luxeeAccount.aiEnabled || false,
 				aiEnabledByAdmin: luxeeAccount.aiEnabledByAdmin || false,
 			});
+
+			// Перепривязать orphaned spambot-рассылки с тем же luxeeEmail
+			// (аккаунт могли удалить и добавить заново — рассылки-сироты ждут перепривязки).
+			// Не блокируем логин: ошибки rebind не должны ронять авторизацию.
+			try {
+				const { default: spambotQueueService } = await import('../../SpambotQueueService.js');
+				await spambotQueueService.rebindOrphanedDistributions(luxeeAccount);
+			} catch (rebindError) {
+				console.error('[Luxee Auth] ❌ Rebind orphaned distributions failed:', rebindError.message);
+			}
 		}
 
 		// Если tempAccountId отличается от finalAccountId, обновляем ключ в Map

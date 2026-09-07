@@ -70,6 +70,7 @@ const TemplatePickerModal = ({ account, onSelect, onClose, onCreateNew }) => {
 			onClose={onClose}
 			title={`Шаблоны: ${account?.luxeeEmail || ''}`}
 			size="md"
+			closeOnOverlayClick={false}
 		>
 			<div className="space-y-3">
 				{onCreateNew && (

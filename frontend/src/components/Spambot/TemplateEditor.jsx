@@ -358,6 +358,7 @@ const TemplateEditor = ({ account, templateId = null, onClose, onSaved, onApplie
 			onClose={onClose}
 			title={currentTemplateId ? 'Шаблон рассылки' : 'Новый шаблон рассылки'}
 			size="xl"
+			closeOnOverlayClick={false}
 		>
 			<div className="space-y-5">
 				{/* Название */}

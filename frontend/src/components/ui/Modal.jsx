@@ -12,6 +12,7 @@ const Modal = ({
   size = 'md',
   className = '',
   showCloseButton = true,
+  closeOnOverlayClick = true,
   ...props 
 }) => {
   const sizeStyles = {
@@ -39,7 +40,7 @@ const Modal = ({
   return (
     <div
       className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-2 lg:p-4"
-      onClick={onClose}
+      onClick={closeOnOverlayClick ? onClose : undefined}
       {...props}
     >
       <div
@@ -83,6 +84,7 @@ Modal.propTypes = {
   size: PropTypes.oneOf(['sm', 'md', 'lg', 'xl', 'full']),
   className: PropTypes.string,
   showCloseButton: PropTypes.bool,
+  closeOnOverlayClick: PropTypes.bool,
 };
 
 export default Modal;

@@ -1,4 +1,5 @@
 import SpambotDistributionModel from '../models/SpambotDistributionModel.js';
+import LuxeeAccountModel from '../models/LuxeeAccountModel.js';
 import socketService from './socketService.js';
 
 /**
@@ -158,6 +159,57 @@ class SpambotQueueService {
 			const account = next.luxeeAccount;
 			const config = next.config;
 
+			// Проверка на сироту: если luxeeAccount удалён — попытаться перепривязать
+			if (!account) {
+				const accountEmail = next.accountEmail || 'Unknown';
+				console.log(`[Queue Service] ⚠️  Queued distribution ${next.distributionId} has deleted account (${accountEmail}). Trying to rebind...`);
+
+				const newAccount = await LuxeeAccountModel.findOne({ luxeeEmail: accountEmail });
+
+				if (newAccount) {
+					// Перепривязать
+					next.luxeeAccount = newAccount._id;
+					next.user = newAccount.user;
+					await next.save();
+
+					// Перезагрузить с populate
+					const reloaded = await SpambotDistributionModel.findById(next._id)
+						.populate('user', 'email')
+						.populate('luxeeAccount');
+
+					if (!reloaded || !reloaded.luxeeAccount) {
+						throw new Error(`Failed to reload rebound distribution`);
+					}
+
+					console.log(`[Queue Service] ✅ Rebound queued distribution to account ${newAccount._id} (${newAccount.luxeeEmail})`);
+
+					// Продолжаем с перепривязанной рассылкой — рекурсивный вызов
+					// (startNextInQueue найдёт её снова, уже с валидным аккаунтом)
+					return await this.startNextInQueue(newAccount._id.toString());
+				} else {
+					// Аккаунт не найден — удаляем рассылку полностью и пробуем следующую.
+					// Queued-рассылка никогда не доходила до Python, стопать там нечего.
+					console.log(`[Queue Service] 🗑️  No account found for '${accountEmail}'. Deleting queued distribution ${next.distributionId} completely.`);
+					const ownerId = next.user?._id?.toString() || next.user?.toString();
+					await SpambotDistributionModel.deleteOne({ _id: next._id });
+
+					socketService.emitToUserAndAdmins(
+						ownerId,
+						'spambot:distribution:removed',
+						{
+							distributionId: oldDistributionId,
+							id: next._id,
+							accountEmail,
+							profileName: next.config?.profileName || 'N/A',
+							timestamp: new Date().toISOString(),
+						},
+					);
+
+					// Попробовать следующую
+					return await this.startNextInQueue(accountId);
+				}
+			}
+
 			console.log(`[Queue Service] 🔧 DEBUG: account =`, account);
 			console.log(`[Queue Service] 🔧 DEBUG: account.luxeeEmail =`, account.luxeeEmail);
 			console.log(`[Queue Service] 🔧 DEBUG: account.luxeePassword =`, account.luxeePassword);
@@ -238,7 +290,7 @@ class SpambotQueueService {
 
 			// ✅ FIX: Отправить WebSocket событие с информацией о старом и новом ID
 			// Frontend использует это чтобы обновить существующую запись вместо создания новой
-			socketService.emitDistributionStarted(next.user._id.toString(), {
+			socketService.emitDistributionStarted(next.user?._id?.toString() || next.user?.toString(), {
 				distributionId: next.distributionId,
 				oldDistributionId: oldDistributionId, // ✅ Связь с временным ID!
 				id: next._id,
@@ -266,12 +318,12 @@ class SpambotQueueService {
 			await next.save();
 
 			// Отправить WebSocket событие об ошибке
-			socketService.emitDistributionError(next.user._id.toString(), {
+			socketService.emitDistributionError(next.user._id?.toString() || next.user?.toString(), {
 				distributionId: next.distributionId,
 				id: next._id,
 				status: 'error',
 				errorMessage: next.errorMessage,
-				accountEmail: next.luxeeAccount.luxeeEmail,
+				accountEmail: next.luxeeAccount?.luxeeEmail || next.accountEmail || 'Unknown',
 				profileName: next.config?.profileName || 'N/A',
 				distributionType: next.config?.distributionType || 'chat',
 			});
@@ -322,18 +374,90 @@ class SpambotQueueService {
 		);
 
 		// Отправить WebSocket событие об удалении
+		// Используем optional chaining + denormalized accountEmail: аккаунт или юзер могли быть удалены
+		const ownerId = distribution.user?._id?.toString() || distribution.user?.toString() || userId;
 		socketService.emitToUserAndAdmins(
-			distribution.user._id.toString(),
+			ownerId,
 			'spambot:distribution:removed',
 			{
 				distributionId: distribution.distributionId,
 				id: distribution._id,
-				accountEmail: distribution.luxeeAccount.luxeeEmail,
+				accountEmail: distribution.luxeeAccount?.luxeeEmail || distribution.accountEmail || 'Unknown',
 				profileName: distribution.config?.profileName || 'N/A',
 				timestamp: new Date().toISOString(),
 			},
 		);
 	}
+
+	/**
+	 * Перепривязать "сирот" к вновь созданному аккаунту.
+	 * Вызывается лениво — только при создании LuxeeAccount: ищет queued/running рассылки
+	 * с тем же accountEmail, у которых luxeeAccount указывает на удалённый документ.
+	 *
+	 * Логика (максимально просто, без проверки user):
+	 * - сирота → перепривязываем к новому аккаунту, статус не меняем
+	 * - running продолжит трекаться polling-циклом (если Python задачу потерял —
+	 *   существующий not-found путь сам пометит как error, если нет — удалит)
+	 * - следующую из очереди запускаем только если на аккаунте нет running
+	 *
+	 * @param {Object} newAccount - Новый LuxeeAccount документ (Mongoose)
+	 * @returns {Promise<{rebound: number}>}
+	 */
+	async rebindOrphanedDistributions(newAccount) {
+		if (!newAccount?.luxeeEmail) {
+			return { rebound: 0 };
+		}
+
+		const email = newAccount.luxeeEmail;
+
+		// Найти все активные рассылки с таким email
+		const candidates = await SpambotDistributionModel.find({
+			accountEmail: email,
+			status: { $in: ['queued', 'running'] },
+		}).populate('luxeeAccount');
+
+		let rebound = 0;
+
+		for (const dist of candidates) {
+			// Не сирота — аккаунт жив, пропускаем
+			if (dist.luxeeAccount) {
+				continue;
+			}
+
+			// Сирота — перепривязываем к новому аккаунту
+			dist.luxeeAccount = newAccount._id;
+			dist.user = newAccount.user;
+			await dist.save();
+			rebound++;
+
+			console.log(
+				`[Queue Service] 🔗 Rebound orphaned ${dist.status} ` +
+				`distribution ${dist.distributionId} to account ${newAccount._id} (${email})`,
+			);
+		}
+
+		if (rebound > 0) {
+			console.log(`[Queue Service] ✅ Rebind for '${email}': rebound=${rebound}`);
+
+			// Запуск следующей queued — только если на аккаунте нет running
+			// (иначе получим две параллельные рассылки на одном аккаунте)
+			try {
+				const running = await this.getRunningDistribution(newAccount._id.toString());
+				if (!running) {
+					await this.startNextInQueue(newAccount._id.toString());
+				} else {
+					console.log(
+						`[Queue Service] ⏸️  Account ${newAccount._id} already has running distribution, queue waits`
+					);
+				}
+			} catch (e) {
+				console.error(`[Queue Service] ❌ startNextInQueue after rebind failed:`, e.message);
+			}
+		}
+
+		return { rebound };
+	}
+
 }
 
 // Singleton instance

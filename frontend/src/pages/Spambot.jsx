@@ -763,6 +763,7 @@ const Spambot = () => {
 				onClose={() => setShowCreateTemplate(false)}
 				title="Создать шаблон — выберите аккаунт"
 				size="lg"
+				closeOnOverlayClick={false}
 			>
 				{isAdmin ? (
 					<AdminAccountSelector

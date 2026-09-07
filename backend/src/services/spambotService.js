@@ -397,6 +397,7 @@ class SpambotService {
 		}
 
 		// Если рассылка завершена, вернуть из БД
+		// Fallback на denormalized accountEmail: аккаунт мог быть удалён
 		if (['completed', 'error', 'stopped'].includes(distribution.status)) {
 			return {
 				id: distribution._id,
@@ -406,7 +407,7 @@ class SpambotService {
 				skippedClientsCount: distribution.skippedClientsCount,
 				currentClient: distribution.currentClient,
 				errorMessage: distribution.errorMessage,
-				accountEmail: distribution.luxeeAccount.luxeeEmail,
+				accountEmail: distribution.luxeeAccount?.luxeeEmail || distribution.accountEmail || 'Unknown',
 				startedAt: distribution.startedAt,
 				completedAt: distribution.completedAt,
 			};
@@ -432,7 +433,7 @@ class SpambotService {
 				skippedClientsCount: statusData.skipped_clients,
 				currentClient: statusData.current_client,
 				errorMessage: statusData.error_message,
-				accountEmail: distribution.luxeeAccount.luxeeEmail,
+				accountEmail: distribution.luxeeAccount?.luxeeEmail || distribution.accountEmail || 'Unknown',
 				startedAt: distribution.startedAt,
 				completedAt: distribution.completedAt,
 			};
@@ -447,7 +448,7 @@ class SpambotService {
 				sentMessagesCount: distribution.sentMessagesCount,
 				skippedClientsCount: distribution.skippedClientsCount,
 				errorMessage: 'Failed to fetch latest status from Python Service',
-				accountEmail: distribution.luxeeAccount.luxeeEmail,
+				accountEmail: distribution.luxeeAccount?.luxeeEmail || distribution.accountEmail || 'Unknown',
 			};
 		}
 	}
@@ -504,11 +505,12 @@ class SpambotService {
 			);
 
 			// Отправить WebSocket событие об остановке
-			socketService.emitDistributionStopped(distribution.user.toString(), {
+			const ownerId = distribution.user?._id?.toString() || distribution.user?.toString();
+			socketService.emitDistributionStopped(ownerId, {
 				distributionId: distribution.distributionId,
 				id: distribution._id,
 				status: 'stopped',
-				accountEmail: distribution.luxeeAccount?.luxeeEmail,
+				accountEmail: distribution.luxeeAccount?.luxeeEmail || distribution.accountEmail || 'Unknown',
 				profileName: distribution.config?.profileName || 'N/A',
 				distributionType: distribution.config?.distributionType || 'chat',
 				sentMessagesCount: distribution.sentMessagesCount || 0,
@@ -519,12 +521,19 @@ class SpambotService {
 			});
 
 			// Запустить следующую рассылку из очереди
-			console.log(
-				`[Spambot Service] 🎯 Distribution stopped, checking queue for account ${distribution.luxeeAccount._id}`,
-			);
-			await spambotQueueService.startNextInQueue(
-				distribution.luxeeAccount._id.toString(),
-			);
+			// Если аккаунт удалён — очередь для него неактуальна, пропускаем без crash-а
+			if (distribution.luxeeAccount?._id) {
+				console.log(
+					`[Spambot Service] 🎯 Distribution stopped, checking queue for account ${distribution.luxeeAccount._id}`,
+				);
+				await spambotQueueService.startNextInQueue(
+					distribution.luxeeAccount._id.toString(),
+				);
+			} else {
+				console.log(
+					`[Spambot Service] ⚠️  Distribution stopped but account was deleted, skipping queue check`,
+				);
+			}
 
 			return {
 				id: distribution._id,
