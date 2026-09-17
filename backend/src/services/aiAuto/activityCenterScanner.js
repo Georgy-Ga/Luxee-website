@@ -203,10 +203,17 @@ async function clickNotification(page, notification, ownerUid) {
 			return null;
 		}
 		
-		// ✅ Expected chat ID: ownerUid_userUid
+		// ✅ Expected chat ID: ownerUid_userUid.
+		// Порядок частей chatId НЕ фиксирован (бывает man_profile),
+		// поэтому сравниваем неупорядоченно — иначе ложный mismatch.
 		const expectedChatId = `${ownerUid}_${notification.userUid}`;
-		
-		if (activeChatId === expectedChatId) {
+		const normalizeChatId = id =>
+			String(id || '')
+				.split('_')
+				.sort()
+				.join('_');
+
+		if (normalizeChatId(activeChatId) === normalizeChatId(expectedChatId)) {
 			utils.log('Activity Center', `✅ Chat opened: ${expectedChatId}`);
 			return {
 				success: true,

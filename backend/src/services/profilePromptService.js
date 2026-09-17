@@ -9,6 +9,57 @@ import path from 'path';
  */
 
 /**
+ * Убрать // и /* *\/ комментарии из JSON-текста, не трогая содержимое строк.
+ * Нужно т.к. prompts/profiles.json правят руками.
+ */
+const stripJsonComments = source => {
+	let result = '';
+	let i = 0;
+	let inString = false;
+	let stringChar = '';
+	while (i < source.length) {
+		const ch = source[i];
+		const next = source[i + 1];
+
+		if (inString) {
+			result += ch;
+			if (ch === '\\') {
+				result += next || '';
+				i += 2;
+				continue;
+			}
+			if (ch === stringChar) inString = false;
+			i++;
+			continue;
+		}
+
+		if (ch === '"' || ch === "'") {
+			inString = true;
+			stringChar = ch;
+			result += ch;
+			i++;
+			continue;
+		}
+
+		if (ch === '/' && next === '/') {
+			while (i < source.length && source[i] !== '\n') i++;
+			continue;
+		}
+
+		if (ch === '/' && next === '*') {
+			i += 2;
+			while (i < source.length && !(source[i] === '*' && source[i + 1] === '/')) i++;
+			i += 2;
+			continue;
+		}
+
+		result += ch;
+		i++;
+	}
+	return result;
+};
+
+/**
  * Получить промпт для профиля по UID
  * @param {number} profileUid - UID профиля (profile.inner.uid)
  * @returns {Promise<string>} - Промпт для AI (кастомный или дефолтный)
@@ -146,7 +197,9 @@ export const loadPromptsFromJson = async (
 
 		// Читаем файл
 		const fileContent = fs.readFileSync(filePath, 'utf8');
-		const data = JSON.parse(fileContent);
+		// Файл могут править руками — терпим // и /* */ комментарии.
+		// Стриппер учитывает строки в кавычках (URL с // внутри не трогаем).
+		const data = JSON.parse(stripJsonComments(fileContent));
 
 		if (!data.profiles || !Array.isArray(data.profiles)) {
 			console.error(

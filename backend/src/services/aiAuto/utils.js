@@ -1,17 +1,78 @@
 // AI Auto Response - Utility Functions
 // Вспомогательные функции для AI автоответчика
 
+// Все отметки времени AI-циклов — по Киеву (Europe/Kyiv), независимо от TZ сервера.
+// Формат: `2026-09-14 15:30:45.123`, ISO: `2026-09-14T15:30:45.123+03:00`.
+const KYIV_TIMEZONE = 'Europe/Kyiv';
+
+const kyivDateTimeFormat = new Intl.DateTimeFormat('en-CA', {
+	timeZone: KYIV_TIMEZONE,
+	year: 'numeric',
+	month: '2-digit',
+	day: '2-digit',
+	hour: '2-digit',
+	minute: '2-digit',
+	second: '2-digit',
+	hour12: false,
+});
+
 /**
- * Получить timestamp для логов
- * @returns {string} - Timestamp в формате HH:MM:SS.mmm
+ * Разобрать дату на киевские компоненты (для формата и вычисления смещения)
  */
-const getTimestamp = () => {
-	const now = new Date();
-	const hours = String(now.getHours()).padStart(2, '0');
-	const minutes = String(now.getMinutes()).padStart(2, '0');
-	const seconds = String(now.getSeconds()).padStart(2, '0');
-	const ms = String(now.getMilliseconds()).padStart(3, '0');
-	return `${hours}:${minutes}:${seconds}.${ms}`;
+const getKyivParts = (date = new Date()) => {
+	const parts = {};
+	for (const part of kyivDateTimeFormat.formatToParts(date)) {
+		if (part.type !== 'literal') parts[part.type] = part.value;
+	}
+	return {
+		year: parts.year,
+		month: parts.month,
+		day: parts.day,
+		// hour12:false в некоторых ICU даёт '24' для полуночи
+		hour: String(parseInt(parts.hour, 10) % 24).padStart(2, '0'),
+		minute: parts.minute,
+		second: parts.second,
+		ms: String(date.getMilliseconds()).padStart(3, '0'),
+	};
+};
+
+/**
+ * Смещение Киева от UTC для конкретной даты (+02:00 / +03:00, учитывает DST)
+ */
+const getKyivOffsetString = (date = new Date()) => {
+	const p = getKyivParts(date);
+	const asUTC = Date.UTC(
+		parseInt(p.year, 10),
+		parseInt(p.month, 10) - 1,
+		parseInt(p.day, 10),
+		parseInt(p.hour, 10),
+		parseInt(p.minute, 10),
+		parseInt(p.second, 10),
+	);
+	const offsetMin = Math.round((asUTC - date.getTime()) / 60000);
+	const sign = offsetMin >= 0 ? '+' : '-';
+	const abs = Math.abs(offsetMin);
+	return `${sign}${String(Math.floor(abs / 60)).padStart(2, '0')}:${String(abs % 60).padStart(2, '0')}`;
+};
+
+/**
+ * Получить timestamp для логов (киевское время)
+ * @param {Date} date - Дата (по умолчанию сейчас)
+ * @returns {string} - Timestamp в формате YYYY-MM-DD HH:MM:SS.mmm
+ */
+const getTimestamp = (date = new Date()) => {
+	const p = getKyivParts(date);
+	return `${p.year}-${p.month}-${p.day} ${p.hour}:${p.minute}:${p.second}.${p.ms}`;
+};
+
+/**
+ * Киевское время в ISO формате со смещением (для API/машинной обработки)
+ * @param {Date} date - Дата (по умолчанию сейчас)
+ * @returns {string} - Например 2026-09-14T15:30:45.123+03:00
+ */
+const getKyivISO = (date = new Date()) => {
+	const p = getKyivParts(date);
+	return `${p.year}-${p.month}-${p.day}T${p.hour}:${p.minute}:${p.second}.${p.ms}${getKyivOffsetString(date)}`;
 };
 
 /**
@@ -309,16 +370,27 @@ const getActiveProfile = async (page, accountId, maxRetries = 3) => {
  */
 const switchToProfile = async (page, accountId, profileUid) => {
 	// ⚠️ ИМПОРТИРУЕМ ДИНАМИЧЕСКИ чтобы избежать циклической зависимости
-	const profileSwitchService = (
-		await import('../luxeeApi/profileSwitchService.js')
-	).default;
+	try {
+		const profileSwitchService = (
+			await import('../luxeeApi/profileSwitchService.js')
+		).default;
 
-	return await profileSwitchService.switchProfile(
-		page,
-		accountId,
-		profileUid,
-		'AI Auto',
-	);
+		return await profileSwitchService.switchProfile(
+			page,
+			accountId,
+			profileUid,
+			'AI Auto',
+		);
+	} catch (error) {
+		// Никогда не бросаем наружу: очередь switch может reject'нуть
+		// (гонка с другими акторами) — вызывающий получит false и продолжит.
+		// Иначе один упавший switch роняет ВЕСЬ цикл через outer catch.
+		log(
+			'AI Auto',
+			`⏭️  Switch to ${profileUid} failed (${error.message}) — continuing without it`,
+		);
+		return false;
+	}
 };
 
 /**
@@ -405,6 +477,8 @@ const getProfileByUid = async (page, targetUid) => {
 
 export default {
 	getTimestamp,
+	getKyivISO,
+	getKyivOffsetString,
 	log,
 	logError,
 	sleep,

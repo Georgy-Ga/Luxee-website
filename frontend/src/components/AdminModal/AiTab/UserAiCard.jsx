@@ -2,6 +2,7 @@ import PropTypes from 'prop-types';
 import { Badge } from '../../ui';
 import AccountToggleButton from './AccountToggleButton';
 import AccountsList from './AccountsList';
+import ExcludedProfilesModal from './ExcludedProfilesModal';
 import AiScheduleSettings from '../../AiSchedule/AiScheduleSettings';
 
 /**
@@ -52,6 +53,12 @@ const UserAiCard = ({
               </div>
 
               <AiScheduleSettings userId={user._id} userEmail={user.email} />
+              <ExcludedProfilesModal
+                userId={user._id}
+                userEmail={user.email}
+                accounts={user.accounts}
+                initialCount={user.excludedProfilesCount || 0}
+              />
               <AccountToggleButton userId={user._id} />
             </>
           )}
@@ -72,6 +79,7 @@ UserAiCard.propTypes = {
     email: PropTypes.string.isRequired,
     role: PropTypes.string,
     accounts: PropTypes.array,
+    excludedProfilesCount: PropTypes.number,
   }).isRequired,
   isExpanded: PropTypes.bool.isRequired,
   onToggleExpand: PropTypes.func.isRequired,

@@ -4,15 +4,18 @@ import LuxeeAccountModel from '../../models/LuxeeAccountModel.js';
 import ApiError from '../../exceptions/apiError.js';
 
 const luxeeScraperService = {
-	getProfiles: async ({ userId, accountId }) => {
+	getProfiles: async ({ userId, accountId, isAdmin = false }) => {
 		try {
 			console.log(`[Luxee Scraper] Getting profiles for user ${userId}, account ${accountId}`);
 			
-			// Получаем аккаунт из БД
-			const account = await LuxeeAccountModel.findOne({
+			// Получаем аккаунт из БД.
+			// Админ может смотреть чужие аккаунты (нужно для настройки исключённых
+			// анкет из панели управления), обычный пользователь — только свои.
+			const accountQuery = isAdmin ? { _id: accountId } : {
 				_id: accountId,
 				user: userId,
-			});
+			};
+			const account = await LuxeeAccountModel.findOne(accountQuery);
 			
 			if (!account) {
 				throw ApiError.BadRequest('Аккаунт не найден');

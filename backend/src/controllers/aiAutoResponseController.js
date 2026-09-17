@@ -2,6 +2,9 @@
 // Контроллер для управления автоответами AI
 
 import aiAutoResponseService from '../services/aiAutoResponseService.js';
+import aiAuto from '../services/aiAuto/index.js';
+import catchUpScanner from '../services/aiAuto/catchUpScanner.js';
+import cycleLogger from '../services/aiAuto/cycleLogger.js';
 import ApiError from '../exceptions/apiError.js';
 
 const AiAutoResponseController = {
@@ -133,6 +136,71 @@ const AiAutoResponseController = {
 			return res.json({
 				accountId,
 				isRunning,
+			});
+		} catch (error) {
+			next(error);
+		}
+	},
+
+	/**
+	 * Структурированный лог AI-циклов аккаунта (lock/schedule/profiles/catch-up/activity-center)
+	 * Query: ?stage=catchup&event=chat_result&limit=200
+	 */
+	getCycleLog: async (req, res, next) => {
+		try {
+			const { accountId } = req.params;
+			const { stage, event, limit } = req.query;
+
+			if (!accountId) {
+				return next(ApiError.BadRequest('ID аккаунта обязателен'));
+			}
+
+			const result = cycleLogger.getEvents({
+				accountId,
+				stage,
+				event,
+				limit,
+			});
+
+			return res.json({
+				accountId,
+				...result,
+			});
+		} catch (error) {
+			next(error);
+		}
+	},
+
+	/**
+	 * Диагностика "висит / не отвечает": лок, Catch Up счётчик, кеш, сводка
+	 */
+	getCycleDiagnostics: async (req, res, next) => {
+		try {
+			const { accountId } = req.params;
+
+			if (!accountId) {
+				return next(ApiError.BadRequest('ID аккаунта обязателен'));
+			}
+
+			const lock = aiAuto.getAccountLockStatus(accountId);
+			const lastCatchUpCount = aiAuto.getLastCatchUpCount(accountId);
+			const catchUpCache = catchUpScanner.getCacheStats();
+			const summary = cycleLogger.getSummary(accountId);
+			const isRunning = aiAutoResponseService.isRunning(accountId);
+
+			return res.json({
+				accountId,
+				isRunning,
+				lock: lock
+					? {
+							isLocked: true,
+							startedAt: lock.startedAt,
+							elapsedSec: Math.round(lock.elapsed / 1000),
+						}
+					: { isLocked: false },
+				lastCatchUpCount,
+				catchUpCache,
+				summary,
 			});
 		} catch (error) {
 			next(error);

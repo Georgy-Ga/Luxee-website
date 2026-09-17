@@ -1,41 +1,48 @@
 // Модуль для построения промптов и контекста
 
 import { SYSTEM_PROMPT, ACTIVITY_CENTER_PROMPT } from './config.js';
+import { getSampleActivityExamples } from './activityCenterExamples.js';
 import { getProfilePrompt } from '../profilePromptService.js';
+
+// Лимиты чтобы не раздувать prompt_tokens:
+// - кастомных правил максимум 5, каждое до 300 символов
+const MAX_CUSTOM_RULES = 5;
+const MAX_RULE_CHARS = 300;
+// - история максимум ~1500 символов (хвост, самое свежее)
+const MAX_HISTORY_CHARS = 1500;
+// - fallback-история: максимум 6 сообщений, каждое до 300 символов
+const MAX_FALLBACK_MESSAGES = 6;
+const MAX_FALLBACK_MSG_CHARS = 300;
 
 /**
  * Построить контекст профиля для AI
  */
 export const buildProfileContext = (profile, customRules) => {
-	// 🔍 DEBUG: Логируем входные данные профиля
-	console.log('📍 [buildProfileContext] Profile data received:');
-	console.log('  - username:', profile?.username || 'N/A');
-	console.log('  - age:', profile?.age || 'N/A');
-	console.log('  - country:', profile?.country || 'N/A');
-	console.log('  - city:', profile?.city || 'N/A');
-	console.log('  - uid:', profile?.uid || 'N/A');
-	
 	let profileContext = `My profile information:
 - Name: ${profile?.username || 'not specified'}`;
 
 	// ✅ Добавляем только если есть данные
 	if (profile?.age) {
 		profileContext += `\n- Age: ${profile.age}`;
-		console.log('  ✅ Age added to context');
 	}
 	if (profile?.country) {
 		profileContext += `\n- Country: ${profile.country}`;
-		console.log('  ✅ Country added to context');
 	}
 	if (profile?.city) {
 		profileContext += `\n- City: ${profile.city}`;
-		console.log('  ✅ City added to context');
 	}
 
 	// Добавляем кастомные правила если есть (customRules это массив объектов)
+	// Лимит: не больше MAX_CUSTOM_RULES, каждое обрезано — иначе prompt_tokens растут без контроля
 	if (customRules && Array.isArray(customRules) && customRules.length > 0) {
-		const rulesText = customRules.map(rule => rule.content).join('\n');
+		const limited = customRules.slice(0, MAX_CUSTOM_RULES);
+		const rulesText = limited
+			.map(rule => String(rule.content || '').slice(0, MAX_RULE_CHARS))
+			.join('\n');
 		profileContext += `\n\nAdditional rules for this profile:\n${rulesText}`;
+		if (customRules.length > MAX_CUSTOM_RULES) {
+			console.log(`  ⚠️ Custom rules truncated: ${customRules.length} → ${MAX_CUSTOM_RULES}`);
+		}
 	}
 
 	profileContext += `\n\nI should use this information ONLY when he asks where I'm from, how old I am, or who I am. Don't mention it in every message.`;
@@ -86,8 +93,9 @@ export const buildMessages = async ({
 		});
 		
 		// Для Activity Center НЕ нужен profile context (возраст, город и т.д.)
-		// Просто задаем задачу
-		const userMessage = `Write ONE engaging question to start a conversation with a man named ${manName || 'him'}. Make it unique, interesting, and thought-provoking.`;
+		// Свежую выборку примеров подставляем сюда (не в system) — разнообразие без ~1500 токенов за раз
+		const sampleExamples = getSampleActivityExamples(2);
+		const userMessage = `Write ONE engaging question to start a conversation with a man named ${manName || 'him'}. Make it unique, interesting, and thought-provoking.\n\nStyle examples (do NOT copy, vary the topic):\n${sampleExamples}`;
 		
 		messages.push({
 			role: 'user',
@@ -121,25 +129,34 @@ export const buildMessages = async ({
 	});
 
 	// 📜 НОВОЕ: Если есть отформатированная история - используем её
+	// Бюджет: хвост до MAX_HISTORY_CHARS — свежее важнее, токены под контролем
 	if (formattedHistory) {
-		console.log('  📜 Using NEW formatted history from chatMessagesExtractorService');
-		
+		const truncatedHistory =
+			formattedHistory.length > MAX_HISTORY_CHARS
+				? '... (earlier trimmed)\n' +
+					formattedHistory.slice(-MAX_HISTORY_CHARS)
+				: formattedHistory;
+		if (formattedHistory.length > MAX_HISTORY_CHARS) {
+			console.log(`  ✂️ Formatted history truncated: ${formattedHistory.length} → ${truncatedHistory.length} chars`);
+		}
+
 		// Добавляем историю как контекст
 		messages.push({
 			role: 'user',
-			content: formattedHistory,
+			content: truncatedHistory,
 		});
-		console.log('  💬 Added formatted history as context');
 	} else if (conversationHistory && conversationHistory.length > 0) {
-		// Fallback - старый метод
-		console.log('  📜 Using OLD conversation history format (fallback)');
-		conversationHistory.forEach(msg => {
+		// Fallback - старый метод, тоже с бюджетом
+		const recent = conversationHistory.slice(-MAX_FALLBACK_MESSAGES);
+		recent.forEach(msg => {
 			messages.push({
 				role: msg.from === 'man' ? 'user' : 'assistant',
-				content: msg.body,
+				content: String(msg.body || '').slice(0, MAX_FALLBACK_MSG_CHARS),
 			});
 		});
-		console.log('  💬 Added', conversationHistory.length, 'history messages');
+		if (conversationHistory.length > recent.length) {
+			console.log(`  ✂️ Fallback history truncated: ${conversationHistory.length} → ${recent.length} messages`);
+		}
 	}
 
 	// ⭐ Определяем контекст для типа сообщения
@@ -153,12 +170,21 @@ export const buildMessages = async ({
 		const preview = typeInstructions.substring(0, 150).replace(/\n/g, ' ');
 		console.log('  📝 Type instructions preview:', preview + '...');
 	} else {
-		console.log('  ⚠️  NO type instructions provided');
+		// Пустые инструкции — норма для обычных текстовых ответов
+		// (typeInstructions есть только для wink/emoji/image/video/gift).
+		// История и системный промпт несут контекст и без них.
+		console.log('  ℹ️  No type instructions (plain reply, system prompt + history apply)');
 		if (manMessage && manMessage.includes('[Emoji]')) {
 			// Fallback - старый метод для эмодзи
 			messageContext = '[The man sent you an emoji/sticker - respond warmly with emotion and ask a question]\n';
 			console.log('  😊 Detected emoji message - added emoji context (fallback)');
 		}
+	}
+
+	// Страховка от неограниченного роста инструкций (catch-up дописывает NOTE)
+	if (messageContext.length > 800) {
+		console.log(`  ✂️ Type instructions truncated: ${messageContext.length} → 800 chars`);
+		messageContext = messageContext.slice(-800);
 	}
 
 	// Добавляем текущее сообщение от мужчины

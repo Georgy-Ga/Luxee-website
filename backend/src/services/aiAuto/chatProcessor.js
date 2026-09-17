@@ -4,6 +4,7 @@
 import aiResponseService from '../aiResponseService.js';
 import chatMessagesExtractorService from '../luxeeApi/chatMessagesExtractorService.js';
 import profileScanner from './profileScanner.js';
+import cycleLogger from './cycleLogger.js';
 import utils from './utils.js';
 
 /**
@@ -48,7 +49,11 @@ const processSingleChat = async ({
 
 	try {
 		// ========== НАВИГАЦИЯ К ЧАТУ ==========
-		const [profileUidOuter, userUid] = chat.chatId.split('_');
+		// Роли берём из объекта (members), НЕ из позиции в chatId:
+		// порядок частей не фиксирован (profile_man и man_profile).
+		const [splitA, splitB] = chat.chatId.split('_');
+		const profileUidOuter = chat.profileUidOuter || splitA;
+		const userUid = chat.manUid || splitB;
 		const url = `https://luxee.io/chats/?ownerUid=${profile.uid}&profileUid=${profileUidOuter}&userUid=${userUid}`;
 
 		console.log('[🚦 CHAT PROCESSOR] ========================================');
@@ -71,14 +76,22 @@ const processSingleChat = async ({
 				timeout: 10000,
 			});
 			console.log('[🚦 CHAT PROCESSOR] ✅ page.goto() completed');
-		} catch (navError) {
-			console.log('[🚦 CHAT PROCESSOR] ❌ page.goto() FAILED:', navError.message);
-			utils.logError(
-				'Chat Processor',
-				`❌ Navigation error: ${navError.message}`,
-			);
-			return { sent: false, reason: 'navigation_timeout' };
-		}
+	} catch (navError) {
+		console.log('[🚦 CHAT PROCESSOR] ❌ page.goto() FAILED:', navError.message);
+		utils.logError(
+			'Chat Processor',
+			`❌ Navigation error: ${navError.message}`,
+		);
+		cycleLogger.logEvent(accountId, 'chat', 'nav_failed', {
+			chatId: chat.chatId,
+			manName: chat.manName,
+			profileName: profile.username,
+			isCatchUp,
+			reason: 'navigation_timeout',
+			sent: false,
+		});
+		return { sent: false, reason: 'navigation_timeout' };
+	}
 
 		console.log('[🚦 CHAT PROCESSOR] ⏳ Sleeping 3 seconds...');
 		await utils.sleep(3000);
@@ -90,15 +103,66 @@ const processSingleChat = async ({
 			return window.modelsChat?.getChats?.active?.identity;
 		});
 
-		if (activeChatId !== chat.chatId) {
-			utils.logError(
-				'Chat Processor',
-				`❌ Navigation failed: expected ${chat.chatId}, got ${activeChatId}`,
-			);
-			return { sent: false, reason: 'navigation_failed' };
-		}
+	if (activeChatId !== chat.chatId) {
+		utils.logError(
+			'Chat Processor',
+			`❌ Navigation failed: expected ${chat.chatId}, got ${activeChatId}`,
+		);
+		cycleLogger.logEvent(accountId, 'chat', 'nav_failed', {
+			chatId: chat.chatId,
+			manName: chat.manName,
+			profileName: profile.username,
+			isCatchUp,
+			reason: 'navigation_failed',
+			gotChatId: activeChatId || null,
+			sent: false,
+		});
+		return { sent: false, reason: 'navigation_failed' };
+	}
 
 		utils.log('Chat Processor', `✅ Navigated successfully`);
+
+		// ========== ПРОВЕРКА БЛОКИРОВКИ (заблокировавший нас юзер) ==========
+		// Если собеседник заблокировал анкету — сайт молча глотает отправку
+		// (msgCount не растёт, unAnswered висит). Проверяем баннер ДО генерации,
+		// чтобы не жечь токены впустую и не долбить retry вечно.
+		const blockCheck = await page
+			.evaluate(() => {
+				const banner = document.querySelector('#user-block-notify');
+				if (!banner) return { blocked: false };
+				let visible = false;
+				try {
+					const rect = banner.getBoundingClientRect();
+					const style = window.getComputedStyle(banner);
+					visible =
+						rect.width > 0 &&
+						rect.height > 0 &&
+						style.display !== 'none' &&
+						style.visibility !== 'hidden';
+				} catch (e) {
+					visible = false;
+				}
+				return {
+					blocked: visible,
+					text: visible ? (banner.textContent || '').trim().slice(0, 80) : '',
+				};
+			})
+			.catch(() => ({ blocked: false, text: '' }));
+
+		if (blockCheck.blocked) {
+			utils.log(
+				'Chat Processor',
+				`⛔ Chat blocked by user ("${blockCheck.text}") — skipping, consider blacklist for ${chat.manName} (${chat.manUid})`,
+			);
+			cycleLogger.logEvent(accountId, 'chat', 'skipped', {
+				chatId: chat.chatId,
+				manName: chat.manName,
+				profileName: profile.username,
+				isCatchUp,
+				reason: 'user_blocked',
+			});
+			return { sent: false, reason: 'user_blocked' };
+		}
 
 		// ========== ПРОВЕРКА unAnswered (ТОЛЬКО ДЛЯ ОБЫЧНЫХ ЧАТОВ!) ==========
 		if (!isCatchUp) {
@@ -109,21 +173,36 @@ const processSingleChat = async ({
 				chat.chatId,
 			);
 
-			if (unAnsweredCheck.error) {
-				utils.logError(
-					'Chat Processor',
-					`❌ unAnswered check failed: ${unAnsweredCheck.error}`,
-				);
-				return { sent: false, reason: 'unanswered_check_failed' };
-			}
+		if (unAnsweredCheck.error) {
+			utils.logError(
+				'Chat Processor',
+				`❌ unAnswered check failed: ${unAnsweredCheck.error}`,
+			);
+			cycleLogger.logEvent(accountId, 'chat', 'history_failed', {
+				chatId: chat.chatId,
+				manName: chat.manName,
+				profileName: profile.username,
+				isCatchUp,
+				reason: 'unanswered_check_failed',
+				sent: false,
+			});
+			return { sent: false, reason: 'unanswered_check_failed' };
+		}
 
-			if (!unAnsweredCheck.isUnAnswered) {
-				utils.log(
-					'Chat Processor',
-					`⏭️  Chat already answered (unAnswered = false) - skipping`,
-				);
-				return { sent: false, reason: 'already_answered' };
-			}
+		if (!unAnsweredCheck.isUnAnswered) {
+			utils.log(
+				'Chat Processor',
+				`⏭️  Chat already answered (unAnswered = false) - skipping`,
+			);
+			cycleLogger.logEvent(accountId, 'chat', 'skipped', {
+				chatId: chat.chatId,
+				manName: chat.manName,
+				profileName: profile.username,
+				isCatchUp,
+				reason: 'already_answered',
+			});
+			return { sent: false, reason: 'already_answered' };
+		}
 
 			utils.log('Chat Processor', `✅ unAnswered = true, proceeding...`);
 		} else {
@@ -145,7 +224,10 @@ const processSingleChat = async ({
 			`📜 Extracting history (attempt ${retryCount + 1}/${maxRetries})...`,
 		);
 
-		const result = await chatMessagesExtractorService.getChatHistory(page, 10);
+		// История для промпта: 6 последних достаточно (было 10 без бюджета —
+		// длинные чаты давали +500-1000 токенов сверх system при ответе 20-100).
+		// Объём дополнительно режется в formatHistoryForAI + promptBuilder.
+		const result = await chatMessagesExtractorService.getChatHistory(page, 6);
 
 		if (!result.error) {
 			history = result;
@@ -191,6 +273,14 @@ const processSingleChat = async ({
 			'Chat Processor',
 			`❌ Failed to extract history after ${maxRetries} attempts`,
 		);
+		cycleLogger.logEvent(accountId, 'chat', 'history_failed', {
+			chatId: chat.chatId,
+			manName: chat.manName,
+			profileName: profile.username,
+			isCatchUp,
+			reason: 'history_extraction_failed',
+			sent: false,
+		});
 		return { sent: false, reason: 'history_extraction_failed' };
 	}
 
@@ -241,11 +331,18 @@ const processSingleChat = async ({
 				lastMessageIsFromMan: history.lastMessage?.isFromMan,
 			});
 
-			if (!shouldReply.shouldReply) {
-				utils.log('Chat Processor', `⏭️  ${shouldReply.reason}`);
-				console.log('[🔧 PROCESSOR] ❌ SKIPPING CHAT:', shouldReply.reason);
-				return { sent: false, reason: 'shouldnt_reply' };
-			}
+		if (!shouldReply.shouldReply) {
+			utils.log('Chat Processor', `⏭️  ${shouldReply.reason}`);
+			console.log('[🔧 PROCESSOR] ❌ SKIPPING CHAT:', shouldReply.reason);
+			cycleLogger.logEvent(accountId, 'chat', 'skipped', {
+				chatId: chat.chatId,
+				manName: chat.manName,
+				profileName: profile.username,
+				isCatchUp,
+				reason: 'shouldnt_reply',
+			});
+			return { sent: false, reason: 'shouldnt_reply' };
+		}
 
 			typeInstructions =
 				chatMessagesExtractorService.getAIInstructionsForMessageType(
@@ -349,6 +446,31 @@ const processSingleChat = async ({
 		await utils.sleep(typingDelay);
 		console.log('[🚦 CHAT PROCESSOR] ✅ Typing delay completed');
 
+		// Повторная проверка unAnswered ПОСЛЕ задержки (только обычные чаты).
+		// Зачем: задержка 7-25с — за это время в чат могли уже ответить
+		// (другой процесс/рука). Без перепроверки мы генерировали ответ за токены
+		// и тут же выкидывали его как already_answered — x2 расход ни за что.
+		if (!isCatchUp) {
+			const recheck = await profileScanner.checkActiveChatUnAnswered(
+				page,
+				chat.chatId,
+			);
+		if (!recheck.error && !recheck.isUnAnswered) {
+			utils.log(
+				'Chat Processor',
+				`⏭️  Chat answered during typing delay (unAnswered = false) - skipping generation`,
+			);
+			cycleLogger.logEvent(accountId, 'chat', 'skipped', {
+				chatId: chat.chatId,
+				manName: chat.manName,
+				profileName: profile.username,
+				isCatchUp,
+				reason: 'already_answered',
+			});
+			return { sent: false, reason: 'already_answered' };
+		}
+		}
+
 		// ========== ГЕНЕРАЦИЯ И ОТПРАВКА ОТВЕТА ==========
 		console.log('[🚦 CHAT PROCESSOR] ========================================');
 		console.log('[🚦 CHAT PROCESSOR] 🤖 AI GENERATION & SEND START');
@@ -365,6 +487,9 @@ const processSingleChat = async ({
 			profileUid: profile.uid,
 			chatId: chat.chatId,
 			profile: {
+				// uid обязателен: без него getProfilePrompt(uid) всегда возвращает
+				// дефолтный SYSTEM_PROMPT, кастомные промпты из Mongo молча не работали
+				uid: profile.uid,
 				username: profile.username,
 				age: profile.age,
 				country: profile.country,
@@ -393,25 +518,41 @@ const processSingleChat = async ({
 
 		utils.log('Chat Processor', `🔍 Checking AI response result...`);
 
-		// ✅ ИСПРАВЛЕНО: Проверяем ПРАВИЛЬНЫЕ поля
-		if (!aiResponse || !aiResponse.success) {
-			utils.logError('Chat Processor', `❌ AI generation failed`);
-			console.log(
-				'[🔧 PROCESSOR] ❌ GENERATION FAILED - Full response:',
-				aiResponse,
-			);
-			return { sent: false, reason: 'generation_failed' };
-		}
+	// ✅ ИСПРАВЛЕНО: Проверяем ПРАВИЛЬНЫЕ поля
+	if (!aiResponse || !aiResponse.success) {
+		utils.logError('Chat Processor', `❌ AI generation failed`);
+		console.log(
+			'[🔧 PROCESSOR] ❌ GENERATION FAILED - Full response:',
+			aiResponse,
+		);
+		cycleLogger.logEvent(accountId, 'chat', 'generation_failed', {
+			chatId: chat.chatId,
+			manName: chat.manName,
+			profileName: profile.username,
+			isCatchUp,
+			reason: aiResponse?.cancelled ? 'ai_disabled_during_generation' : 'generation_failed',
+			sent: false,
+		});
+		return { sent: false, reason: 'generation_failed' };
+	}
 		utils.log('Chat Processor', `   ✓ Generation: SUCCESS`);
 
-		if (!aiResponse.sendResult || !aiResponse.sendResult.success) {
-			utils.logError('Chat Processor', `❌ Message sending failed`);
-			console.log(
-				'[🔧 PROCESSOR] ❌ SEND FAILED - sendResult:',
-				aiResponse.sendResult,
-			);
-			return { sent: false, reason: 'send_failed' };
-		}
+	if (!aiResponse.sendResult || !aiResponse.sendResult.success) {
+		utils.logError('Chat Processor', `❌ Message sending failed`);
+		console.log(
+			'[🔧 PROCESSOR] ❌ SEND FAILED - sendResult:',
+			aiResponse.sendResult,
+		);
+		cycleLogger.logEvent(accountId, 'chat', 'send_failed', {
+			chatId: chat.chatId,
+			manName: chat.manName,
+			profileName: profile.username,
+			isCatchUp,
+			reason: 'send_failed',
+			sent: false,
+		});
+		return { sent: false, reason: 'send_failed' };
+	}
 		utils.log('Chat Processor', `   ✓ Sending: SUCCESS`);
 
 		// Извлекаем сгенерированный текст из правильного места
@@ -449,10 +590,20 @@ const processSingleChat = async ({
 		console.log('[🚦 CHAT PROCESSOR] Time:', new Date().toISOString());
 		console.log('[🚦 CHAT PROCESSOR] ========================================');
 		
-		utils.log(
-			'Chat Processor',
-			`✅ Successfully processed chat with ${chat.manName} (${Math.round(elapsed / 1000)}s)`,
-		);
+	utils.log(
+		'Chat Processor',
+		`✅ Successfully processed chat with ${chat.manName} (${Math.round(elapsed / 1000)}s)`,
+	);
+	cycleLogger.logEvent(accountId, 'chat', 'sent', {
+		chatId: chat.chatId,
+		manName: chat.manName,
+		profileName: profile.username,
+		isCatchUp,
+		reason: isCatchUp ? 'catch_up_sent' : 'sent',
+		durationSec: Math.round(elapsed / 1000),
+		textPreview: generatedText.substring(0, 80),
+		sent: true,
+	});
 
 		return {
 			sent: true,
@@ -464,6 +615,15 @@ const processSingleChat = async ({
 		};
 	} catch (error) {
 		utils.logError('Chat Processor', `❌ Unexpected error:`, error);
+		cycleLogger.logEvent(accountId, 'chat', 'exception', {
+			chatId: chat.chatId,
+			manName: chat.manName,
+			profileName: profile.username,
+			isCatchUp,
+			reason: 'exception',
+			error: error.message,
+			sent: false,
+		});
 		return {
 			sent: false,
 			reason: 'exception',

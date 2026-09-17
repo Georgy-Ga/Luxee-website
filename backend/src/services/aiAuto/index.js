@@ -6,8 +6,10 @@ import aiResponseService from '../aiResponseService.js';
 import aiScheduleService from '../aiScheduleService.js';
 import activityCenterScanner from './activityCenterScanner.js';
 import { isUserBlacklisted, shouldSkipDueToLoop } from './blacklistService.js';
+import { isProfileExcluded } from './excludedProfilesService.js';
 import catchUpScanner from './catchUpScanner.js';
 import chatProcessor from './chatProcessor.js';
+import cycleLogger from './cycleLogger.js';
 import profileScanner from './profileScanner.js';
 import utils from './utils.js';
 
@@ -16,6 +18,12 @@ const processingLocks = new Map(); // accountId → { isProcessing: true, starte
 
 // Кеш последних значений Catch Up счётчика (для оптимизации)
 const lastCatchUpCounts = new Map(); // accountId → lastCount
+
+// Время последнего ПОЛНОГО прохода Catch Up (для TTL-гейта)
+// Полный проход = зашли внутрь, извлекли чаты, отфильтровали.
+// Даже если count не меняется, полный проход повторяется не реже TTL.
+const lastCatchUpFullCheck = new Map(); // accountId → timestamp
+const CATCH_UP_FULL_CHECK_TTL_MS = 5 * 60 * 1000; // 5 минут
 
 /**
  * Обработать сообщения аккаунта
@@ -73,6 +81,9 @@ const processAccountMessages = async (accountId, userId, page) => {
 			'AI Auto',
 			`⏸️  Account ${accountId} is LOCKED (${Math.round(elapsed / 1000)}s) - skipping cycle`,
 		);
+		cycleLogger.logEvent(accountId, 'lock', 'locked_skip', {
+			elapsedSec: Math.round(elapsed / 1000),
+		});
 		return { processed: false, reason: 'account_locked' };
 	}
 
@@ -108,6 +119,10 @@ const processAccountMessages = async (accountId, userId, page) => {
 				'AI Auto',
 				`${stateEmoji} User ${account.user.email} в режиме ОТДЫХА до ${nextTime}`,
 			);
+			cycleLogger.logEvent(accountId, 'schedule', 'resting_skip', {
+				currentState: scheduleCheck.currentState,
+				nextRunTime: scheduleCheck.nextToggleTime || null,
+			});
 
 			return {
 				processed: false,
@@ -126,6 +141,24 @@ const processAccountMessages = async (accountId, userId, page) => {
 		}
 
 		// ========== ОСНОВНАЯ ЛОГИКА ==========
+
+		// ========== МАСТЕР-ВЫКЛЮЧАТЕЛИ РАЗДЕЛОВ (aiSections) ==========
+		// OFF = раздел полностью пропускается циклом. Дефолт true для
+		// отсутствующего поля (обратная совместимость со старыми документами).
+		// Отличается от blacklist.categories: там фильтр по конкретным мужчинам.
+		const sectionsRaw =
+			account.aiSections?.toObject?.() || account.aiSections || {};
+		const secNewMessages = sectionsRaw.newMessages !== false;
+		const secCatchUp = sectionsRaw.catchUp !== false;
+		const secActivityCenter = sectionsRaw.activityCenter !== false;
+		if (!secNewMessages || !secCatchUp || !secActivityCenter) {
+			const off = [
+				!secNewMessages ? 'newMessages' : null,
+				!secCatchUp ? 'catchUp' : null,
+				!secActivityCenter ? 'activityCenter' : null,
+			].filter(Boolean);
+			utils.log('AI Auto', `🚫 Sections disabled: ${off.join(', ')}`);
+		}
 
 		// 🔄 ПРОВЕРКА И СИНХРОНИЗАЦИЯ КЕША ПРОФИЛЕЙ (один раз при старте)
 		try {
@@ -160,6 +193,7 @@ const processAccountMessages = async (accountId, userId, page) => {
 
 	if (!activeProfile) {
 		utils.log('AI Auto', `❌ No active profile found`);
+		cycleLogger.logEvent(accountId, 'cycle', 'no_active_profile', {});
 		return { processed: false, reason: 'no_active_profile' };
 	}
 
@@ -175,24 +209,50 @@ const processAccountMessages = async (accountId, userId, page) => {
 			allUids: activeProfile.allUids,
 		});
 
-		// 2️⃣ Получить чаты АКТИВНОГО профиля (ПРИОРИТЕТ!)
-		utils.log(
-			'AI Auto',
-			`🔍 Checking chats on ACTIVE profile ${activeProfile.username}...`,
+		// 🚫 Исключённые анкеты: ИИ полностью игнорирует профиль (читается свежим
+		// из БД каждый цикл — работает "на горячую" без перезапуска).
+		// account.user populated выше, поэтому изменения из админки применяются сразу.
+		const isActiveProfileExcluded = isProfileExcluded(
+			account.user,
+			activeProfile.uid,
 		);
+		if (isActiveProfileExcluded) {
+			utils.log(
+				'AI Auto',
+				`🚫 Active profile ${activeProfile.username} (${activeProfile.uid}) is excluded — skipping entirely`,
+			);
+		}
+
+		// 2️⃣ Получить чаты АКТИВНОГО профиля (ПРИОРИТЕТ!)
+		// Исключённый профиль даже не сканируем — ИИ его "не смотрит".
+		// Раздел newMessages выключен — пропускаем обычные чаты целиком.
+		let activeChats = [];
+		if (!secNewMessages) {
+			utils.log('AI Auto', `⏭️  Section newMessages disabled — skipping active chats`);
+			cycleLogger.logEvent(accountId, 'cycle', 'section_disabled', {
+				reason: 'section_newMessages_disabled',
+			});
+		} else if (!isActiveProfileExcluded) {
+			utils.log(
+				'AI Auto',
+				`🔍 Checking chats on ACTIVE profile ${activeProfile.username}...`,
+			);
+
+			// Глобальный флаг для отслеживания успешной отправки
+			activeChats = await profileScanner.getAllChatsForProfile(
+				page,
+				activeProfile.allUids || [activeProfile.uid],
+			);
+		}
 
 		// Глобальный флаг для отслеживания успешной отправки
 		let messageSent = false;
 
-		let activeChats = await profileScanner.getAllChatsForProfile(
-			page,
-			activeProfile.allUids || [activeProfile.uid],
-		);
-
 		console.log('[🤖 AI AUTO] Active chats found:', activeChats.length);
 
 		// ========== ДЕТЕКЦИЯ И ИСПРАВЛЕНИЕ API РАССИНХРОНА ==========
-		if (activeProfile.newMessages > 0 && activeChats.length === 0) {
+		// (для исключённых профилей не выполняем — профиль всё равно пропускаем)
+		if (secNewMessages && !isActiveProfileExcluded && activeProfile.newMessages > 0 && activeChats.length === 0) {
 			utils.log(
 				'AI Auto',
 				`⚠️  API DESYNC: ${activeProfile.username} has ${activeProfile.newMessages} unread but 0 chats found`,
@@ -252,7 +312,7 @@ const processAccountMessages = async (accountId, userId, page) => {
 			}
 		}
 		// ========== КОНЕЦ ДЕТЕКЦИИ РАССИНХРОНА ==========
-		if (activeChats.length > 0) {
+		if (!isActiveProfileExcluded && activeChats.length > 0) {
 			console.log(
 				'[🤖 AI AUTO] All active chats:',
 				activeChats.map(c => ({
@@ -289,7 +349,9 @@ const processAccountMessages = async (accountId, userId, page) => {
 				const chat = sortedChats[i];
 
 				// 🚫 ПРОВЕРКА ЧЕРНОГО СПИСКА
-				const userUid = chat.chatId.split('_')[1];
+				// manUid берём из объекта (members), НЕ из позиции в chatId:
+				// порядок частей не фиксирован (manUid_profileOuter тоже бывает).
+				const userUid = chat.manUid || chat.chatId.split('_')[1];
 				if (await isUserBlacklisted(accountId, userUid, 'newMessages')) {
 					// Проверка зацикливания
 					const messageCount = chat.messageCount || 0;
@@ -341,6 +403,14 @@ const processAccountMessages = async (accountId, userId, page) => {
 					);
 					await utils.randomDelay(3000, 5000);
 					messageSent = true;
+					cycleLogger.logEvent(accountId, 'cycle', 'finished', {
+						processed: true,
+						reason: 'active_profile_processed',
+						durationSec: Math.round(elapsed / 1000),
+						chatId: chat.chatId,
+						manName: chat.manName,
+						sent: true,
+					});
 					return { processed: true, reason: 'active_profile_processed' };
 				} else {
 					utils.log(
@@ -366,7 +436,7 @@ const processAccountMessages = async (accountId, userId, page) => {
 					'[🤖 AI AUTO] ⚠️  All chats checked on active profile - none suitable',
 				);
 			}
-		} else {
+		} else if (!isActiveProfileExcluded) {
 			utils.log(
 				'AI Auto',
 				`No chats on active profile ${activeProfile.username}`,
@@ -374,9 +444,22 @@ const processAccountMessages = async (accountId, userId, page) => {
 		}
 
 		// 3️⃣ Получить ДРУГИЕ профили с сообщениями
+		// Раздел newMessages выключен — пропускаем (уже залогировано выше)
 		utils.log('AI Auto', `🔍 Scanning other profiles...`);
-		const allProfiles = await profileScanner.getAllProfilesWithMessages(page);
-		const otherProfiles = allProfiles.filter(p => p.uid !== activeProfile.uid);
+		const allProfiles = secNewMessages
+			? await profileScanner.getAllProfilesWithMessages(page)
+			: [];
+		// 🚫 Убираем исключённые анкеты ДО переключений — ИИ их даже не открывает
+		const otherProfilesUnfiltered = allProfiles.filter(p => p.uid !== activeProfile.uid);
+		const otherProfiles = otherProfilesUnfiltered.filter(
+			p => !isProfileExcluded(account.user, p.uid),
+		);
+		if (otherProfiles.length !== otherProfilesUnfiltered.length) {
+			utils.log(
+				'AI Auto',
+				`🚫 Filtered ${otherProfilesUnfiltered.length - otherProfiles.length} excluded profile(s), ${otherProfiles.length} remaining`,
+			);
+		}
 
 		utils.log(
 			'AI Auto',
@@ -433,7 +516,8 @@ const processAccountMessages = async (accountId, userId, page) => {
 					const chat = sortedChats[i];
 
 					// 🚫 ПРОВЕРКА ЧЕРНОГО СПИСКА (для других профилей тоже)
-					const userUid = chat.chatId.split('_')[1];
+					// manUid из объекта (members), не из позиции в chatId
+					const userUid = chat.manUid || chat.chatId.split('_')[1];
 					if (await isUserBlacklisted(accountId, userUid, 'newMessages')) {
 						const messageCount = chat.messageCount || 0;
 						if (
@@ -474,6 +558,15 @@ const processAccountMessages = async (accountId, userId, page) => {
 						);
 						await utils.randomDelay(3000, 5000);
 						messageSent = true;
+						cycleLogger.logEvent(accountId, 'cycle', 'finished', {
+							processed: true,
+							reason: 'other_profile_processed',
+							durationSec: Math.round(elapsed / 1000),
+							chatId: chat.chatId,
+							manName: chat.manName,
+							profileName: profile.username,
+							sent: true,
+						});
 						return { processed: true, reason: 'other_profile_processed' };
 					} else {
 						utils.log(
@@ -497,7 +590,14 @@ const processAccountMessages = async (accountId, userId, page) => {
 		}
 
 		// ========== CATCH UP РЕЗЕРВ (только если НИ ОДИН ЧАТ не обработан) ==========
-		if (!messageSent) {
+		// Мастер-выключатель раздела: OFF = скип целиком (см. aiSections)
+		if (!messageSent && !secCatchUp) {
+			utils.log('AI Auto', `⏭️  Section catchUp disabled — skipping`);
+			cycleLogger.logEvent(accountId, 'cycle', 'section_disabled', {
+				reason: 'section_catchUp_disabled',
+			});
+		}
+		if (!messageSent && secCatchUp) {
 			utils.log(
 				'AI Auto',
 				'🔍 No chats found in main cycle, checking Catch Up...',
@@ -514,23 +614,44 @@ const processAccountMessages = async (accountId, userId, page) => {
 			console.log('[🚦 NAVIGATION] Catch Up count:', catchUpCount);
 			console.log('[🚦 NAVIGATION] Last count:', lastCount);
 
-			// 🔍 Определяем нужно ли заходить в Catch Up
-			let shouldCheckCatchUp = false;
-			let skipReason = '';
+		// 🔍 Определяем нужно ли заходить в Catch Up
+		// Заходим если: count изменился ИЛИ прошло 5+ минут с полного прохода.
+		// Иначе stall: count висит, а чаты внутри никогда не перепроверяются.
+		let shouldCheckCatchUp = false;
+		let skipReason = '';
+		let ttlExpired = false;
 
-			if (catchUpCount === 0) {
-				shouldCheckCatchUp = false;
-				skipReason = 'count is 0 (empty)';
-			} else if (catchUpCount === lastCount) {
-				shouldCheckCatchUp = false;
-				skipReason = `count unchanged (${catchUpCount}) - same cached chats`;
-			} else {
+		if (catchUpCount === 0) {
+			shouldCheckCatchUp = false;
+			skipReason = 'count is 0 (empty)';
+		} else if (catchUpCount !== lastCount) {
+			shouldCheckCatchUp = true;
+			skipReason = '';
+		} else {
+			const lastFull = lastCatchUpFullCheck.get(accountId) || 0;
+			const elapsedSinceFull = Date.now() - lastFull;
+			if (elapsedSinceFull >= CATCH_UP_FULL_CHECK_TTL_MS) {
 				shouldCheckCatchUp = true;
+				ttlExpired = true;
 				skipReason = '';
+			} else {
+				shouldCheckCatchUp = false;
+				const waitSec = Math.round(
+					(CATCH_UP_FULL_CHECK_TTL_MS - elapsedSinceFull) / 1000,
+				);
+				skipReason = `count unchanged (${catchUpCount}), next full check in ${waitSec}s`;
 			}
+		}
 
 			// Сохраняем текущий count для следующего цикла
 			lastCatchUpCounts.set(accountId, catchUpCount);
+		cycleLogger.logEvent(accountId, 'catchup', 'count_check', {
+			count: catchUpCount,
+			lastCount,
+			shouldCheck: shouldCheckCatchUp,
+			skipReason,
+			ttlExpired,
+		});
 
 			if (!shouldCheckCatchUp) {
 				utils.log('AI Auto', `⏭️  Skipping Catch Up: ${skipReason}`);
@@ -539,11 +660,18 @@ const processAccountMessages = async (accountId, userId, page) => {
 			} else {
 				utils.log(
 					'AI Auto',
-					`📬 Catch Up count changed (${lastCount} → ${catchUpCount}), opening...`,
+					ttlExpired
+						? `📬 Catch Up count ${catchUpCount} (unchanged) — 5-min TTL expired, re-checking...`
+						: `📬 Catch Up count changed (${lastCount} → ${catchUpCount}), opening...`,
 				);
 				console.log(
 					'[🚦 NAVIGATION] 📬 Catch Up count CHANGED, will check inside',
 				);
+			cycleLogger.logEvent(accountId, 'catchup', 'entering', {
+				count: catchUpCount,
+				lastCount,
+				ttlExpired,
+			});
 
 				console.log(
 					'[🚦 NAVIGATION] ========== ENTERING CATCH UP MODE ==========',
@@ -551,11 +679,19 @@ const processAccountMessages = async (accountId, userId, page) => {
 				console.log('[🚦 NAVIGATION] Current URL:', page.url());
 				console.log('[🚦 NAVIGATION] Time:', new Date().toISOString());
 
-				const catchUpChats = await catchUpScanner.getAllCatchUpChats(page);
+				const catchUpChats = await catchUpScanner.getAllCatchUpChats(page, accountId);
 
 				console.log('[🚦 NAVIGATION] After opening Catch Up:');
 				console.log('[🚦 NAVIGATION] Current URL:', page.url());
 				console.log('[🚦 NAVIGATION] Found chats:', catchUpChats.length);
+				cycleLogger.logEvent(accountId, 'catchup', 'extracted', {
+					total: catchUpChats.length,
+				});
+				// Полный проход начат (overlay открыт, чаты извлечены).
+				// Ставим TTL-метку СРАЗУ: даже если дальше цикл упадёт на
+				// exception, следующий тик не будет долбить overlay заново,
+				// а подождёт 5 минут. Retry-логика при этом сохраняется.
+				lastCatchUpFullCheck.set(accountId, Date.now());
 
 				if (catchUpChats.length > 0) {
 					utils.log(
@@ -563,44 +699,160 @@ const processAccountMessages = async (accountId, userId, page) => {
 						`📬 Found ${catchUpChats.length} chats in Catch Up`,
 					);
 
-					// Фильтруем уже обработанные (по кешу с учётом profileUid + manUid)
-					const unprocessedChats = [];
+				// Фильтруем уже обработанные (по кешу с учётом profileUid + manUid)
+				const unprocessedChats = [];
+				// Честные счётчики по причинам (раньше всё сваливалось в "in cache")
+				const filterStats = {
+					ready: 0,
+					cached: 0,
+					blacklisted: 0,
+					excluded: 0,
+					profile_not_found: 0,
+					retry_wait: 0,
+					already_answered: 0,
+				};
 
-					console.log(
-						'[📊 CATCH UP FILTER] ========== FILTERING CHATS ==========',
-					);
-					console.log(
-						'[📊 CATCH UP FILTER] Total chats found:',
-						catchUpChats.length,
-					);
+				// Нормализация lastActivity к мс (сайт может отдать секунды)
+				const normalizeTs = ts => {
+					const n = Number(ts);
+					if (!Number.isFinite(n) || n <= 0) return null;
+					return n < 1e12 ? n * 1000 : n;
+				};
 
-					for (const chat of catchUpChats) {
-						// Получаем профиль чтобы узнать inner UID
-						const profile = await utils.getProfileByUid(
+				console.log(
+					'[📊 CATCH UP FILTER] ========== FILTERING CHATS ==========',
+				);
+				console.log(
+					'[📊 CATCH UP FILTER] Total chats found:',
+					catchUpChats.length,
+				);
+
+				// Дамп карты профилей сессии: какие анкеты вообще видны.
+				// Если outer чата нет в карте — это чат НЕ текущей сессии
+				// (другая анкета аккаунта), резолвим через переключение.
+				const sessionMap = await catchUpScanner.dumpSessionProfileMap(page);
+				utils.log(
+					'AI Auto',
+					`🗺️  Session profiles: ${sessionMap.dataKeys} inners, ${sessionMap.outerKeys} outers in global map`,
+				);
+				// Бюджет переключений на этот проход (защита от долгого цикла)
+				const ownerSwitchBudget = { count: 0 };
+
+				for (const chat of catchUpChats) {
+					// 🆕 Отвечаем ТОЛЬКО на реально новые сообщения.
+					// unAnswered взят из getChats.list БЕЗ открытия чата —
+					// прочитанные (false) даже не трогаем: ни захода, ни read-receipt.
+					if (chat.unAnswered === false) {
+						console.log('[⏭️ CATCH UP FILTER] Already answered (skipping):');
+						console.log('   Chat ID:', chat.chatId);
+						filterStats.already_answered++;
+						cycleLogger.logEvent(accountId, 'catchup', 'chat_filtered', {
+							chatId: chat.chatId,
+							manName: chat.manName,
+							manUid: chat.manUid || null,
+							decision: 'already_answered',
+							reason: 'already_answered',
+						});
+						continue;
+					}
+					if (chat.unAnswered == null) {
+						console.log('[❓ CATCH UP FILTER] unAnswered unknown, will process:', chat.chatId);
+					}
+					// Получаем профиль чтобы узнать inner UID.
+					// Быстрый путь — текущая сессия; иначе резолв владельца
+					// через переключение анкет (как цикл "других анкет").
+					let profile = await utils.getProfileByUid(
+						page,
+						chat.profileUidOuter,
+					);
+					let ownerSwitched = false;
+
+					if (!profile) {
+						profile = await catchUpScanner.resolveOwnerProfile(
 							page,
+							accountId,
 							chat.profileUidOuter,
+							{
+								switchesUsed: ownerSwitchBudget,
+								maxSwitches:
+									catchUpScanner.MAX_OWNER_SWITCHES_PER_PASS,
+							},
 						);
+						ownerSwitched = !!profile;
+					}
 
-						if (!profile) {
-							console.log('[❌ CATCH UP FILTER] Profile not found:');
-							console.log('   Chat ID:', chat.chatId);
-							console.log('   Man:', chat.manName);
-							console.log('   Profile UID (outer):', chat.profileUidOuter);
+					if (!profile) {
+						// Владельца найти не удалось. Не кешируем на 10-16ч,
+						// а откладываем на 5 минут (короткий retry-кеш) —
+						// иначе чат умирает навсегда после первой неудачи.
+					if (
+						!catchUpScanner.shouldRetryNow(
+							accountId,
+							chat.chatId,
+						)
+					) {
+						console.log('[⏳ CATCH UP FILTER] Retry wait (skipping):');
+						console.log('   Chat ID:', chat.chatId);
+						filterStats.retry_wait++;
+						cycleLogger.logEvent(accountId, 'catchup', 'chat_filtered', {
+							chatId: chat.chatId,
+							manName: chat.manName,
+							manUid: chat.manUid || null,
+							decision: 'retry_wait',
+							reason: 'retry_wait',
+						});
+						continue;
+					}
+					catchUpScanner.markRetryLater(
+						accountId,
+						chat.chatId,
+					);
+						console.log('[❌ CATCH UP FILTER] Profile not found:');
+						console.log('   Chat ID:', chat.chatId);
+						console.log('   Man:', chat.manName);
+						console.log('   Profile UID (outer):', chat.profileUidOuter);
+					utils.log(
+						'AI Auto',
+						`⚠️  Profile ${chat.profileUidOuter} not found, retry in 5 min`,
+					);
+					filterStats.profile_not_found++;
+					cycleLogger.logEvent(accountId, 'catchup', 'chat_filtered', {
+						chatId: chat.chatId,
+						manName: chat.manName,
+						manUid: chat.manUid || null,
+						decision: 'profile_not_found',
+						reason: 'profile_not_found',
+					});
+					continue;
+					}
+
+						// Проверяем кеш успеха: accountId_profileUid_manUid.
+					// НО: если после нашего ответа пришла НОВАЯ активность —
+					// кеш не действует, чат обрабатываем как новый.
+					// (Иначе новое сообщение после нашего ответа игнорилось бы 10-16ч.)
+					const cachedEntry = catchUpScanner.getCachedChat(
+						accountId,
+						profile.uid,
+						chat.manUid,
+					);
+					let cacheBypassed = false;
+					if (cachedEntry) {
+						const lastAct = normalizeTs(chat.lastActivity);
+						const now = Date.now();
+						if (
+							lastAct &&
+							lastAct > cachedEntry.processedAt &&
+							lastAct <= now + 5 * 60 * 1000
+						) {
+							cacheBypassed = true;
 							utils.log(
 								'AI Auto',
-								`⚠️  Profile ${chat.profileUidOuter} not found, skipping`,
+								`🔄 New activity in ${chat.chatId} after our reply — reprocessing (cache bypass)`,
 							);
-							continue;
 						}
+					}
 
-						// Проверяем кеш: accountId_profileUid_manUid
-						const isInCache = catchUpScanner.isChatProcessed(
-							accountId,
-							profile.uid,
-							chat.manUid,
-						);
-
-						if (isInCache) {
+					if (cachedEntry && !cacheBypassed) {
 							console.log('[💾 CATCH UP FILTER] Chat in CACHE (skipping):');
 							console.log('   Chat ID:', chat.chatId);
 							console.log('   Man:', chat.manName, `(${chat.manUid})`);
@@ -609,35 +861,65 @@ const processAccountMessages = async (accountId, userId, page) => {
 								'   Cache key:',
 								`${accountId}_${profile.uid}_${chat.manUid}`,
 							);
-							utils.log(
-								'AI Auto',
-								`⏭️  Skip ${chat.chatId} (in cache for profile ${profile.uid})`,
-							);
-						} else {
-							console.log('[✅ CATCH UP FILTER] Chat READY for processing:');
-							console.log('   Chat ID:', chat.chatId);
-							console.log('   Man:', chat.manName, `(${chat.manUid})`);
-							console.log('   Profile:', profile.username, `(${profile.uid})`);
-							// Добавляем в список для обработки
-							unprocessedChats.push({
-								chat: chat,
-								profile: profile,
-							});
+					utils.log(
+						'AI Auto',
+						`⏭️  Skip ${chat.chatId} (in cache for profile ${profile.uid})`,
+					);
+					filterStats.cached++;
+					cycleLogger.logEvent(accountId, 'catchup', 'chat_filtered', {
+						chatId: chat.chatId,
+						manName: chat.manName,
+						profileName: profile.username,
+						decision: 'cached',
+						reason: 'in_cache',
+					});
+				} else {
+						console.log('[✅ CATCH UP FILTER] Chat READY for processing:');
+						console.log('   Chat ID:', chat.chatId);
+						console.log('   Man:', chat.manName, `(${chat.manUid})`);
+						console.log('   Profile:', profile.username, `(${profile.uid})`);
+						if (ownerSwitched) {
+							console.log('   Owner resolved via profile switch');
 						}
+						// Добавляем в список для обработки
+						unprocessedChats.push({
+							chat: chat,
+							profile: profile,
+						});
+						filterStats.ready++;
+						cycleLogger.logEvent(accountId, 'catchup', 'chat_filtered', {
+							chatId: chat.chatId,
+							manName: chat.manName,
+							profileName: profile.username,
+							decision: 'ready',
+							ownerSwitched,
+						});
 					}
+				}
 
-					console.log(
-						'[📊 CATCH UP FILTER] ========== FILTER RESULTS ==========',
-					);
-					console.log('[📊 CATCH UP FILTER] Total found:', catchUpChats.length);
-					console.log(
-						'[📊 CATCH UP FILTER] In cache (skipped):',
-						catchUpChats.length - unprocessedChats.length,
-					);
-					console.log(
-						'[📊 CATCH UP FILTER] Ready to process:',
-						unprocessedChats.length,
-					);
+				console.log(
+					'[📊 CATCH UP FILTER] ========== FILTER RESULTS ==========',
+				);
+				console.log('[📊 CATCH UP FILTER] Total found:', catchUpChats.length);
+				console.log('[📊 CATCH UP FILTER] Ready to process:', filterStats.ready);
+				console.log('[📊 CATCH UP FILTER] Skipped:', JSON.stringify({
+					cached: filterStats.cached,
+					blacklisted: filterStats.blacklisted,
+					excluded: filterStats.excluded,
+					profile_not_found: filterStats.profile_not_found,
+					retry_wait: filterStats.retry_wait,
+				}));
+				utils.log(
+					'AI Auto',
+					`📊 Catch Up filter: ready=${filterStats.ready}, cached=${filterStats.cached}, blacklisted=${filterStats.blacklisted}, excluded=${filterStats.excluded}, not_found=${filterStats.profile_not_found}, retry_wait=${filterStats.retry_wait}`,
+				);
+				cycleLogger.logEvent(accountId, 'catchup', 'filter_results', {
+					total: catchUpChats.length,
+					...filterStats,
+				});
+				// Полный проход выполнен — обновляем TTL-метку.
+				// Следующий заход: при смене count сразу, иначе через 5 минут.
+				lastCatchUpFullCheck.set(accountId, Date.now());
 
 					if (unprocessedChats.length > 0) {
 						utils.log(
@@ -658,6 +940,24 @@ const processAccountMessages = async (accountId, userId, page) => {
 
 						for (const item of unprocessedChats) {
 							const { chat, profile } = item;
+
+							// 🚫 Исключённая анкета — пропускаем без кеширования,
+							// чтобы после снятия исключения чат обработался
+						if (isProfileExcluded(account.user, profile.uid)) {
+							utils.log(
+								'AI Auto',
+								`🚫 Skipping Catch Up: ${chat.manName} on ${profile.username} (profile excluded)`,
+							);
+							filterStats.excluded++;
+							cycleLogger.logEvent(accountId, 'catchup', 'chat_filtered', {
+								chatId: chat.chatId,
+								manName: chat.manName,
+								profileName: profile.username,
+								decision: 'excluded',
+								reason: 'profile_excluded',
+							});
+							continue;
+						}
 
 							// � ПРОВЕРКА ЧЕРНОГО СПИСКА (Catch Up)
 							console.log(
@@ -689,11 +989,19 @@ const processAccountMessages = async (accountId, userId, page) => {
 									continue;
 								}
 
-								utils.log(
-									'AI Auto',
-									`🚫 Skipping Catch Up: ${chat.manName} on ${profile.username} (blacklisted)`,
-								);
-								continue;
+							utils.log(
+								'AI Auto',
+								`🚫 Skipping Catch Up: ${chat.manName} on ${profile.username} (blacklisted)`,
+							);
+							filterStats.blacklisted++;
+							cycleLogger.logEvent(accountId, 'catchup', 'chat_filtered', {
+								chatId: chat.chatId,
+								manName: chat.manName,
+								profileName: profile.username,
+								decision: 'blacklisted',
+								reason: 'blacklisted',
+							});
+							continue;
 							}
 
 							console.log(
@@ -746,10 +1054,18 @@ const processAccountMessages = async (accountId, userId, page) => {
 									`✅ Replied to Catch Up: ${chat.manName} on ${profile.username}`,
 								);
 
-								// ✅ ВЫХОД после первой успешной отправки
-								messageSent = true;
+							// ✅ ВЫХОД после первой успешной отправки
+							messageSent = true;
 
-								const duration = Math.round((Date.now() - startTime) / 1000);
+							const duration = Math.round((Date.now() - startTime) / 1000);
+							cycleLogger.logEvent(accountId, 'catchup', 'chat_result', {
+								chatId: chat.chatId,
+								manName: chat.manName,
+								profileName: profile.username,
+								sent: true,
+								reason: 'catch_up_sent',
+								durationSec: duration,
+							});
 								utils.log(
 									'AI Auto',
 									`✅ Finished cycle - message sent from Catch Up (${duration}s)`,
@@ -769,92 +1085,126 @@ const processAccountMessages = async (accountId, userId, page) => {
 									waitUntil: 'domcontentloaded',
 									timeout: 10000,
 								});
-								await utils.sleep(2000);
-								console.log(
-									'[🚦 NAVIGATION] ✅ Page reloaded, back to stable state',
-								);
+							await utils.sleep(2000);
+							console.log(
+								'[🚦 NAVIGATION] ✅ Page reloaded, back to stable state',
+							);
+							cycleLogger.logEvent(accountId, 'catchup', 'exit', {
+								mode: 'after_send',
+							});
 
-								return {
+							return {
 									processed: true,
 									reason: 'catch_up_sent',
 									profile: profile.username,
 									manName: chat.manName,
 								};
 							} else {
-								// ❌ НЕУДАЧА → проверяем нужно ли кешировать
-								console.log(
-									'[🚦 NAVIGATION] ⚠️ Chat NOT sent, reason:',
-									result.reason,
-								);
-
-								// Список причин для кеширования (чтобы не долбить бесконечно)
-								const shouldCacheFailure = [
-									'history_extraction_failed', // История не извлекается после 3 попыток
-									'generation_failed', // AI не может сгенерировать ответ
-									'send_failed', // Отправка не работает (заблокирован?)
-									'exception', // Критическая ошибка
-								].includes(result.reason);
-
-								if (shouldCacheFailure) {
-									console.log(
-										'[🚦 NAVIGATION] 💾 Caching FAILED chat to avoid infinite retries',
-									);
-									console.log('[🚦 NAVIGATION] Cache reason:', result.reason);
-
-									// Кешируем как обработанный (чтобы больше не пытаться)
+								// ⛔ Вечное состояние: собеседник заблокировал анкету.
+								// Повторять бессмысленно — долгий кеш + подсказка в blacklist.
+								// (Единственное исключение из "неуспех = повтор".)
+								if (result.reason === 'user_blocked') {
 									catchUpScanner.markChatAsProcessed(
 										accountId,
 										profile.uid,
 										chat.manUid,
 									);
-
 									utils.log(
 										'AI Auto',
-										`💾 Cached failed chat: ${chat.manName} (reason: ${result.reason})`,
+										`⛔ ${chat.manName} (${chat.manUid}) blocked ${profile.username} — cached, add man to blacklist to hide forever`,
 									);
+									cycleLogger.logEvent(accountId, 'catchup', 'chat_result', {
+										chatId: chat.chatId,
+										manName: chat.manName,
+										profileName: profile.username,
+										sent: false,
+										reason: 'user_blocked',
+										cached: true,
+									});
 								} else {
-									console.log(
-										'[🚦 NAVIGATION] ⏭️  NOT caching (temporary issue):',
-										result.reason,
-									);
-								}
+								// ❌ НЕУДАЧА → ОБЯЗАТЕЛЬНЫЙ повтор, а не кеш на полдня.
+								// Долгий кеш (10-16ч) только для УСПЕХА. Неудача идёт
+								// в короткий retry-кеш (5 мин, после 5 fails подряд — 1ч),
+								// иначе одно неотправленное сообщение умирает навсегда.
+								catchUpScanner.markRetryLater(accountId, chat.chatId);
+								const fails = catchUpScanner.getRetryFails(accountId, chat.chatId);
 
 								console.log(
-									'[🚦 NAVIGATION] Continuing to next Catch Up chat...',
+									'[🚦 NAVIGATION] ⚠️ Chat NOT sent, reason:',
+									result.reason,
 								);
+								console.log(
+									`[🚦 NAVIGATION] 🔁 Will retry (fail #${fails}), no long cache`,
+								);
+
+							utils.log(
+								'AI Auto',
+								`🔁 Failed chat ${chat.manName} (reason: ${result.reason}, fail #${fails}) — scheduled retry, no long cache`,
+							);
+							cycleLogger.logEvent(accountId, 'catchup', 'chat_result', {
+								chatId: chat.chatId,
+								manName: chat.manName,
+								profileName: profile.username,
+								sent: false,
+								reason: result.reason,
+								cached: false,
+								fails,
+							});
+								}
 							}
+
+							console.log(
+								'[🚦 NAVIGATION] Continuing to next Catch Up chat...',
+							);
 						}
 						
-						// 🔄 ПОСЛЕ обработки всех unprocessedChats - если НЕ отправили, reload
-						if (!messageSent) {
-							console.log('[🚦 NAVIGATION] ⚠️  No messages sent from Catch Up, exiting...');
-							console.log('[🚦 NAVIGATION] 🔄 Reloading page to exit Catch Up...');
-							await page.reload({ waitUntil: 'domcontentloaded', timeout: 10000 });
-							await utils.sleep(2000);
-							console.log('[🚦 NAVIGATION] ✅ Page reloaded, exited from Catch Up');
-						}
-					} else {
-						utils.log(
-							'AI Auto',
-							'✅ All Catch Up chats already processed (in cache)',
-						);
-
-						// 🔄 ОБНОВЛЯЕМ СТРАНИЦУ для выхода из Catch Up (все в кеше)
-						console.log('[🚦 NAVIGATION] 🔄 Reloading page to exit Catch Up (all cached)...');
+					// 🔄 ПОСЛЕ обработки всех unprocessedChats - если НЕ отправили, reload
+					if (!messageSent) {
+						console.log('[🚦 NAVIGATION] ⚠️  No messages sent from Catch Up, exiting...');
+						console.log('[🚦 NAVIGATION] 🔄 Reloading page to exit Catch Up...');
 						await page.reload({ waitUntil: 'domcontentloaded', timeout: 10000 });
 						await utils.sleep(2000);
 						console.log('[🚦 NAVIGATION] ✅ Page reloaded, exited from Catch Up');
+						cycleLogger.logEvent(accountId, 'catchup', 'exit', {
+							mode: 'no_send',
+							unprocessed: unprocessedChats.length,
+						});
 					}
 				} else {
-					utils.log('AI Auto', '📭 No chats in Catch Up (after opening)');
-				}
+					utils.log(
+						'AI Auto',
+						`✅ No Catch Up chats ready (cached=${filterStats.cached}, blacklisted=${filterStats.blacklisted}, excluded=${filterStats.excluded}, not_found=${filterStats.profile_not_found}, retry_wait=${filterStats.retry_wait})`,
+					);
+
+					// 🔄 ОБНОВЛЯЕМ СТРАНИЦУ для выхода из Catch Up (все в кеше)
+					console.log('[🚦 NAVIGATION] 🔄 Reloading page to exit Catch Up (all cached)...');
+					await page.reload({ waitUntil: 'domcontentloaded', timeout: 10000 });
+					await utils.sleep(2000);
+					console.log('[🚦 NAVIGATION] ✅ Page reloaded, exited from Catch Up');
+					cycleLogger.logEvent(accountId, 'catchup', 'exit', {
+						mode: 'all_cached',
+					});
+					}
+			} else {
+				utils.log('AI Auto', '📭 No chats in Catch Up (after opening)');
+				cycleLogger.logEvent(accountId, 'catchup', 'empty', {});
+				// Тоже считаем полным проходом — не дёргать overlay каждый тик
+				lastCatchUpFullCheck.set(accountId, Date.now());
+			}
 			}
 		}
 
 		// ===================================================================
 		// 🔔 4. ОБРАБОТКА ACTIVITY CENTER (новые уведомления)
 		// ===================================================================
-		if (!messageSent) {
+		// Мастер-выключатель раздела: OFF = скип целиком (см. aiSections)
+		if (!messageSent && !secActivityCenter) {
+			utils.log('AI Auto', `⏭️  Section activityCenter disabled — skipping`);
+			cycleLogger.logEvent(accountId, 'cycle', 'section_disabled', {
+				reason: 'section_activityCenter_disabled',
+			});
+		}
+		if (!messageSent && secActivityCenter) {
 			utils.log('AI Auto', '🔔 Checking Activity Center...');
 
 			// Проверяем есть ли непрочитанные уведомления (класс has-new)
@@ -893,11 +1243,15 @@ const processAccountMessages = async (accountId, userId, page) => {
 								'activityCenter',
 							)
 						) {
-							utils.log(
-								'AI Auto',
-								`🚫 Skipping Activity Center notification from ${notification.manName} (blacklisted)`,
-							);
-							await activityCenterScanner.closeActivityCenter(page);
+						utils.log(
+							'AI Auto',
+							`🚫 Skipping Activity Center notification from ${notification.manName} (blacklisted)`,
+						);
+						await activityCenterScanner.closeActivityCenter(page);
+						cycleLogger.logEvent(accountId, 'activity_center', 'skipped', {
+							manName: notification.manName,
+							reason: 'activity_center_blacklisted',
+						});
 							return {
 								processed: false,
 								reason: 'activity_center_blacklisted',
@@ -915,7 +1269,27 @@ const processAccountMessages = async (accountId, userId, page) => {
 					if (!activeProfile) {
 						utils.log('AI Auto', '❌ No active profile for Activity Center');
 						await activityCenterScanner.closeActivityCenter(page);
+						cycleLogger.logEvent(accountId, 'activity_center', 'skipped', {
+							reason: 'no_active_profile',
+						});
 						return { processed: false, reason: 'no_active_profile' };
+					}
+
+					// 🚫 Активный профиль исключён — уведомление игнорируем
+					if (isProfileExcluded(account.user, activeProfile.uid)) {
+					utils.log(
+						'AI Auto',
+						`🚫 Skipping Activity Center notification from ${notification.manName} (profile ${activeProfile.username} excluded)`,
+					);
+					await activityCenterScanner.closeActivityCenter(page);
+					cycleLogger.logEvent(accountId, 'activity_center', 'skipped', {
+						manName: notification.manName,
+						reason: 'activity_center_profile_excluded',
+					});
+						return {
+							processed: false,
+							reason: 'activity_center_profile_excluded',
+						};
 					}
 
 						// ✅ Кликаем на уведомление → чат откроется автоматически
@@ -925,36 +1299,121 @@ const processAccountMessages = async (accountId, userId, page) => {
 							activeProfile.uid,
 						);
 
-						if (!clickResult || !clickResult.success) {
-							utils.log(
-								'AI Auto',
-								`❌ Could not open chat with ${notification.manName}`,
-							);
-							await activityCenterScanner.closeActivityCenter(page);
+					if (!clickResult || !clickResult.success) {
+						utils.log(
+							'AI Auto',
+							`❌ Could not open chat with ${notification.manName}`,
+						);
+						await activityCenterScanner.closeActivityCenter(page);
+						cycleLogger.logEvent(accountId, 'activity_center', 'skipped', {
+							manName: notification.manName,
+							reason: 'chat_not_opened',
+						});
 							return { processed: false, reason: 'chat_not_opened' };
 						}
 
-						utils.log('AI Auto', `✅ Chat opened: ${clickResult.chatId}`);
+					utils.log('AI Auto', `✅ Chat opened: ${clickResult.chatId}`);
 
-						// ✅ Генерируем и отправляем сообщение через aiResponseService
-						utils.log('AI Auto', '🤖 Generating and sending first message...');
+					// 🔍 Проверка владельца чата: чат должен принадлежать активной анкете.
+					// Клик мог открыть чат ДРУГОЙ анкеты аккаунта (ownerUid ∉ allUids) —
+					// отправка с активной анкеты тогда невозможна по построению
+					// (selectChat не найдёт чужой чат → 3 ретрая → exception).
+					// Поэтому либо переключаемся на владельца, либо честно скипаем
+					// БЕЗ генерации (не тратим токены впустую).
+					let targetProfile = activeProfile;
+					// Владелец = часть chatId, НЕ равная userUid мужчины
+					// (порядок частей не фиксирован: profile_man и man_profile).
+					// userUid из уведомления авторитетен (data-user-uid).
+					const chatParts = clickResult.chatId.split('_');
+					const chatOwnerUid =
+						chatParts.find(p => p !== String(notification.userUid)) ||
+						chatParts[0];
+					const ownerMatches = activeProfile.allUids
+						? activeProfile.allUids.map(String).includes(String(chatOwnerUid))
+						: String(activeProfile.uid) === String(chatOwnerUid);
+
+					if (!ownerMatches) {
+						utils.log(
+							'AI Auto',
+							`⚠️  Chat ${clickResult.chatId} belongs to another profile (active: ${activeProfile.username})`,
+						);
+						cycleLogger.logEvent(accountId, 'activity_center', 'owner_mismatch', {
+							chatId: clickResult.chatId,
+							manName: notification.manName,
+							activeProfileName: activeProfile.username,
+							chatOwnerUid,
+						});
+
+						// Пробуем резолвить владельца (как в Catch Up) и переключиться
+						const ownerBudget = { count: 0 };
+						const ownerProfile =
+							(await utils.getProfileByUid(page, chatOwnerUid)) ||
+							(await catchUpScanner.resolveOwnerProfile(
+								page,
+								accountId,
+								chatOwnerUid,
+								{ switchesUsed: ownerBudget, maxSwitches: 3 },
+							));
+
+						if (
+							ownerProfile &&
+							!isProfileExcluded(account.user, ownerProfile.uid)
+						) {
+							const switched = await utils.switchToProfile(
+								page,
+								accountId,
+								ownerProfile.uid,
+							);
+							if (switched) {
+								targetProfile = ownerProfile;
+								utils.log(
+									'AI Auto',
+									`✅ Switched to chat owner ${ownerProfile.username} (${ownerProfile.uid})`,
+								);
+								cycleLogger.logEvent(accountId, 'activity_center', 'owner_switched', {
+									chatId: clickResult.chatId,
+									manName: notification.manName,
+									profileName: ownerProfile.username,
+								});
+							}
+						}
+
+						if (targetProfile === activeProfile) {
+							// Владелец не найден — генерация бессмысленна, скип
+							utils.log(
+								'AI Auto',
+								`⏭️  Chat owner ${chatOwnerUid} not resolved, skipping (no wasted generation)`,
+							);
+							await activityCenterScanner.closeActivityCenter(page);
+							cycleLogger.logEvent(accountId, 'activity_center', 'skipped', {
+								chatId: clickResult.chatId,
+								manName: notification.manName,
+								reason: 'foreign_profile_unresolved',
+							});
+							return { processed: false, reason: 'foreign_profile_unresolved' };
+						}
+					}
+
+					// ✅ Генерируем и отправляем сообщение через aiResponseService
+					utils.log('AI Auto', '🤖 Generating and sending first message...');
 
 						try {
 							// Используем aiResponseService.generateAndSend напрямую
-							const aiResponse = await aiResponseService.generateAndSend({
-								userId,
-								accountId,
-								profileUid: activeProfile.uid,
-								chatId: clickResult.chatId,
-								profile: {
-									username: activeProfile.username,
-									age: activeProfile.age,
-									country: activeProfile.country,
-									city: activeProfile.city,
-								},
-								manMessage: '', // Для Activity Center нет сообщения от мужчины
-								formattedHistory: '', // Нет истории
-								profileName: activeProfile.username,
+						const aiResponse = await aiResponseService.generateAndSend({
+							userId,
+							accountId,
+							profileUid: targetProfile.uid,
+							chatId: clickResult.chatId,
+							profile: {
+								uid: targetProfile.uid,
+								username: targetProfile.username,
+								age: targetProfile.age,
+								country: targetProfile.country,
+								city: targetProfile.city,
+							},
+							manMessage: '', // Для Activity Center нет сообщения от мужчины
+							formattedHistory: '', // Нет истории
+							profileName: targetProfile.username,
 								manName: notification.manName,
 								typeInstructions: '', // Пустые инструкции - используется кастомная логика
 								messageType: 'activity_center', // Специальный тип
@@ -991,18 +1450,31 @@ const processAccountMessages = async (accountId, userId, page) => {
 								});
 								await utils.sleep(2000);
 
-								const elapsed = Date.now() - startTime;
-								utils.log(
-									'AI Auto',
-									`✅ Finished cycle - message sent from Activity Center (${Math.round(elapsed / 1000)}s)`,
-								);
-								return { processed: true, reason: 'activity_center' };
-							} else {
-								utils.log(
-									'AI Auto',
-									`❌ Failed to send message to ${notification.manName}`,
-								);
-							}
+							const elapsed = Date.now() - startTime;
+							utils.log(
+								'AI Auto',
+								`✅ Finished cycle - message sent from Activity Center (${Math.round(elapsed / 1000)}s)`,
+							);
+							cycleLogger.logEvent(accountId, 'cycle', 'finished', {
+								processed: true,
+								reason: 'activity_center',
+								durationSec: Math.round(elapsed / 1000),
+								chatId: clickResult.chatId,
+								manName: notification.manName,
+								sent: true,
+							});
+							return { processed: true, reason: 'activity_center' };
+						} else {
+							utils.log(
+								'AI Auto',
+								`❌ Failed to send message to ${notification.manName}`,
+							);
+							cycleLogger.logEvent(accountId, 'activity_center', 'failed', {
+								manName: notification.manName,
+								reason: 'send_failed',
+								sent: false,
+							});
+						}
 						} catch (aiError) {
 							utils.logError(
 								'AI Auto',
@@ -1031,10 +1503,20 @@ const processAccountMessages = async (accountId, userId, page) => {
 				'AI Auto',
 				`✅ Finished cycle - no messages sent (${duration}s)`,
 			);
+			cycleLogger.logEvent(accountId, 'cycle', 'finished', {
+				processed: false,
+				reason: 'no_messages_to_send',
+				durationSec: duration,
+			});
 			return { processed: false, reason: 'no_messages_to_send' };
 		}
 	} catch (error) {
 		utils.logError('AI Auto', 'Error in processAccountMessages:', error);
+		cycleLogger.logEvent(accountId, 'cycle', 'exception', {
+			reason: 'exception',
+			error: error.message,
+			sent: false,
+		});
 		return { processed: false, reason: 'exception', error: error.message };
 	} finally {
 		// ========== РАЗБЛОКИРОВАТЬ АККАУНТ ==========
@@ -1083,9 +1565,19 @@ const getLockedAccountsCount = () => {
 	return processingLocks.size;
 };
 
+/**
+ * Последнее известное значение Catch Up счётчика (для диагностики)
+ */
+const getLastCatchUpCount = accountId => {
+	return lastCatchUpCounts.has(accountId)
+		? lastCatchUpCounts.get(accountId)
+		: null;
+};
+
 export default {
 	processAccountMessages,
 	getAccountLockStatus,
+	getLastCatchUpCount,
 	forceUnlock,
 	getLockedAccountsCount,
 };

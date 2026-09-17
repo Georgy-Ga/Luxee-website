@@ -1,22 +1,25 @@
 // Модуль для работы с AI API
 
 import axios from 'axios';
-import { AI_API_KEY, AI_API_URL, AI_MODEL } from './config.js';
+import { AI_API_KEY, AI_API_URL, AI_MODEL, AI_PROVIDER } from './config.js';
 
 /**
  * Отправить запрос к AI API
+ * Активный провайдер выбирается в config.js (AI_PROVIDER=nvidia|deepseek).
+ * DeepSeek-код сохранён: возврат — одной переменной окружения.
  */
 export const sendAIRequest = async (messages, retryCount = 0) => {
 	try {
 		console.log('');
-		console.log('🤖 [AI DEBUG] ===== SENDING REQUEST TO DEEPSEEK API =====');
+		console.log('🤖 [AI DEBUG] ===== SENDING REQUEST TO AI API =====');
 		console.log(`  🔄 Attempt: ${retryCount + 1}`);
+		console.log('  🔌 Provider:', AI_PROVIDER);
 		console.log('  🌐 API URL:', AI_API_URL);
 		console.log('  🎯 Model:', AI_MODEL);
 		console.log('  📨 Messages count:', messages.length);
 		console.log('  ⚙️ Parameters:');
-		console.log('    - Temperature: 1.1 (high creativity & variation)');
-		console.log('    - Max tokens: 800 (safety buffer)');
+		console.log('    - Temperature: 0.9 (varied but coherent)');
+		console.log('    - Max tokens: 250 (replies are 20-100 tokens, no need for 800)');
 		console.log('    - Top P: 0.95 (more diverse)');
 		console.log('    - Frequency penalty: 0.7 (avoid repetition)');
 		console.log('    - Presence penalty: 0.6 (encourage new topics)');
@@ -25,16 +28,27 @@ export const sendAIRequest = async (messages, retryCount = 0) => {
 		const requestBody = {
 			model: AI_MODEL,
 			messages: messages,
-			temperature: 1.1, // Увеличено с 0.8 → больше разнообразия и непредсказуемости
-			max_tokens: 800, // Запас для сложных промптов, реальные ответы 20-100 токенов
+			temperature: 0.9, // Было 1.1: длинные/разнообразные completions против ТЗ 1-3 sentences; 0.9 держит вариативность короче
+			max_tokens: 250, // Было 800: реальные ответы 20-100 токенов; потолок не тратится, но режет риск длинных простыней
 			top_p: 0.95, // Увеличено с 0.9 → менее предсказуемые ответы
 			frequency_penalty: 0.7, // НОВОЕ! Штрафует за повторение одних и тех же токенов
 			presence_penalty: 0.6, // НОВОЕ! Поощряет использование новых тем и слов
 		};
 
+		// Только NVIDIA: reasoning обязан быть выключен.
+		// Проверено вживую: с enable_thinking=true процесс мышления вываливается
+		// в видимый текст и съедает весь max_tokens. DeepSeek этот параметр не знает — не слать.
+		if (AI_PROVIDER === 'nvidia') {
+			requestBody.chat_template_kwargs = { enable_thinking: false };
+		}
 
-		console.log('  📦 Full request body:');
-		console.log(JSON.stringify(requestBody, null, 2));
+		// НЕ дампим всё тело запроса: system ~4К + история в КАЖДОМ чате раздували логи на десятки КБ и светили PII.
+		// Для диагностики достаточно размеров.
+		const promptChars = messages.reduce(
+			(sum, m) => sum + (m.content?.length || 0),
+			0,
+		);
+		console.log(`  📦 Request summary: ${messages.length} messages, ~${promptChars} chars (full body NOT logged)`);
 		console.log('  ⏳ Sending request...');
 
 		const startTime = Date.now();
@@ -53,11 +67,11 @@ export const sendAIRequest = async (messages, retryCount = 0) => {
 
 		const aiResponse = response.data.choices[0].message.content.trim();
 
-		// ⚠️ Проверка на пустой ответ (может быть из-за content filter DeepSeek)
+		// ⚠️ Проверка на пустой ответ (может быть из-за content filter провайдера)
 		if (!aiResponse || aiResponse.length === 0) {
 			console.log('');
 			console.error('❌ [AI DEBUG] ===== EMPTY RESPONSE FROM AI =====');
-			console.error('  🚨 DeepSeek returned empty response!');
+			console.error(`  🚨 ${AI_PROVIDER} returned empty response!`);
 			console.error('  💡 Likely reason: Content filter blocked the response');
 			console.error('  🔄 Attempt:', retryCount + 1);
 			console.error(
@@ -73,7 +87,7 @@ export const sendAIRequest = async (messages, retryCount = 0) => {
 
 			// Создаём специальную ошибку с информацией о фильтре
 			const error = new Error(
-				'Empty response from DeepSeek AI - likely content filter',
+				`Empty response from AI (${AI_PROVIDER}) - likely content filter`,
 			);
 			error.isContentFilter = true;
 			error.usage = response.data.usage;
@@ -102,7 +116,8 @@ export const sendAIRequest = async (messages, retryCount = 0) => {
 		return aiResponse;
 	} catch (error) {
 		console.log('');
-		console.error('❌ [AI DEBUG] ===== ERROR CALLING DEEPSEEK API =====');
+		console.error('❌ [AI DEBUG] ===== ERROR CALLING AI API =====');
+		console.error(`  🔌 Provider: ${AI_PROVIDER}`);
 		console.error('  🚨 Error message:', error.message);
 
 		// Логируем детали ошибки от API

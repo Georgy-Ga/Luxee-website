@@ -98,3 +98,60 @@ export const toggleAllMyAccountsAi = async (req, res) => {
 		res.status(500).json({ success: false, error: error.message });
 	}
 };
+
+const DEFAULT_SECTIONS = {
+	newMessages: true,
+	catchUp: true,
+	activityCenter: true,
+};
+
+const readSections = account => ({
+	...DEFAULT_SECTIONS,
+	...(account.aiSections?.toObject?.() || account.aiSections || {}),
+});
+
+export const getAccountSections = async (req, res) => {
+	try {
+		const { accountId } = req.params;
+		const LuxeeAccount = (await import('../../models/LuxeeAccountModel.js')).default;
+		const account = await LuxeeAccount.findById(accountId);
+		if (!account) {
+			return res.status(404).json({ success: false, error: 'Account not found' });
+		}
+		res.json({ success: true, sections: readSections(account) });
+	} catch (error) {
+		console.error('[AI Management Controller] Error getting account sections:', error);
+		res.status(500).json({ success: false, error: error.message });
+	}
+};
+
+export const updateAccountSections = async (req, res) => {
+	try {
+		const { accountId } = req.params;
+		const { sections } = req.body;
+		const LuxeeAccount = (await import('../../models/LuxeeAccountModel.js')).default;
+		const account = await LuxeeAccount.findById(accountId);
+		if (!account) {
+			return res.status(404).json({ success: false, error: 'Account not found' });
+		}
+		const current = readSections(account);
+		account.aiSections = {
+			newMessages:
+				sections?.newMessages !== undefined
+					? !!sections.newMessages
+					: current.newMessages,
+			catchUp:
+				sections?.catchUp !== undefined ? !!sections.catchUp : current.catchUp,
+			activityCenter:
+				sections?.activityCenter !== undefined
+					? !!sections.activityCenter
+					: current.activityCenter,
+		};
+		await account.save();
+		console.log(`[AI Management Controller] ✅ Sections updated for account ${accountId}:`, account.aiSections.toObject?.() || account.aiSections);
+		res.json({ success: true, sections: readSections(account) });
+	} catch (error) {
+		console.error('[AI Management Controller] Error updating account sections:', error);
+		res.status(500).json({ success: false, error: error.message });
+	}
+};

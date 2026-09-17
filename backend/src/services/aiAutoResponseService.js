@@ -10,6 +10,7 @@ const AI_AUTO_RESPONSE_GLOBALLY_DISABLED = false;
 
 import LuxeeAccountModel from '../models/LuxeeAccountModel.js';
 import aiAuto from './aiAuto/index.js';
+import cycleLogger from './aiAuto/cycleLogger.js';
 import aiManagementService from './aiManagementService/index.js';
 import aiResponseService from './aiResponseService.js';
 import answeredChatService from './answeredChatService.js';
@@ -997,6 +998,9 @@ const aiAutoResponseService = {
 			console.log(
 				`🛑 [AI Auto] GLOBALLY DISABLED - skipping message processing for account ${accountId}`,
 			);
+			cycleLogger.logEvent(accountId, 'precheck', 'skipped', {
+				reason: 'globally_disabled',
+			});
 			return;
 		}
 
@@ -1027,23 +1031,29 @@ const aiAutoResponseService = {
 				userId,
 				accountId,
 			);
-			if (!canUse) {
-				console.log(
-					`[AI Auto] AI disabled for account ${accountEmail}, stopping...`,
-				);
-				await aiAutoResponseService.stop(accountId);
-				return;
-			}
+		if (!canUse) {
+			console.log(
+				`[AI Auto] AI disabled for account ${accountEmail}, stopping...`,
+			);
+			cycleLogger.logEvent(accountId, 'precheck', 'skipped', {
+				reason: 'ai_disabled',
+			});
+			await aiAutoResponseService.stop(accountId);
+			return;
+		}
 
 			// Получить AI контекст
 			const aiContext = await aiBrowserContextService.getAiContext(accountId);
-			if (!aiContext) {
-				console.log(
-					`[AI Auto] No AI context for ${accountEmail}, recreating...`,
-				);
-				await aiBrowserContextService.getOrCreateAiContext(accountId);
-				return;
-			}
+		if (!aiContext) {
+			console.log(
+				`[AI Auto] No AI context for ${accountEmail}, recreating...`,
+			);
+			cycleLogger.logEvent(accountId, 'precheck', 'skipped', {
+				reason: 'no_ai_context',
+			});
+			await aiBrowserContextService.getOrCreateAiContext(accountId);
+			return;
+		}
 
 			const page = await pageHelpers.getOrCreatePage(aiContext);
 

@@ -287,6 +287,11 @@ const formatHistoryForAI = (messages, profileName, manName) => {
 		return '';
 	}
 
+	// Бюджет истории: длинные сообщения режем, итог держим ~1500 символов.
+	// Зачем: 10 длинных сообщений давали +2-4К chars (~500-1000 токенов) сверх system при ответе 20-100.
+	const MAX_MSG_CHARS = 300;
+	const MAX_TOTAL_CHARS = 1500;
+
 	let formatted = '=== CONVERSATION HISTORY (recent messages) ===\n\n';
 
 	messages.forEach(msg => {
@@ -295,11 +300,19 @@ const formatHistoryForAI = (messages, profileName, manName) => {
 			msg.messageType !== 'text' && msg.messageType !== 'text_with_emoji'
 				? ` [${msg.messageType.toUpperCase()}]`
 				: '';
+		const text = String(msg.text || '').slice(0, MAX_MSG_CHARS);
 
-		formatted += `[${msg.date} ${msg.time}] ${authorName}${typeLabel}: ${msg.text}\n`;
+		formatted += `[${msg.date} ${msg.time}] ${authorName}${typeLabel}: ${text}\n`;
 	});
 
 	formatted += '\n=== END OF HISTORY ===\n';
+
+	if (formatted.length > MAX_TOTAL_CHARS + 100) {
+		formatted =
+			'=== CONVERSATION HISTORY (recent, earlier trimmed) ===\n\n' +
+			formatted.slice(-MAX_TOTAL_CHARS) +
+			'\n=== END OF HISTORY ===\n';
+	}
 
 	return formatted;
 };

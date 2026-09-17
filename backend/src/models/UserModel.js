@@ -7,6 +7,12 @@ const UserSchema = new Schema({
 	role: {type: String, enum: ['user', 'admin'], default: 'user'},
 	aiEnabled: {type: Boolean, default: false}, // Может ли пользователь использовать AI (сам выключает)
 	aiEnabledByAdmin: {type: Boolean, default: false}, // Разрешил ли админ использовать AI (по умолчанию выключено)
+
+	// Исключённые анкеты (женские профили Luxee) — ИИ полностью их игнорирует:
+	// newMessages/unanswered, Catch Up, Activity Center. Храним inner UID профилей
+	// строкой. Применяется "на горячую" — читается свежим из БД в каждом цикле AI.
+	// Сироты (удалённые аккаунты/анкеты) безвредны: просто ни с чем не матчатся.
+	aiExcludedProfileUids: {type: [String], default: []},
 	
 	// AI Schedule - интервалы работы/отдыха на уровне пользователя
 	aiSchedule: {

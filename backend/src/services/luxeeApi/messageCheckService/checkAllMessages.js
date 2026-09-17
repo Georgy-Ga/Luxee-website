@@ -3,7 +3,6 @@ import LuxeeAccountModel from '../../../models/LuxeeAccountModel.js';
 import UserModel from '../../../models/UserModel.js';
 import browserService from '../../browser/browserService.js';
 import pageHelpers from '../../browser/pageHelpers.js';
-import profileActivationService from '../profileActivationService.js';
 import { extractAllProfilesData } from './profileDataExtractor.js';
 import messageCheckIntervalService from '../messageCheckIntervalService.js';
 
@@ -62,14 +61,25 @@ export const checkAllMessages = async ({ userId }) => {
 					continue;
 				}
 
-				// Получаем страницу
-				const page = await pageHelpers.getOrCreatePage(context);
+			// Получаем страницу
+			const page = await pageHelpers.getOrCreatePage(context);
 
-				// ✅ АКТИВИРУЕМ ПЕРВЫЙ ПРОФИЛЬ (если ещё не активирован)
-				await profileActivationService.activateFirstProfile({ page });
+			// 🛡️ Страница обязана быть на luxee.io с загруженным modelsChat.
+			// ВАЖНО: НЕ переключаем/активируем профили отсюда — активная анкета
+			// общая для всех контекстов аккаунта, и чужой switch роняет
+			// верификацию AI-цикла ("expected X, got Y"). Только чтение.
+			const { default: chatNavigationService } = await import(
+				'../chatNavigationService.js'
+			);
+			const modelsReady = await chatNavigationService.ensureModelsChatReady({
+				page,
+			});
+			if (!modelsReady) {
+				throw new Error('modelsChat API not available (page not ready)');
+			}
 
-				// ✅ ЧИТАЕМ API БЕЗ ПЕРЕКЛЮЧЕНИЯ ПРОФИЛЕЙ
-				const result = await page.evaluate(extractAllProfilesData);
+			// ✅ ЧИТАЕМ API БЕЗ ПЕРЕКЛЮЧЕНИЯ ПРОФИЛЕЙ
+			const result = await page.evaluate(extractAllProfilesData);
 				const profilesData = result.profiles;
 
 				// Подсчитываем статистику

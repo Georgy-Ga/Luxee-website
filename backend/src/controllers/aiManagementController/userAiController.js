@@ -1,6 +1,8 @@
 // Контроллер управления AI для пользователей
 
 import aiManagementService from '../../services/aiManagementService/index.js';
+import User from '../../models/UserModel.js';
+import { sanitizeExcludedList } from '../../services/aiAuto/excludedProfilesService.js';
 
 export const getUserAiStatus = async (req, res) => {
 	try {
@@ -52,6 +54,9 @@ export const getAllUsersAiStatus = async (req, res) => {
 				role: user.role,
 				aiEnabled: user.aiEnabled,
 				aiEnabledByAdmin: user.aiEnabledByAdmin,
+				excludedProfilesCount: Array.isArray(user.aiExcludedProfileUids)
+					? user.aiExcludedProfileUids.length
+					: 0,
 				accounts: userAccounts.map(acc => ({
 					_id: acc._id,
 					luxeeEmail: acc.luxeeEmail,
@@ -114,6 +119,55 @@ export const setAllUserAccountsAiByAdmin = async (req, res) => {
 		res.json({ success: true, message: 'All user accounts AI status updated by admin' });
 	} catch (error) {
 		console.error('[AI Management Controller] Error setting all user accounts AI by admin:', error);
+		res.status(500).json({ success: false, error: error.message });
+	}
+};
+
+// ===== Исключённые анкеты (aiExcludedProfileUids) =====
+
+// Получить список исключённых анкет пользователя (только админ)
+export const getExcludedProfiles = async (req, res) => {
+	try {
+		const { userId } = req.params;
+		const user = await User.findById(userId).select('aiExcludedProfileUids').lean();
+		if (!user) {
+			return res.status(404).json({ success: false, error: 'User not found' });
+		}
+		res.json({
+			success: true,
+			excludedProfileUids: Array.isArray(user.aiExcludedProfileUids)
+				? user.aiExcludedProfileUids
+				: [],
+		});
+	} catch (error) {
+		console.error('[AI Management Controller] Error getting excluded profiles:', error);
+		res.status(500).json({ success: false, error: error.message });
+	}
+};
+
+// Обновить список исключённых анкет пользователя (только админ).
+// Применяется "на горячую": AI читает список свежим из БД каждый цикл,
+// перезапуск ИИ не требуется. Удаление Luxee-аккаунта безопасно —
+// сироты в списке просто ни с чем не матчатся и чистятся из UI.
+export const updateExcludedProfiles = async (req, res) => {
+	try {
+		const { userId } = req.params;
+		const excludedProfileUids = sanitizeExcludedList(req.body?.excludedProfileUids);
+		const user = await User.findByIdAndUpdate(
+			userId,
+			{ $set: { aiExcludedProfileUids: excludedProfileUids } },
+			{ new: true, runValidators: true },
+		).select('aiExcludedProfileUids').lean();
+		if (!user) {
+			return res.status(404).json({ success: false, error: 'User not found' });
+		}
+		res.json({
+			success: true,
+			message: 'Excluded profiles updated (applies live, no AI restart needed)',
+			excludedProfileUids: user.aiExcludedProfileUids || [],
+		});
+	} catch (error) {
+		console.error('[AI Management Controller] Error updating excluded profiles:', error);
 		res.status(500).json({ success: false, error: error.message });
 	}
 };

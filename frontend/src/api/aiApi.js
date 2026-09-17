@@ -137,4 +137,47 @@ export const aiApi = {
 		const response = await api.post('/ai/my-accounts/toggle-all');
 		return response.data;
 	},
+
+	/**
+	 * Получить исключённые анкеты пользователя (только админ)
+	 * @param {string} userId
+	 * @returns {{ success: boolean, excludedProfileUids: string[] }}
+	 */
+	getExcludedProfiles: async (userId) => {
+		const response = await api.get(`/ai/users/${userId}/excluded-profiles`);
+		return response.data;
+	},
+
+	/**
+	 * Обновить исключённые анкеты пользователя (только админ).
+	 * Применяется "на горячую" — перезапуск ИИ не нужен.
+	 * @param {string} userId
+	 * @param {Array<string|number>} excludedProfileUids - inner UID анкет
+	 */
+	updateExcludedProfiles: async (userId, excludedProfileUids) => {
+		const response = await api.put(`/ai/users/${userId}/excluded-profiles`, { excludedProfileUids });
+		return response.data;
+	},
+
+	/**
+	 * Получить мастер-выключатели разделов AI аккаунта (только админ).
+	 * @param {string} accountId
+	 * @returns {{ success: boolean, sections: { newMessages, catchUp, activityCenter } }}
+	 */
+	getAccountSections: async (accountId) => {
+		const response = await api.get(`/ai/accounts/${accountId}/sections`);
+		return response.data;
+	},
+
+	/**
+	 * Обновить мастер-выключатели разделов AI аккаунта (только админ).
+	 * OFF = раздел полностью пропускается циклом (в отличие от черного
+	 * списка, который фильтрует только конкретных мужчин).
+	 * @param {string} accountId
+	 * @param {Object} sections - { newMessages, catchUp, activityCenter }
+	 */
+	updateAccountSections: async (accountId, sections) => {
+		const response = await api.put(`/ai/accounts/${accountId}/sections`, { sections });
+		return response.data;
+	},
 };

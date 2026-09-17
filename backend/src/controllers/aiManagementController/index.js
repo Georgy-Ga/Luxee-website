@@ -23,6 +23,8 @@ const aiManagementController = {
 	toggleMyAi: userAiController.toggleMyAi,
 	setUserAiByAdmin: userAiController.setUserAiByAdmin,
 	setAllUserAccountsAiByAdmin: userAiController.setAllUserAccountsAiByAdmin,
+	getExcludedProfiles: userAiController.getExcludedProfiles,
+	updateExcludedProfiles: userAiController.updateExcludedProfiles,
 
 	// Управление AI для аккаунтов
 	getAccountAiStatus: accountAiController.getAccountAiStatus,
@@ -34,6 +36,8 @@ const aiManagementController = {
 	setAccountAiByAdmin: accountAiController.setAccountAiByAdmin,
 	toggleMyAccountAi: accountAiController.toggleMyAccountAi,
 	toggleAllMyAccountsAi: accountAiController.toggleAllMyAccountsAi,
+	getAccountSections: accountAiController.getAccountSections,
+	updateAccountSections: accountAiController.updateAccountSections,
 };
 
 export default aiManagementController;

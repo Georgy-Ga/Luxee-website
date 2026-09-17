@@ -80,18 +80,21 @@ const getAllChatsForProfile = async (page, allUids) => {
 				scannedCount++;
 				const chat = chatsList[chatId];
 
-				// Проверка что чат принадлежит этому профилю
-				// chatId формат: "outerUid_manUid"
-				const [chatProfileUid, manUid] = chatId.split('_');
-				
-				// Проверяем что chatProfileUid есть в любом из UIDs профиля
-				const belongs = uids.includes(parseInt(chatProfileUid));
+				// Проверка что чат принадлежит этому профилю.
+				// Порядок частей chatId НЕ фиксирован: бывает profileOuter_manUid
+				// и manUid_profileOuter — поэтому проверяем ОБЕ части.
+				// (Иначе чаты вида man_profile молча выпадают из скана своей анкеты.)
+				const [partA, partB] = chatId.split('_');
+				const belongs =
+					uids.includes(parseInt(partA)) || uids.includes(parseInt(partB));
+				const ownerPart = uids.includes(parseInt(partA)) ? partA : partB;
 				
 				if (belongs) {
 					belongsToProfile++;
 					console.log(`[🔍 SCAN] Chat ${chatId}:`, {
-						profileUid: chatProfileUid,
-						manUid: manUid,
+						ownerPart: ownerPart,
+						partA: partA,
+						partB: partB,
 						unAnswered: chat.unAnswered,
 						lastActivity: chat.lastActivity,
 						membersCount: chat.members?.length,
@@ -136,8 +139,10 @@ const getAllChatsForProfile = async (page, allUids) => {
 					console.log(`[🔍 SCAN] ⚠️  Chat ${chatId}: No message[] array - taking chat (fallback)`);
 				}
 
-				// Найти мужчину через members.gender = 1
-				const manMember = chat.members?.find(m => m.gender === 1);
+				// Найти мужчину через members (type 10 приоритет, gender fallback)
+				const manMember =
+					chat.members?.find(m => m.type === 10) ||
+					chat.members?.find(m => m.gender === 1);
 
 				console.log(`[🔍 SCAN] ✅ UNANSWERED Chat ${chatId}:`, {
 					manMember: manMember ? {

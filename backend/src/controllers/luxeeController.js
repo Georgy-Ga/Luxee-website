@@ -104,6 +104,7 @@ const LuxeeController = {
 			const result = await luxeeScraperService.getProfiles({ 
 				userId, 
 				accountId,
+				isAdmin: req.user?.role === 'admin',
 			});
 			
 			return res.json(result);

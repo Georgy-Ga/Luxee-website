@@ -25,6 +25,16 @@ const LuxeeAccountSchema = new Schema({
 			catchUp: { type: Boolean, default: false }, // Игнорировать в Catch Up
 			activityCenter: { type: Boolean, default: false } // Игнорировать в Activity Center
 		}
+	},
+
+	// Мастер-выключатели разделов AI-цикла (OFF = раздел полностью пропускается).
+	// Отличается от blacklist.categories: там фильтр по конкретным мужчинам,
+	// здесь — вкл/выкл всего раздела. Дефолт true (старые документы без поля
+	// трактуются как включённые — см. проверки `!== false` в aiAuto/index.js).
+	aiSections: {
+		newMessages: { type: Boolean, default: true }, // Обычные чаты (активная + другие анкеты)
+		catchUp: { type: Boolean, default: true }, // Резервная ветка Catch Up
+		activityCenter: { type: Boolean, default: true } // Уведомления (лайки/избранное)
 	}
 });
 

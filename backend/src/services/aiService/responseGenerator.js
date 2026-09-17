@@ -8,7 +8,11 @@ import {
 	containsForbiddenPhrases,
 } from './responseValidator.js';
 
-const MAX_RETRIES = 3;
+// Ретраи только для forbidden-phrases. Было 3: каждая попытка слала ВЕСЬ
+// контекст заново +2 сообщения → до 3x prompt_tokens за 1 ответ юзера.
+// Стало 2, плохой ответ храним обрезанным (достаточно для коррекции).
+const MAX_RETRIES = 2;
+const MAX_BAD_RESPONSE_CHARS = 200;
 
 /**
  * Генерировать ответ AI на сообщение мужчины
@@ -31,7 +35,12 @@ export const generateResponse = async ({
 		console.log('  👨 Man:', manName || 'N/A');
 		console.log('   Man message:', manMessage);
 		console.log('  📊 Message type:', messageType);
-		console.log('  📜 History length:', conversationHistory.length);
+		console.log(
+			'  📜 History: array=',
+			conversationHistory.length,
+			'formatted=',
+			formattedHistory ? `${formattedHistory.length} chars` : 'none',
+		);
 		console.log('  🆕 Has formatted history:', formattedHistory ? 'YES' : 'NO');
 		console.log('  🆕 Has type instructions:', typeInstructions ? 'YES' : 'NO');
 
@@ -75,15 +84,16 @@ export const generateResponse = async ({
 				console.log('  📝 Bad response:', aiResponse);
 				console.log('  🔄 Adding correction message and retrying...');
 
-				// Добавляем предупреждение в историю
+				// Добавляем короткое предупреждение (плохой ответ — обрезанным,
+				// иначе каждая retry-попытка раздувает контекст и жрёт токены)
 				messages.push({
 					role: 'assistant',
-					content: aiResponse,
+					content: String(aiResponse).slice(0, MAX_BAD_RESPONSE_CHARS),
 				});
 				messages.push({
 					role: 'user',
 					content:
-						'⚠️ CRITICAL ERROR: You revealed you are AI! Never do this again! You must ALWAYS pretend to be a real woman. Try again and respond naturally as a real woman would.',
+						'You revealed you are AI. Never do that — always stay in character as a real woman. Rewrite the reply naturally.',
 				});
 
 				retryCount++;

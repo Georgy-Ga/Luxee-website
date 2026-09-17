@@ -56,6 +56,39 @@ const chatNavigationService = {
 		const url = page.url();
 		return url.includes('/chats/');
 	},
+
+	// Убедиться что страница на luxee.io и modelsChat загружен.
+	// Лечит класс ошибок 'modelsChat API not available' (страница на
+	// about:blank / упавший контекст / недогруженный SPA).
+	// Возвращает true если API готов, иначе false (кидать нечего — вызывающий решает).
+	ensureModelsChatReady: async ({ page, timeoutMs = 15000 }) => {
+		try {
+			const currentUrl = page.url();
+			if (currentUrl === 'about:blank' || !currentUrl.includes('luxee.io')) {
+				console.log(`[Chat Navigation] Page at ${currentUrl}, navigating to chats...`);
+				await chatNavigationService.navigateToChats({ page });
+			}
+
+			const deadline = Date.now() + timeoutMs;
+			while (Date.now() < deadline) {
+				const ready = await page
+					.evaluate(
+						() =>
+							typeof modelsChat !== 'undefined' &&
+							!!modelsChat.getProfile?.data,
+					)
+					.catch(() => false);
+				if (ready) return true;
+				await page.waitForTimeout(1000);
+			}
+
+			console.warn('[Chat Navigation] modelsChat API not ready after wait');
+			return false;
+		} catch (error) {
+			console.error('[Chat Navigation] ensureModelsChatReady error:', error.message);
+			return false;
+		}
+	},
 };
 
 export default chatNavigationService;

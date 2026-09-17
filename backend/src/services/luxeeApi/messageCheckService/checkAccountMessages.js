@@ -32,6 +32,15 @@ export const checkAccountMessages = async ({ userId, accountId }) => {
 	// Получаем страницу
 	const page = await pageHelpers.getOrCreatePage(context);
 
+	// 🛡️ Страница обязана быть на luxee.io с загруженным modelsChat,
+	// иначе evaluate падает с 'modelsChat API not available' и проверка
+	// всегда возвращает 0 профилей / 0 непрочитанных.
+	const { default: chatNavigationService } = await import('../chatNavigationService.js');
+	const modelsReady = await chatNavigationService.ensureModelsChatReady({ page });
+	if (!modelsReady) {
+		throw new Error('modelsChat API not available (page not ready)');
+	}
+
 	// ✅ ЧИТАЕМ API БЕЗ ПЕРЕКЛЮЧЕНИЯ ПРОФИЛЕЙ
 	const profilesData = await page.evaluate(extractAccountProfilesData);
 

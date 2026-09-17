@@ -9,7 +9,7 @@ import socketService from '../socketService.js';
 export const getAllUsersAiStatus = async () => {
 	try {
 		const users = await UserModel.find()
-			.select('email role aiEnabled aiEnabledByAdmin')
+			.select('email role aiEnabled aiEnabledByAdmin aiExcludedProfileUids')
 			.sort({ createdAt: 1 });
 		return users;
 	} catch (error) {

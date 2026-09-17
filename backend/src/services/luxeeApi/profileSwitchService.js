@@ -185,9 +185,25 @@ const processQueue = async (page, accountId) => {
 			await new Promise(resolve => setTimeout(resolve, 3000));
 
 			// 3. Проверка что переключились
-			const activeUid = await page.evaluate(() => {
+			let activeUid = await page.evaluate(() => {
 				return window.modelsChat?.getProfile?.active?.inner?.uid || null;
 			});
+
+			// Активная анкета общая для всех контекстов аккаунта: параллельный
+			// актор (другой сервис) мог только что переключить её сам, плюс
+			// страница могла быть в оверлее (active === null). Даём один
+			// повторный замер через 2с вместо мгновенного reject.
+			if (activeUid !== request.profileUid) {
+				console.log(
+					`[Profile Switch] ⏳ First check mismatch (expected ${request.profileUid}, got ${activeUid}) - re-checking in 2s... (${request.caller})`,
+				);
+				await new Promise(resolve => setTimeout(resolve, 2000));
+				activeUid = await page
+					.evaluate(() => {
+						return window.modelsChat?.getProfile?.active?.inner?.uid || null;
+					})
+					.catch(() => null);
+			}
 
 			const switchElapsed = Date.now() - switchStartTime;
 

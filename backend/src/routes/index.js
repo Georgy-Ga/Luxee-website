@@ -165,6 +165,19 @@ router.post(
 	roleMiddleware('admin'),
 	AiManagementController.setAllUserAccountsAiByAdmin,
 );
+// Исключённые анкеты пользователя (только админ)
+router.get(
+	'/ai/users/:userId/excluded-profiles',
+	authMiddleware,
+	roleMiddleware('admin'),
+	AiManagementController.getExcludedProfiles,
+);
+router.put(
+	'/ai/users/:userId/excluded-profiles',
+	authMiddleware,
+	roleMiddleware('admin'),
+	AiManagementController.updateExcludedProfiles,
+);
 
 // AI Management routes - Accounts
 router.get(
@@ -188,6 +201,18 @@ router.post(
 	'/ai/my-accounts/:accountId/toggle',
 	authMiddleware,
 	AiManagementController.toggleMyAccountAi,
+);
+router.get(
+	'/ai/accounts/:accountId/sections',
+	authMiddleware,
+	roleMiddleware('admin'),
+	AiManagementController.getAccountSections,
+);
+router.put(
+	'/ai/accounts/:accountId/sections',
+	authMiddleware,
+	roleMiddleware('admin'),
+	AiManagementController.updateAccountSections,
 );
 router.post(
 	'/ai/my-accounts/toggle-all',
@@ -225,6 +250,16 @@ router.get(
 	'/ai/auto-response/accounts/:accountId/is-running',
 	authMiddleware,
 	AiAutoResponseController.isRunning,
+);
+router.get(
+	'/ai/auto-response/accounts/:accountId/cycle-log',
+	authMiddleware,
+	AiAutoResponseController.getCycleLog,
+);
+router.get(
+	'/ai/auto-response/accounts/:accountId/cycle-diagnostics',
+	authMiddleware,
+	AiAutoResponseController.getCycleDiagnostics,
 );
 
 // AI Schedule routes (интервалы работы/отдыха)
