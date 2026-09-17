@@ -75,7 +75,16 @@ export const checkAllMessages = async ({ userId }) => {
 				page,
 			});
 			if (!modelsReady) {
-				throw new Error('modelsChat API not available (page not ready)');
+				console.warn(`[Message Check] modelsChat not ready for ${account._id} — skip, no throw (single-flight will retry)`);
+				results.push({
+					accountId: account._id,
+					accountEmail: account.luxeeEmail,
+					profiles: [],
+					totalUnread: 0,
+					profilesCount: 0,
+					cached: false,
+				});
+				continue;
 			}
 
 			// ✅ ЧИТАЕМ API БЕЗ ПЕРЕКЛЮЧЕНИЯ ПРОФИЛЕЙ

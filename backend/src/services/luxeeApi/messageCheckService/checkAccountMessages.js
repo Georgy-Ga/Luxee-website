@@ -33,12 +33,48 @@ export const checkAccountMessages = async ({ userId, accountId }) => {
 	const page = await pageHelpers.getOrCreatePage(context);
 
 	// 🛡️ Страница обязана быть на luxee.io с загруженным modelsChat,
-	// иначе evaluate падает с 'modelsChat API not available' и проверка
-	// всегда возвращает 0 профилей / 0 непрочитанных.
+	// иначе evaluate падает с 'modelsChat API not available'.
+	// Мягкий фолбэк: вместо throw возвращаем last-known из кеша (если есть)
+	// или 0, но НЕ роняем весь интервал с ошибкой (иначе дашборд = 0/0).
 	const { default: chatNavigationService } = await import('../chatNavigationService.js');
 	const modelsReady = await chatNavigationService.ensureModelsChatReady({ page });
 	if (!modelsReady) {
-		throw new Error('modelsChat API not available (page not ready)');
+		console.warn(`[Message Check] modelsChat not ready for ${accountId} — returning cached/empty (no throw)`);
+		// Попробуем отдать кеш профилей если есть, иначе пусто — без исключения
+		try {
+			const { default: profileCacheService } = await import('../profileCacheService.js');
+			const cached = await profileCacheService.getAllProfiles(accountId);
+			if (cached && cached.length > 0) {
+				console.log(`[Message Check] Returning cached ${cached.length} profiles for ${accountId}`);
+				return {
+					accountId: account._id,
+					accountEmail: account.luxeeEmail,
+					profiles: cached.map(p => ({
+						profileUid: p.profileUid,
+						username: p.username,
+						isActive: false,
+						newMessages: 0,
+						unansweredMessages: 0,
+						chats: [],
+					})),
+					totalUnread: 0,
+					totalUnanswered: 0,
+					profilesCount: cached.length,
+					cached: true,
+				};
+			}
+		} catch (e) {
+			// ignore cache error
+		}
+		return {
+			accountId: account._id,
+			accountEmail: account.luxeeEmail,
+			profiles: [],
+			totalUnread: 0,
+			totalUnanswered: 0,
+			profilesCount: 0,
+			cached: false,
+		};
 	}
 
 	// ✅ ЧИТАЕМ API БЕЗ ПЕРЕКЛЮЧЕНИЯ ПРОФИЛЕЙ

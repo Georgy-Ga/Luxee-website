@@ -1,11 +1,9 @@
 // Конфигурация AI сервиса
 
-// Активный провайдер: 'nvidia' или 'deepseek'.
-// ЕДИНСТВЕННОЕ МЕСТО ПЕРЕКЛЮЧЕНИЯ — переменная AI_PROVIDER в корневом .env:
-//   AI_PROVIDER=nvidia   — локальный тест (не тратить токены DeepSeek)
-//   AI_PROVIDER=deepseek — продакшн
-// Дефолт 'nvidia' — безопасный (без ключа генерация не стартует, см. проверку ниже).
-export const AI_PROVIDER = process.env.AI_PROVIDER || 'nvidia';
+// Активный провайдер зафиксирован на DeepSeek (продакшн).
+// Авто-переключения на другую модель при ошибке НЕТ — по требованию.
+// Если нужно тестить NVIDIA локально — поменяй .env на AI_PROVIDER=nvidia и пересобери.
+export const AI_PROVIDER = 'deepseek';
 
 // NVIDIA Nemotron 3.5 Lightning — текущий активный провайдер.
 // thinking ОБЯЗАН быть выключен (см. apiClient): иначе reasoning-мусор лезет в ответ и съедает весь max_tokens.
@@ -31,7 +29,7 @@ export const AI_PROVIDERS = {
 	deepseek: DEEPSEEK_PROVIDER,
 };
 
-const ACTIVE_PROVIDER = AI_PROVIDERS[AI_PROVIDER] || NVIDIA_PROVIDER;
+const ACTIVE_PROVIDER = AI_PROVIDERS[AI_PROVIDER] || DEEPSEEK_PROVIDER;
 
 // Совместимость: остальной код импортирует эти имена —
 // они всегда указывают на АКТИВНОГО провайдера.

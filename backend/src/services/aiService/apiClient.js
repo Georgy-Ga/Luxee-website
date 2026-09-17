@@ -17,9 +17,15 @@ export const sendAIRequest = async (messages, retryCount = 0) => {
 		console.log('  🌐 API URL:', AI_API_URL);
 		console.log('  🎯 Model:', AI_MODEL);
 		console.log('  📨 Messages count:', messages.length);
+		// Параметры зависят от провайдера: DeepSeek reasoning жрёт токены, ему нужен
+		// запас 800; NVIDIA с выключенным thinking хватает 250 (см. историю Oski).
+		const isDeepSeek = AI_PROVIDER === 'deepseek';
+		const maxTokens = isDeepSeek ? 800 : 250;
+		const temperature = isDeepSeek ? 1.1 : 0.9;
+
 		console.log('  ⚙️ Parameters:');
-		console.log('    - Temperature: 0.9 (varied but coherent)');
-		console.log('    - Max tokens: 250 (replies are 20-100 tokens, no need for 800)');
+		console.log(`    - Temperature: ${temperature} ${isDeepSeek ? '(deepseek high variety)' : '(nvidia coherent)'}`);
+		console.log(`    - Max tokens: ${maxTokens} ${isDeepSeek ? '(deepseek: reasoning buffer)' : '(nvidia: no thinking)'}`);
 		console.log('    - Top P: 0.95 (more diverse)');
 		console.log('    - Frequency penalty: 0.7 (avoid repetition)');
 		console.log('    - Presence penalty: 0.6 (encourage new topics)');
@@ -28,8 +34,8 @@ export const sendAIRequest = async (messages, retryCount = 0) => {
 		const requestBody = {
 			model: AI_MODEL,
 			messages: messages,
-			temperature: 0.9, // Было 1.1: длинные/разнообразные completions против ТЗ 1-3 sentences; 0.9 держит вариативность короче
-			max_tokens: 250, // Было 800: реальные ответы 20-100 токенов; потолок не тратится, но режет риск длинных простыней
+			temperature: temperature,
+			max_tokens: maxTokens,
 			top_p: 0.95, // Увеличено с 0.9 → менее предсказуемые ответы
 			frequency_penalty: 0.7, // НОВОЕ! Штрафует за повторение одних и тех же токенов
 			presence_penalty: 0.6, // НОВОЕ! Поощряет использование новых тем и слов
@@ -65,32 +71,58 @@ export const sendAIRequest = async (messages, retryCount = 0) => {
 		);
 		const duration = Date.now() - startTime;
 
-		const aiResponse = response.data.choices[0].message.content.trim();
+		const choice = response.data.choices?.[0] || {};
+		const finishReason = choice.finish_reason || 'unknown';
+		const reasoningContent = choice.message?.reasoning_content || '';
+		const aiResponseRaw = choice.message?.content || '';
+		const aiResponse = aiResponseRaw.trim();
 
-		// ⚠️ Проверка на пустой ответ (может быть из-за content filter провайдера)
+		// Логируем finish_reason и reasoning для DeepSeek (там reasoning съедает токены)
+		if (isDeepSeek || finishReason !== 'stop') {
+			console.log(`  🏁 Finish reason: ${finishReason}`);
+			if (reasoningContent) {
+				console.log(`  🧠 Reasoning length: ${reasoningContent.length} chars, tokens≈${Math.round(reasoningContent.length / 4)}`);
+			}
+		}
+
+		// ⚠️ Проверка на пустой ответ (может быть из-за content filter или length)
 		if (!aiResponse || aiResponse.length === 0) {
 			console.log('');
 			console.error('❌ [AI DEBUG] ===== EMPTY RESPONSE FROM AI =====');
 			console.error(`  🚨 ${AI_PROVIDER} returned empty response!`);
-			console.error('  💡 Likely reason: Content filter blocked the response');
+			if (finishReason === 'length') {
+				console.error('  💡 Likely reason: max_tokens hit — reasoning consumed budget (DeepSeek reasoning 800/800 in your logs)');
+				console.error('  🔧 Fix: increase max_tokens for deepseek or reduce prompt history');
+			} else if (reasoningContent && reasoningContent.length > 500) {
+				console.error('  💡 Likely reason: reasoning consumed all tokens, content empty (see reasoning_length above)');
+			} else {
+				console.error('  💡 Likely reason: Content filter blocked the response');
+			}
 			console.error('  🔄 Attempt:', retryCount + 1);
+			console.error('  🏁 Finish reason:', finishReason);
 			console.error(
 				'  📊 Tokens used:',
 				response.data.usage?.total_tokens || 'N/A',
+				`(prompt ${response.data.usage?.prompt_tokens || '?'}, completion ${response.data.usage?.completion_tokens || '?'}, reasoning ${response.data.usage?.completion_tokens_details?.reasoning_tokens || '?'})`,
 			);
 			console.error(
 				'  📋 Response data:',
-				JSON.stringify(response.data, null, 2),
+				JSON.stringify(response.data, null, 2).slice(0, 4000),
 			);
 			console.error('═'.repeat(80));
 			console.log('');
 
-			// Создаём специальную ошибку с информацией о фильтре
+			// Создаём специальную ошибку с информацией о фильтре/длине
 			const error = new Error(
-				`Empty response from AI (${AI_PROVIDER}) - likely content filter`,
+				finishReason === 'length'
+					? `Empty response from AI (${AI_PROVIDER}) - max_tokens length limit (reasoning consumed budget)`
+					: `Empty response from AI (${AI_PROVIDER}) - likely content filter`,
 			);
-			error.isContentFilter = true;
+			error.isContentFilter = finishReason !== 'length';
+			error.isLengthLimit = finishReason === 'length';
+			error.finishReason = finishReason;
 			error.usage = response.data.usage;
+			error.reasoningLength = reasoningContent.length;
 			throw error;
 		}
 
@@ -115,9 +147,11 @@ export const sendAIRequest = async (messages, retryCount = 0) => {
 
 		return aiResponse;
 	} catch (error) {
+		// Авто-переключения провайдера НЕТ — фиксировано на DeepSeek.
+		// Ошибка просто пробрасывается, цикл зайдёт в retry без смены модели.
 		console.log('');
 		console.error('❌ [AI DEBUG] ===== ERROR CALLING AI API =====');
-		console.error(`  🔌 Provider: ${AI_PROVIDER}`);
+		console.error(`  🔌 Provider: ${AI_PROVIDER} (no auto-fallback)`);
 		console.error('  🚨 Error message:', error.message);
 
 		// Логируем детали ошибки от API
