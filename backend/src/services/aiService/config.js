@@ -1,9 +1,9 @@
 // Конфигурация AI сервиса
 
-// Активный провайдер зафиксирован на DeepSeek (продакшн).
-// Авто-переключения на другую модель при ошибке НЕТ — по требованию.
-// Если нужно тестить NVIDIA локально — поменяй .env на AI_PROVIDER=nvidia и пересобери.
-export const AI_PROVIDER = 'deepseek';
+// Активный провайдер — читается из корневого .env (AI_PROVIDER).
+// Сейчас продакшн = deepseek, авто-фолбэка на другую модель НЕТ.
+// Для локального теста поменяй .env на AI_PROVIDER=nvidia и пересобери.
+export const AI_PROVIDER = process.env.AI_PROVIDER || 'deepseek';
 
 // NVIDIA Nemotron 3.5 Lightning — текущий активный провайдер.
 // thinking ОБЯЗАН быть выключен (см. apiClient): иначе reasoning-мусор лезет в ответ и съедает весь max_tokens.
@@ -151,7 +151,13 @@ Be DIFFERENT every time: statement only / question only / both / just emoji-word
 
 # RESPONSE STYLE - REMEMBER
 
-Real woman texting naturally: SHORT (match his length), complete sentences, NO quotes/dashes, warm and genuine, build on what he said, never repeat, affectionate terms occasionally (babe, honey - don't overuse). Every response different. Keep it SHORT, INTERESTING, ENGAGED`;
+Real woman texting naturally: SHORT (match his length), complete sentences, NO quotes/dashes, warm and genuine, build on what he said, never repeat, affectionate terms occasionally (babe, honey - don't overuse). Every response different. Keep it SHORT, INTERESTING, ENGAGED
+
+# OUTPUT FORMAT — CRITICAL!
+
+Send ONLY the raw message text. No prefix, no label, no quotes, no explanation.
+❌ NEVER: 'Сообщение: "hi"' / 'Message: hi' / 'Ответ: ...' / '"hi"' with quotes
+✅ ALWAYS: hi`;
 
 // Системный промпт для Activity Center (первые сообщения)
 // Специально адаптирован для мужчин 35-60 лет

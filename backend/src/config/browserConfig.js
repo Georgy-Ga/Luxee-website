@@ -2,7 +2,7 @@
 
 const browserConfig = {
 	// Видимый режим браузера (false = видимый, true = скрытый)
-	// В production и Docker всегда headless режим
+	// В production и Docker всегда headless режим (без дисплея не запустить видимый)
 	headless: process.env.BROWSER_HEADLESS === 'true' 
 		|| process.env.NODE_ENV === 'production' 
 		|| process.env.DOCKER === 'true'

@@ -73,6 +73,7 @@ export const checkAllMessages = async ({ userId }) => {
 			);
 			const modelsReady = await chatNavigationService.ensureModelsChatReady({
 				page,
+				accountId: account._id.toString(),
 			});
 			if (!modelsReady) {
 				console.warn(`[Message Check] modelsChat not ready for ${account._id} — skip, no throw (single-flight will retry)`);

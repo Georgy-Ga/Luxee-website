@@ -19,6 +19,8 @@ import pageHelpers from './browser/pageHelpers.js';
 import chatMessagesExtractorService from './luxeeApi/chatMessagesExtractorService.js';
 import chatNavigationService from './luxeeApi/chatNavigationService.js';
 import keepAliveService from './luxeeApi/keepAliveService.js';
+import onlineKeeperService from './onlineKeeperService.js';
+import { setAllOfflineViaNewContext } from './luxeeApi/onlineRecoveryService.js';
 
 // Хранилище активных процессов автоответов
 const activeAutoResponders = new Map(); // accountId -> { intervalId, isProcessing }
@@ -481,10 +483,19 @@ const aiAutoResponseService = {
 				isProcessing: false,
 			});
 
-			console.log(
-				`[AI Auto Response] Started for account ${accountId} (every 5 seconds)`,
-			);
-		} catch (error) {
+		console.log(
+			`[AI Auto Response] Started for account ${accountId} (every 5 seconds)`,
+		);
+
+		// 🟢 ИИ включён (кнопка оператора / recovery при рестарте):
+		// сразу ставим ВСЕ анкеты аккаунта в онлайн + запускаем кипер (~5 мин).
+		// Отдельный временный контекст, chats не трогаем.
+		try {
+			onlineKeeperService.start(accountId, { immediate: true });
+		} catch (e) {
+			console.error(`[AI Auto Response] ⚠️  Online keeper failed to start for ${accountId}:`, e.message);
+		}
+	} catch (error) {
 			console.error(
 				`[AI Auto Response] Error starting for account ${accountId}:`,
 				error,
@@ -522,10 +533,28 @@ const aiAutoResponseService = {
 				`[AI Auto Response] Keep-alive stopped for AI context ${accountId}`,
 			);
 
-			// Закрываем AI контекст
-			await aiBrowserContextService.closeAiContext(accountId);
+		// Закрываем AI контекст
+		await aiBrowserContextService.closeAiContext(accountId);
 
-			console.log(`[AI Auto Response] Stopped for account ${accountId}`);
+		// 🛑 Кипер больше не нужен — останавливаем ПЕРВЫМ, чтобы он не вернул
+		// анкеты в онлайн после оффлайна ниже
+		try {
+			onlineKeeperService.stop(accountId);
+		} catch (e) {}
+
+		// ⚫ ИИ полностью остановлен — ТЕПЕРЬ ставим все анкеты в оффлайн
+		// (тот же /profile/, value 4). Порядок важен: сначала стоп ИИ, потом оффлайн.
+		// Best-effort: stop() не должен падать из-за этого.
+		try {
+			const offOk = await setAllOfflineViaNewContext(accountId).catch(() => false);
+			console.log(
+				`[AI Auto Response] Offline-all after stop for ${accountId}: ${offOk ? 'OK' : 'FAILED (will retry on next start)'}`,
+			);
+		} catch (e) {
+			console.error(`[AI Auto Response] ⚠️  Offline-all failed for ${accountId}:`, e.message);
+		}
+
+		console.log(`[AI Auto Response] Stopped for account ${accountId}`);
 		} catch (error) {
 			console.error(
 				`[AI Auto Response] Error stopping for account ${accountId}:`,

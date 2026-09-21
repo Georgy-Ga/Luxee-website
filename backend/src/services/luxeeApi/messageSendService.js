@@ -66,9 +66,16 @@ const messageSendService = {
 				// Получаем страницу
 				const page = await pageHelpers.getOrCreatePage(context);
 
-				// Отправляем сообщение
-				const result = await page.evaluate(
+				// Отправляем сообщение: навигация + доверенный фокус + нативный
+				// ввод + проверка доставки. Порядок строгий: focus → ввод
+				// (никогда write → focus), клик — только по видимому редактору.
+				let result = await page.evaluate(
 					async ({ pUid, cId, message }) => {
+						const norm = s =>
+							String(s || '')
+								.replace(/\s+/g, ' ')
+								.trim()
+								.slice(0, 40);
 						try {
 							if (typeof modelsChat === 'undefined') {
 								throw new Error('modelsChat API not available');
@@ -94,14 +101,33 @@ const messageSendService = {
 							// Ждём загрузки чата
 							await new Promise(resolve => setTimeout(resolve, 800));
 
-							// 3. Находим emojionearea editor
-							const editor = document.querySelector('.emojionearea-editor');
+							// 3. Находим ВИДИМЫЙ emojionearea editor (первый в DOM
+							// часто скрытый от другого чата — писать в него
+							// бесполезно: sendMessage его игнорирует).
+							const editors = Array.from(
+								document.querySelectorAll('.emojionearea-editor'),
+							);
+							const visibleEditors = editors.filter(el => {
+								try {
+									const rect = el.getBoundingClientRect();
+									return (
+										rect.width > 0 &&
+										rect.height > 0 &&
+										el.offsetParent !== null
+									);
+								} catch (e) {
+									return false;
+								}
+							});
+							const editor = visibleEditors[0] || null;
 
 							if (!editor) {
-								throw new Error('Message input editor not found');
+								throw new Error(
+									`Message input editor not found (${editors.length} hidden present, 0 visible)`,
+								);
 							}
 
-							console.log('[Message Send] Found emojionearea editor');
+							console.log('[Message Send] Found visible emojionearea editor');
 
 							// Очищаем editor если там что-то есть
 							if (editor.textContent && editor.textContent.trim() !== '') {
@@ -113,21 +139,14 @@ const messageSendService = {
 
 							// 4. 🔍 КРИТИЧЕСКАЯ ПРОВЕРКА: message должен быть строкой
 							console.log('[Message Send] 🔍 Validating message...');
-							console.log('[Message Send] 🔍 Message type:', typeof message);
-							console.log('[Message Send] 🔍 Message value:', message);
-							console.log('[Message Send] 🔍 Message length:', message?.length);
 
 							if (typeof message !== 'string') {
-								console.error('❌ [CRITICAL] Message is not a string!');
-								console.error('❌ Type:', typeof message);
-								console.error('❌ Value:', message);
 								throw new Error(
 									`Message must be string, got ${typeof message}`,
 								);
 							}
 
 							if (!message || message.trim() === '') {
-								console.error('❌ [CRITICAL] Message is empty!');
 								throw new Error('Message is empty');
 							}
 
@@ -135,64 +154,184 @@ const messageSendService = {
 								message === '[object Object]' ||
 								message.includes('[object')
 							) {
-								console.error('❌ [CRITICAL] Message is serialized object!');
 								throw new Error('Message contains serialized object');
 							}
 
 							console.log('[Message Send] ✅ Message validation passed');
 
-							// 5. Устанавливаем текст в editor
-							editor.textContent = message;
-							editor.innerHTML = message;
-
-							// Устанавливаем фокус
+							// 5. Фокус ДО ввода + проверка, что поле реально в фокусе
 							editor.focus();
+							if (typeof editor.click === 'function') editor.click();
+							const activeEl = document.activeElement;
+							const focused =
+								!!activeEl &&
+								(activeEl === editor ||
+									(activeEl.classList &&
+										activeEl.classList.contains('emojionearea-editor')));
+							const debug = {
+								editorsTotal: editors.length,
+								editorsVisible: visibleEditors.length,
+								focused,
+								activeElement: activeEl
+									? `${activeEl.tagName}.${String(activeEl.className || '').slice(0, 60)}`
+									: 'none',
+							};
+							if (!focused) {
+								console.log(
+									'[Message Send] ⚠️  Editor not focused after focus()+click() — input may not register',
+								);
+							}
 
-							// Триггерим события
-							const events = ['input', 'change', 'keyup', 'keydown', 'focus'];
-							events.forEach(eventType => {
-								const event = new Event(eventType, {
-									bubbles: true,
-									cancelable: true,
+							// 6. Нативный ввод (execCommand требует фокус)
+							let inserted = false;
+							try {
+								inserted = document.execCommand('insertText', false, message);
+							} catch (execError) {
+								inserted = false;
+							}
+							if (!inserted) {
+								editor.textContent = message;
+								editor.innerHTML = message;
+								const events = ['input', 'change', 'keyup', 'keydown', 'focus'];
+								events.forEach(eventType => {
+									const event = new Event(eventType, {
+										bubbles: true,
+										cancelable: true,
+									});
+									editor.dispatchEvent(event);
 								});
-								editor.dispatchEvent(event);
-							});
+							}
+
+							// Readback: текст обязан быть в редакторе
+							const wantHead = norm(message);
+							const gotHead = norm(editor.textContent);
+							if (
+								!gotHead ||
+								!(gotHead.startsWith(wantHead) || wantHead.startsWith(gotHead))
+							) {
+								throw new Error('Editor input not registered (readback mismatch)');
+							}
 
 							// Ждём перед отправкой
 							console.log('[Message Send] Waiting 700ms before sending...');
 							await new Promise(resolve => setTimeout(resolve, 700));
 
-							// 6. Отправляем сообщение
+							// 7. Отправляем сообщение с проверкой доставки
 							if (!modelsChat.sendMessage) {
 								throw new Error('modelsChat.sendMessage not available');
 							}
 
+							const activeBefore = modelsChat.getChats?.active;
+							const unAnsweredBefore = activeBefore?.unAnswered;
+							const listBefore = activeBefore?.message || [];
+							const countBefore = listBefore.length;
+
 							console.log('[Message Send] Calling modelsChat.sendMessage()...');
 							modelsChat.sendMessage();
 
-							// Ждём отправки И остаёмся в чате 2 секунды
-							console.log(
-								'[Message Send] ⏳ Waiting 2 seconds for message delivery...',
-							);
 							await new Promise(resolve => setTimeout(resolve, 2000));
 
-							console.log(
-								'[Message Send] ✅ 2 seconds passed, message should be delivered',
-							);
+							const activeAfter = modelsChat.getChats?.active;
+							const unAnsweredAfter = activeAfter?.unAnswered;
+							const listAfter = activeAfter?.message || [];
+							if (unAnsweredAfter === false || listAfter.length > countBefore) {
+								console.log('[Message Send] ✅ Message delivered (verified)');
+								return {
+									success: true,
+									delivered: true,
+									message: 'Message sent successfully',
+									debug: { ...debug, unAnsweredBefore, unAnsweredAfter },
+								};
+							}
 
+							console.error('[Message Send] ❌ Message NOT delivered (unAnswered still true)');
 							return {
-								success: true,
-								message: 'Message sent successfully',
+								success: false,
+								delivered: false,
+								error: 'Message not delivered - unAnswered still true',
+								debug: {
+									...debug,
+									unAnsweredBefore,
+									unAnsweredAfter,
+									msgCountBefore: countBefore,
+									msgCountAfter: listAfter.length,
+								},
 							};
 						} catch (error) {
 							return {
 								success: false,
+								delivered: false,
 								error: error.message,
 							};
 						}
 					},
 					{ pUid: profileUid, cId: chatId, message: text },
 				);
+
+				// ⌨️ FALLBACK: доверенная клавиатура, если evaluate-ввод не дошёл
+				// (поле не в фокусе / запись в скрытый редактор). Печатаем
+				// настоящим вводом и жмём Enter — штатный путь emojionearea.
+				const needsKbFallback =
+					result &&
+					result.delivered !== true &&
+					result.error &&
+					(result.error.includes('unAnswered still true') ||
+						result.error.includes('readback mismatch') ||
+						result.error.includes('editor not found') ||
+						result.error.includes('not registered'));
+				if (needsKbFallback) {
+					console.log('[Message Send] ⌨️  Trying keyboard-type + Enter fallback...');
+					try {
+						const normHead = String(text || '')
+							.replace(/\s+/g, ' ')
+							.trim()
+							.slice(0, 40);
+						const editorLocator = page.locator('.emojionearea-editor:visible').first();
+						await editorLocator.click({ timeout: 5000 });
+						await new Promise(resolve => setTimeout(resolve, 400));
+						await page.keyboard.press('ControlOrMeta+a');
+						await new Promise(resolve => setTimeout(resolve, 200));
+						await page.keyboard.press('Backspace');
+						await new Promise(resolve => setTimeout(resolve, 300));
+						await page.keyboard.type(text, { delay: 20 });
+						await new Promise(resolve => setTimeout(resolve, 500));
+						await page.keyboard.press('Enter');
+						await new Promise(resolve => setTimeout(resolve, 4000));
+						const verify = await page
+							.evaluate(msgHead => {
+								const norm = s =>
+									String(s || '')
+										.replace(/\s+/g, ' ')
+										.trim()
+										.slice(0, 40);
+								const active = modelsChat?.getChats?.active;
+								const list = active?.message || [];
+								const last = list.length > 0 ? list[list.length - 1] : null;
+								const manUid = active?.members?.find(m => m.type === 10)?.uid;
+								const lastBody = last?.body ? norm(last.body) : '';
+								return {
+									unAnswered: active?.unAnswered ?? null,
+									appeared:
+										!!last &&
+										manUid !== undefined &&
+										last.uid !== manUid &&
+										msgHead !== '' &&
+										(lastBody.startsWith(msgHead) || msgHead.startsWith(lastBody)),
+								};
+							}, normHead)
+							.catch(() => ({ unAnswered: null, appeared: false }));
+						if (verify.unAnswered === false || verify.appeared) {
+							console.log('[Message Send] ✅ Keyboard-submit delivered the message');
+							result = {
+								success: true,
+								delivered: true,
+								message: 'Message sent via keyboard-submit',
+							};
+						}
+					} catch (kbError) {
+						console.log(`[Message Send] ⚠️  Keyboard fallback failed: ${kbError.message}`);
+					}
+				}
 
 				if (!result.success) {
 					throw new Error(result.error || 'Failed to send message');

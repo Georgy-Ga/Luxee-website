@@ -37,7 +37,7 @@ export const checkAccountMessages = async ({ userId, accountId }) => {
 	// Мягкий фолбэк: вместо throw возвращаем last-known из кеша (если есть)
 	// или 0, но НЕ роняем весь интервал с ошибкой (иначе дашборд = 0/0).
 	const { default: chatNavigationService } = await import('../chatNavigationService.js');
-	const modelsReady = await chatNavigationService.ensureModelsChatReady({ page });
+	const modelsReady = await chatNavigationService.ensureModelsChatReady({ page, accountId });
 	if (!modelsReady) {
 		console.warn(`[Message Check] modelsChat not ready for ${accountId} — returning cached/empty (no throw)`);
 		// Попробуем отдать кеш профилей если есть, иначе пусто — без исключения

@@ -15,6 +15,18 @@ async function openActivityCenter(page) {
 	try {
 		utils.log('Activity Center', '🔔 Opening Activity Center...');
 
+		// Закрываем модалки которые перехватывают клик (offlineModel, backdrop)
+		try {
+			await page.keyboard.press('Escape').catch(() => {});
+			await page.locator('#offlineModel .close, .modal-backdrop').first().click({ force: true, timeout: 1000 }).catch(() => {});
+			await page.evaluate(() => {
+				document.querySelectorAll('.modal-backdrop, #offlineModel').forEach(el => {
+					el.style.display = 'none';
+					el.classList.remove('in');
+				});
+			}).catch(() => {});
+		} catch (e) {}
+
 		// Ждём кнопку колокольчика
 		const bellButton = await page.locator('#activity-center-btn').first();
 		if (!(await bellButton.isVisible())) {
@@ -22,8 +34,12 @@ async function openActivityCenter(page) {
 			return false;
 		}
 
-		// Кликаем на колокольчик
-		await bellButton.click();
+		// Кликаем на колокольчик (force чтобы игнорировать backdrop)
+		try {
+			await bellButton.click({ force: true, timeout: 5000 });
+		} catch (e) {
+			await bellButton.click().catch(() => { throw e; });
+		}
 		await utils.randomDelay(1000, 1500);
 
 		// Проверяем что открылся список

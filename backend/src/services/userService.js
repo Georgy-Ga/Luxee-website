@@ -6,6 +6,8 @@ import tokenService from './tokenService.js';
 import aiBrowserContextService from './browser/aiBrowserContextService.js';
 import aiAutoResponseService from './aiAutoResponseService.js';
 import keepAliveService from './luxeeApi/keepAliveService.js';
+import onlineKeeperService from './onlineKeeperService.js';
+import { setAllOfflineViaNewContext } from './luxeeApi/onlineRecoveryService.js';
 import messageCheckIntervalService from './luxeeApi/messageCheckIntervalService.js';
 import browserService from './browser/browserService.js';
 import ApiError from '../exceptions/apiError.js';
@@ -71,12 +73,19 @@ const userService = {
 							console.log(`[User Service] ✓ AI disabled for account ${accountId}`);
 						}
 						
-						// ✅ 3. Закрываем AI контекст
-						if (account.aiContext) {
-							keepAliveService.stop(`${accountId}_ai`);
-							await aiBrowserContextService.closeAiContext(accountId);
-							console.log(`[User Service] ✓ AI context closed for account ${accountId}`);
-						}
+					// ✅ 3. Закрываем AI контекст
+					if (account.aiContext) {
+						keepAliveService.stop(`${accountId}_ai`);
+						await aiBrowserContextService.closeAiContext(accountId);
+						console.log(`[User Service] ✓ AI context closed for account ${accountId}`);
+					}
+
+					// ✅ 3b. Останавливаем online-keeper + анкеты в оффлайн (logout = оффлайн)
+					try {
+						onlineKeeperService.stop(accountId);
+						await setAllOfflineViaNewContext(accountId).catch(() => false);
+						console.log(`[User Service] ✓ Online keeper stopped, offline-all for account ${accountId}`);
+					} catch (e) {}
 						
 						// ✅ 4. Останавливаем Keep-Alive для основного контекста
 						keepAliveService.stop(accountId);
@@ -165,9 +174,15 @@ const userService = {
 		for (const account of luxeeAccounts) {
 			const accountId = account._id.toString();
 			
+		try {
+			// Останавливаем keep-alive для AI контекста
+			keepAliveService.stop(`${accountId}_ai`);
+
+			// Страховка: online-keeper остановлен через stopForUser→stop выше,
+			// но если ИИ не был запущен — гасим напрямую (идемпотентно)
 			try {
-				// Останавливаем keep-alive для AI контекста
-				keepAliveService.stop(`${accountId}_ai`);
+				onlineKeeperService.stop(accountId);
+			} catch (e) {}
 				
 				// Закрываем AI контекст
 				await aiBrowserContextService.closeAiContext(accountId);

@@ -35,13 +35,13 @@ services:
       MONGO_URL: mongodb://${MONGO_ROOT_USERNAME:-admin}:${MONGO_ROOT_PASSWORD:-changeme}@mongodb:27017/luxee?authSource=admin
       JWT_ACCESS_SECRET: ${JWT_ACCESS_SECRET}
       JWT_REFRESH_SECRET: ${JWT_REFRESH_SECRET}
-      # AI Provider Switch (nvidia = локальный тест, deepseek = продакшн).
+      # AI Provider Switch (deepseek = продакшн, nvidia = локальный тест).
       # Меняется одной строкой AI_PROVIDER в корневом .env
-      AI_PROVIDER: ${AI_PROVIDER:-nvidia}
-      # AI Configuration (Omniroute)
-      AI_API_URL: ${AI_API_URL:-http://host.docker.internal:20128/v1}
+      AI_PROVIDER: ${AI_PROVIDER:-deepseek}
+      # AI Configuration (DeepSeek — продакшн)
+      AI_API_URL: ${AI_API_URL:-https://api.deepseek.com}
       AI_API_KEY: ${AI_API_KEY}
-      AI_MODEL: ${AI_MODEL:-gemini-cli/gemini-2.5-flash}
+      AI_MODEL: ${AI_MODEL:-deepseek-v4-flash}
       # NVIDIA (активный провайдер, см. backend/src/services/aiService/config.js)
       NVIDIA_API_KEY: ${NVIDIA_API_KEY}
       NVIDIA_API_URL: ${NVIDIA_API_URL:-https://integrate.api.nvidia.com/v1}

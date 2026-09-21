@@ -281,6 +281,32 @@ const useAiStateStore = create((set, get) => ({
   isAccountProcessing: (accountId) => {
     return get().processingAccounts.has(accountId);
   },
+
+  // ============ RELOGIN СТАТУС ============
+  reloginStatuses: new Map(), // accountId -> {status, ts, reason}
+
+  setReloginStatus: ({ accountId, status, ts, reason }) =>
+    set((state) => {
+      const next = new Map(state.reloginStatuses);
+      if (status === 'relogin_done' || status === 'relogin_failed') {
+        // Через 15с убираем бейдж, чтобы не висел вечно
+        setTimeout(() => {
+          const cur = get().reloginStatuses.get(accountId);
+          if (cur && cur.ts === ts) {
+            const m = new Map(get().reloginStatuses);
+            m.delete(accountId);
+            set({ reloginStatuses: m });
+          }
+        }, 15000);
+      }
+      next.set(accountId, { status, ts, reason });
+      return { reloginStatuses: next };
+    }),
+
+  isReloginActive: (accountId) => {
+    const s = get().reloginStatuses.get(accountId);
+    return s && s.status === 'relogin_started';
+  },
 }));
 
 export default useAiStateStore;

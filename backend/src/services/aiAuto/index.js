@@ -12,9 +12,12 @@ import chatProcessor from './chatProcessor.js';
 import cycleLogger from './cycleLogger.js';
 import profileScanner from './profileScanner.js';
 import utils from './utils.js';
+import accountLockService from './accountLockService.js';
+import onlineRecoveryService from '../luxeeApi/onlineRecoveryService.js';
 
-// Глобальная блокировка для аккаунтов (Mutex)
-const processingLocks = new Map(); // accountId → { isProcessing: true, startedAt: timestamp }
+// Глобальная блокировка для аккаунтов — теперь Mongo-атомарная (TTL 90с)
+// Фолбэк Map для тестов без Mongo
+const processingLocks = new Map(); // legacy fallback, не используется напрямую
 
 // Кеш последних значений Catch Up счётчика (для оптимизации)
 const lastCatchUpCounts = new Map(); // accountId → lastCount
@@ -73,28 +76,49 @@ const processAccountMessages = async (accountId, userId, page) => {
 		console.error('[AI Auto] Error checking context restart:', checkError);
 	}
 
-	// ========== ПРОВЕРКА БЛОКИРОВКИ ==========
-	if (processingLocks.has(accountId)) {
-		const lock = processingLocks.get(accountId);
-		const elapsed = Date.now() - lock.startedAt;
-		utils.log(
-			'AI Auto',
-			`⏸️  Account ${accountId} is LOCKED (${Math.round(elapsed / 1000)}s) - skipping cycle`,
-		);
-		cycleLogger.logEvent(accountId, 'lock', 'locked_skip', {
-			elapsedSec: Math.round(elapsed / 1000),
-		});
+	// ========== ПРОВЕРКА БЛОКИРОВКИ (атомарно, per-account) ==========
+	// Порядок важен: newMessages (L149) → unanswered (other profiles) → catchUp (L600) → activityCenter (L1197) уже сохранён ниже.
+	let lockAcquired = null;
+	let lockHeartbeat = null;
+	try {
+		lockAcquired = await accountLockService.acquireLock(accountId, 'aiAuto');
+	} catch (e) {
+		// Mongo недоступен — фолбэк на in-memory (не атомарно, но не роняем цикл)
+		if (processingLocks.has(accountId)) {
+			const lock = processingLocks.get(accountId);
+			const elapsed = Date.now() - lock.startedAt;
+			utils.log('AI Auto', `⏸️  Account ${accountId} is LOCKED (fallback ${Math.round(elapsed / 1000)}s) - skipping`);
+			cycleLogger.logEvent(accountId, 'lock', 'locked_skip', { elapsedSec: Math.round(elapsed / 1000) });
+			return { processed: false, reason: 'account_locked' };
+		}
+		processingLocks.set(accountId, { isProcessing: true, startedAt: Date.now() });
+		lockAcquired = { isLocked: true };
+	}
+	if (!lockAcquired) {
+		const st = await accountLockService.getLockStatus(accountId).catch(() => null);
+		const elapsed = st && st.lockedAt ? Math.round((Date.now() - new Date(st.lockedAt).getTime()) / 1000) : 0;
+		utils.log('AI Auto', `⏸️  Account ${accountId} is LOCKED (${elapsed}s) - skipping cycle`);
+		cycleLogger.logEvent(accountId, 'lock', 'locked_skip', { elapsedSec: elapsed });
 		return { processed: false, reason: 'account_locked' };
 	}
 
 	try {
-		// ========== ЗАБЛОКИРОВАТЬ АККАУНТ ==========
-		processingLocks.set(accountId, {
-			isProcessing: true,
-			startedAt: Date.now(),
-		});
+		// Успешно залочили — для фолбэка тоже пометим
+		if (!processingLocks.has(accountId)) processingLocks.set(accountId, { isProcessing: true, startedAt: Date.now() });
+		utils.log('AI Auto', `🔒 Account ${accountId} LOCKED (atomic)`);
 
-		utils.log('AI Auto', `🔒 Account ${accountId} LOCKED`);
+		// 💓 Heartbeat: цикл легко длится дольше TTL 90с (навигации по 3с,
+		// typing-delay 7–13с, генерация до 30с, ретраи отправки) — без продления
+		// второй тик возьмёт лок и пойдёт вторым processSingleChat по той же
+		// page: page.goto наперегонки → ответ не в тот чат или срыв доставки.
+		// Продлеваем expiresAt каждые 30с, пока цикл жив. При падении процесса
+		// heartbeat умрёт вместе с ним и TTL 90с всё равно освободит лок.
+		try {
+			lockHeartbeat = setInterval(() => {
+				accountLockService.renewLock(accountId).catch(() => {});
+			}, 30 * 1000);
+			if (lockHeartbeat.unref) lockHeartbeat.unref();
+		} catch (e) {}
 
 		// ========== ПРОВЕРКА AI SCHEDULE (ИНТЕРВАЛОВ) ==========
 		// Проверяем можно ли сейчас работать по расписанию пользователя
@@ -403,6 +427,7 @@ const processAccountMessages = async (accountId, userId, page) => {
 					);
 					await utils.randomDelay(3000, 5000);
 					messageSent = true;
+					onlineRecoveryService.touchOnlineAfterReply(accountId).catch(() => {});
 					cycleLogger.logEvent(accountId, 'cycle', 'finished', {
 						processed: true,
 						reason: 'active_profile_processed',
@@ -558,6 +583,7 @@ const processAccountMessages = async (accountId, userId, page) => {
 						);
 						await utils.randomDelay(3000, 5000);
 						messageSent = true;
+						onlineRecoveryService.touchOnlineAfterReply(accountId).catch(() => {});
 						cycleLogger.logEvent(accountId, 'cycle', 'finished', {
 							processed: true,
 							reason: 'other_profile_processed',
@@ -1056,6 +1082,8 @@ const processAccountMessages = async (accountId, userId, page) => {
 
 							// ✅ ВЫХОД после первой успешной отправки
 							messageSent = true;
+							// Все анкеты в онлайн на отдельном контексте — не трогает chats ответов
+							onlineRecoveryService.touchOnlineAfterReply(accountId).catch(() => {});
 
 							const duration = Math.round((Date.now() - startTime) / 1000);
 							cycleLogger.logEvent(accountId, 'catchup', 'chat_result', {
@@ -1100,6 +1128,32 @@ const processAccountMessages = async (accountId, userId, page) => {
 									manName: chat.manName,
 								};
 							} else {
+								// Контекст закрыт (AI выключили mid-flight) — прерываем пачку, не спамим остальные чаты
+								if (result.reason === 'context_closed' || result.error?.includes?.('Target page, context or browser has been closed')) {
+									utils.log('AI Auto', `⚠️ Context closed mid-cycle for ${chat.manName} — aborting catchUp batch, will retry next cycle after relogin`);
+									cycleLogger.logEvent(accountId, 'catchup', 'chat_result', {
+										chatId: chat.chatId,
+										manName: chat.manName,
+										profileName: profile.username,
+										sent: false,
+										reason: 'context_closed',
+										cached: false,
+									});
+									break; // выходим из for-of, внешний reload + unlock
+								}
+								// Платёжная ошибка DeepSeek — не ретраим, ждём пополнения или свитча на nvidia
+								if (result.reason === 'payment_required') {
+									utils.log('AI Auto', `💳 Payment required for ${chat.manName} — skipping retries until balance/provider fixed`);
+									cycleLogger.logEvent(accountId, 'catchup', 'chat_result', {
+										chatId: chat.chatId,
+										manName: chat.manName,
+										profileName: profile.username,
+										sent: false,
+										reason: 'payment_required',
+										cached: false,
+									});
+									break;
+								}
 								// ⛔ Вечное состояние: собеседник заблокировал анкету.
 								// Повторять бессмысленно — долгий кеш + подсказка в blacklist.
 								// (Единственное исключение из "неуспех = повтор".)
@@ -1442,6 +1496,7 @@ const processAccountMessages = async (accountId, userId, page) => {
 								);
 
 								messageSent = true;
+								onlineRecoveryService.touchOnlineAfterReply(accountId).catch(() => {});
 
 								// Возвращаемся к чатам
 								await page.goto('https://luxee.io/chats/', {
@@ -1519,14 +1574,22 @@ const processAccountMessages = async (accountId, userId, page) => {
 		});
 		return { processed: false, reason: 'exception', error: error.message };
 	} finally {
-		// ========== РАЗБЛОКИРОВАТЬ АККАУНТ ==========
+		// ========== РАЗБЛОКИРОВАТЬ АККАУНТ (атомарно) ==========
+		try {
+			if (lockHeartbeat) clearInterval(lockHeartbeat);
+		} catch (e) {}
+		lockHeartbeat = null;
+		try {
+			await accountLockService.releaseLock(accountId);
+		} catch (e) {}
 		processingLocks.delete(accountId);
 		utils.log('AI Auto', `🔓 Account ${accountId} UNLOCKED`);
 	}
 };
 
 /**
- * Получить статус блокировки аккаунта
+ * Получить статус блокировки аккаунта (синхронный фолбэк Map — для keepAlive).
+ * Для диагностики используй getAccountLockStatusAsync (Mongo).
  * @param {string} accountId - ID аккаунта
  * @returns {Object|null} - Информация о блокировке или null
  */
@@ -1534,13 +1597,20 @@ const getAccountLockStatus = accountId => {
 	if (!processingLocks.has(accountId)) {
 		return null;
 	}
-
 	const lock = processingLocks.get(accountId);
 	return {
 		isLocked: true,
 		startedAt: lock.startedAt,
 		elapsed: Date.now() - lock.startedAt,
 	};
+};
+
+const getAccountLockStatusAsync = async accountId => {
+	try {
+		const st = await accountLockService.getLockStatus(accountId);
+		if (st) return { isLocked: true, startedAt: new Date(st.lockedAt).getTime(), elapsed: Date.now() - new Date(st.lockedAt).getTime() };
+	} catch (e) {}
+	return getAccountLockStatus(accountId);
 };
 
 /**
@@ -1577,6 +1647,7 @@ const getLastCatchUpCount = accountId => {
 export default {
 	processAccountMessages,
 	getAccountLockStatus,
+	getAccountLockStatusAsync,
 	getLastCatchUpCount,
 	forceUnlock,
 	getLockedAccountsCount,

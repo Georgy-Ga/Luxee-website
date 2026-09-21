@@ -67,7 +67,8 @@ const chatNavigationService = {
 	// about:blank / упавший контекст / недогруженный SPA).
 	// Возвращает true если API готов, иначе false (кидать нечего — вызывающий решает).
 	// Single-flight: параллельные вызовы на том же page ждут один результат.
-	ensureModelsChatReady: async ({ page, timeoutMs = 15000 }) => {
+	// + failsCounter: site-проблемы (не AI) копятся, about:blank → релогин всех контекстов после 6 fails.
+	ensureModelsChatReady: async ({ page, timeoutMs = 15000, accountId = null }) => {
 		const locks = chatNavigationService._readyLocks;
 		if (locks.has(page)) {
 			return locks.get(page);
@@ -75,9 +76,21 @@ const chatNavigationService = {
 		const promise = (async () => {
 			try {
 				const currentUrl = page.url();
-				if (currentUrl === 'about:blank' || !currentUrl.includes('luxee.io')) {
+				const isAboutBlank = currentUrl === 'about:blank' || !currentUrl.includes('luxee.io');
+				if (isAboutBlank) {
 					console.log(`[Chat Navigation] Page at ${currentUrl}, navigating to chats...`);
 					await chatNavigationService.navigateToChats({ page });
+					// about:blank — site fail, считаем отдельно
+					if (accountId) {
+						try {
+							const { bumpSiteFail, shouldRelogin, reloginAllContexts } = await import('./onlineRecoveryService.js').then(m => m.default || m);
+							const fails = bumpSiteFail(accountId, 'about_blank');
+							if (shouldRelogin(accountId)) {
+								console.log(`[Chat Navigation] about:blank threshold hit (${fails}) → relogin all contexts for ${accountId}`);
+								await reloginAllContexts(accountId);
+							}
+						} catch (e) {}
+					}
 				}
 
 				const deadline = Date.now() + timeoutMs;
@@ -89,14 +102,39 @@ const chatNavigationService = {
 								!!modelsChat.getProfile?.data,
 						)
 						.catch(() => false);
-					if (ready) return true;
+					if (ready) {
+						if (accountId) {
+							try {
+								const { resetFails } = await import('./onlineRecoveryService.js').then(m => m.default || m);
+								resetFails(accountId);
+							} catch (e) {}
+						}
+						return true;
+					}
 					await page.waitForTimeout(1000);
 				}
 
 				console.warn('[Chat Navigation] modelsChat API not ready after wait');
+				if (accountId) {
+					try {
+						const { bumpSiteFail, shouldRelogin, reloginAllContexts } = await import('./onlineRecoveryService.js').then(m => m.default || m);
+						const fails = bumpSiteFail(accountId, 'modelsChat_not_ready');
+						if (shouldRelogin(accountId)) {
+							console.log(`[Chat Navigation] modelsChat not ready threshold hit (${fails}) → relogin all contexts for ${accountId}`);
+							await reloginAllContexts(accountId);
+						}
+					} catch (e) {}
+				}
 				return false;
 			} catch (error) {
 				console.error('[Chat Navigation] ensureModelsChatReady error:', error.message);
+				if (accountId) {
+					try {
+						const { bumpSiteFail, shouldRelogin, reloginAllContexts } = await import('./onlineRecoveryService.js').then(m => m.default || m);
+						const fails = bumpSiteFail(accountId, 'ensure_error');
+						if (shouldRelogin(accountId)) await reloginAllContexts(accountId);
+					} catch (e) {}
+				}
 				return false;
 			} finally {
 				locks.delete(page);

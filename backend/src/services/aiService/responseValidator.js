@@ -19,13 +19,31 @@ export const containsForbiddenPhrases = (response) => {
 };
 
 /**
- * Очистить ответ от лишних элементов
+ * Очистить ответ от лишних элементов — строго только сырой текст
  */
 export const cleanResponse = (response) => {
-	let cleaned = response.trim();
-	
-	// Удаляем префиксы типа "Response:" или "Answer:"
+	let cleaned = String(response || '').trim();
+
+	// Срезаем обёртку в кавычках: "hi" → hi / 'hi' → hi
+	if (
+		(cleaned.startsWith('"') && cleaned.endsWith('"')) ||
+		(cleaned.startsWith("'") && cleaned.endsWith("'")) ||
+		(cleaned.startsWith('«') && cleaned.endsWith('»'))
+	) {
+		cleaned = cleaned.slice(1, -1).trim();
+	}
+
+	// Срезаем префиксы вида "Сообщение:", "Message:", "Ответ:", "Reply:" и т.п.
+	// с/без кавычек и пробелов — оставляем только тело сообщения
+	cleaned = cleaned.replace(
+		/^(?:Сообщение|Соообщение|Message|Ответ|Reply|Response|Answer)\s*:\s*["'«]?\s*/i,
+		'',
+	);
+	// Если после среза осталась открывающая кавычка — убрать хвостовую
+	cleaned = cleaned.replace(/^["'«]\s*/, '').replace(/\s*["'»]\s*$/, '').trim();
+
+	// Легаси: Response:/Answer:/Reply:
 	cleaned = cleaned.replace(/^(Response|Answer|Reply):\s*/i, '');
-	
-	return cleaned;
+
+	return cleaned.trim();
 };

@@ -147,29 +147,22 @@ export const sendAIRequest = async (messages, retryCount = 0) => {
 
 		return aiResponse;
 	} catch (error) {
-		// Авто-переключения провайдера НЕТ — фиксировано на DeepSeek.
-		// Ошибка просто пробрасывается, цикл зайдёт в retry без смены модели.
 		console.log('');
 		console.error('❌ [AI DEBUG] ===== ERROR CALLING AI API =====');
 		console.error(`  🔌 Provider: ${AI_PROVIDER} (no auto-fallback)`);
-		console.error('  🚨 Error message:', error.message);
-
-		// Логируем детали ошибки от API
-		if (error.response) {
-			console.error('  📛 HTTP Status:', error.response.status);
-			console.error(
-				'  📄 Error data:',
-				JSON.stringify(error.response.data, null, 2),
-			);
-		}
-
-		if (error.code) {
-			console.error('  🔧 Error code:', error.code);
-		}
-
+		const status = error.response?.status;
+		const dataMsg = error.response?.data?.error?.message || error.response?.data?.message || error.message;
+		console.error(`  🚨 Error: ${dataMsg.slice(0, 500)} ${status ? `(HTTP ${status}${status === 402 ? ' Payment Required — пополните баланс DeepSeek или AI_PROVIDER=nvidia' : ''})` : ''}`);
+		if (error.code) console.error('  🔧 Code:', error.code);
 		console.error('═'.repeat(80));
 		console.log('');
 
-		throw error;
+		// Кидаем лёгкую ошибку без 5КБ тела и circular refs (ранее спамил 200 строк)
+		const concise = new Error(status === 402 ? `DeepSeek 402 Payment Required: ${dataMsg.slice(0, 200)}` : error.message);
+		concise.status = status;
+		concise.isPaymentRequired = status === 402;
+		concise.isRetryable = status !== 402;
+		concise.originalMessage = error.message;
+		throw concise;
 	}
 };

@@ -94,6 +94,189 @@ const aiResponseService = {
 	 * @param {string} params.message - Текст сообщения
 	 * @returns {Promise<Object>} - Результат отправки
 	 */
+	/**
+	 * ⌨️ PRIMARY SEND: доверенный ручной ввод (без programmatic вставки).
+	 * Клик по видимому редактору → проверка фокуса → очистка →
+	 * keyboard.type → Enter → проверка доставки. Именно этот путь в логах
+	 * доставляет сообщение детерминированно, поэтому он идёт первым;
+	 * execCommand + modelsChat.sendMessage() остались запасным путём.
+	 * Переносы строк сплющиваются: иначе Enter внутри текста отправил бы
+	 * пол-сообщения досрочно.
+	 */
+	_keyboardSend: async (page, { chatId, message }) => {
+		const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
+		const normHead = String(message || '')
+			.replace(/\s+/g, ' ')
+			.trim()
+			.slice(0, 40);
+		// Текст для печати: в одну строку (Enter внутри = досрочная отправка)
+		const flat = String(message || '').replace(/\r?\n/g, ' ');
+		try {
+			// 1. Навигация к чату
+			const navOk = await page
+				.evaluate(cId => {
+					try {
+						if (typeof modelsChat === 'undefined') return false;
+						modelsChat.selectChat(cId);
+						return true;
+					} catch (e) {
+						return false;
+					}
+				}, chatId)
+				.catch(() => false);
+			if (!navOk) throw new Error(`Failed to navigate to chat ${chatId}`);
+			await sleep(800);
+			const activeOk = await page
+				.evaluate(cId => {
+					try {
+						return modelsChat?.getChats?.active?.identity === cId;
+					} catch (e) {
+						return false;
+					}
+				}, chatId)
+				.catch(() => false);
+			if (!activeOk) throw new Error(`Failed to navigate to chat ${chatId}`);
+
+			// 2. Снапшот ДО + anti-double (сообщение могло уже уйти)
+			const snapshot = msgHead =>
+				page
+					.evaluate(head => {
+						try {
+							const norm = s =>
+								String(s || '')
+									.replace(/\s+/g, ' ')
+									.trim()
+									.slice(0, 40);
+							const list = modelsChat?.getChats?.active?.message || [];
+							const last = list.length > 0 ? list[list.length - 1] : null;
+							const manUid = modelsChat?.getChats?.active?.members?.find(
+								m => m.type === 10,
+							)?.uid;
+							const lastBody = last?.body ? norm(last.body) : '';
+							return {
+								count: list.length,
+								alreadyThere:
+									!!last &&
+									manUid !== undefined &&
+									last.uid !== manUid &&
+									head !== '' &&
+									(lastBody.startsWith(head) || head.startsWith(lastBody)),
+							};
+						} catch (e) {
+							return { count: -1, alreadyThere: false };
+						}
+					}, msgHead)
+					.catch(() => ({ count: -1, alreadyThere: false }));
+			const before = await snapshot(normHead);
+			if (before.alreadyThere) {
+				return {
+					success: true,
+					delivered: true,
+					message: 'Message already delivered (duplicate prevented)',
+					chatId,
+					verifiedBy: 'message_present',
+				};
+			}
+
+			// 3. Доверенный клик по ВИДИМОМУ редактору + проверка фокуса
+			const editorLocator = page.locator('.emojionearea-editor:visible').first();
+			await editorLocator.click({ timeout: 5000 });
+			await sleep(400);
+			let focused = await page
+				.evaluate(() => {
+					const ae = document.activeElement;
+					return (
+						!!ae && ae.classList && ae.classList.contains('emojionearea-editor')
+					);
+				})
+				.catch(() => null);
+			if (focused !== true) {
+				await editorLocator.click({ timeout: 5000 }).catch(() => {});
+				await sleep(400);
+				focused = await page
+					.evaluate(() => {
+						const ae = document.activeElement;
+						return (
+							!!ae && ae.classList && ae.classList.contains('emojionearea-editor')
+						);
+					})
+					.catch(() => null);
+			}
+
+			// 4. Очистка + печать настоящей клавиатурой
+			await page.keyboard.press('ControlOrMeta+a');
+			await sleep(200);
+			await page.keyboard.press('Backspace');
+			await sleep(300);
+			await page.keyboard.type(flat, { delay: 20 });
+			await sleep(500);
+
+			// 5. Anti-double перед Enter + отправка + проверка
+			const pre = await snapshot(normHead);
+			if (pre.alreadyThere) {
+				return {
+					success: true,
+					delivered: true,
+					message: 'Message verified by presence in chat',
+					chatId,
+					verifiedBy: 'message_present',
+				};
+			}
+			await page.keyboard.press('Enter');
+			await sleep(4000);
+			const verify = await page
+				.evaluate(head => {
+					try {
+						const norm = s =>
+							String(s || '')
+								.replace(/\s+/g, ' ')
+								.trim()
+								.slice(0, 40);
+						const active = modelsChat?.getChats?.active;
+						const list = active?.message || [];
+						const last = list.length > 0 ? list[list.length - 1] : null;
+						const manUid = active?.members?.find(m => m.type === 10)?.uid;
+						const lastBody = last?.body ? norm(last.body) : '';
+						return {
+							unAnswered: active?.unAnswered ?? null,
+							count: list.length,
+							appeared:
+								!!last &&
+								manUid !== undefined &&
+								last.uid !== manUid &&
+								head !== '' &&
+								(lastBody.startsWith(head) || head.startsWith(lastBody)),
+						};
+					} catch (e) {
+						return { unAnswered: null, count: -1, appeared: false };
+					}
+				}, normHead)
+				.catch(() => ({ unAnswered: null, count: -1, appeared: false }));
+			if (verify.unAnswered === false || verify.appeared) {
+				return {
+					success: true,
+					delivered: true,
+					message: 'Message sent via keyboard-submit',
+					chatId,
+					verifiedBy: verify.appeared ? 'message_present' : 'unanswered_flag',
+				};
+			}
+			return {
+				success: false,
+				delivered: false,
+				error: 'Message not delivered - unAnswered still true',
+				debug: {
+					focused,
+					msgCountBefore: before.count,
+					msgCountAfter: verify.count,
+					unAnsweredFinal: verify.unAnswered,
+				},
+			};
+		} catch (kbError) {
+			return { success: false, delivered: false, error: kbError.message };
+		}
+	},
+
 	sendResponse: async ({ userId, accountId, profileUid, chatId, message }) => {
 		try {
 			console.log('[AI Response Service] Sending AI response...');
@@ -175,20 +358,23 @@ const aiResponseService = {
 					sendAttempt++;
 					console.log(`[AI Response Service] 🔄 Send attempt ${sendAttempt}/${MAX_SEND_ATTEMPTS}...`);
 
-					// 🖱️ Доверенный клик по видимому редактору ПЕРЕД evaluate:
-					// programmatic focus() внутри evaluate может быть недостаточным
-					// для внутренних проверок sendMessage — нужен настоящий клик.
-					try {
-						await page
-							.locator('.emojionearea-editor')
-							.first()
-							.click({ timeout: 3000 });
-					} catch (clickError) {
+					// ⌨️ PRIMARY: сразу доверенный ручной ввод (без programmatic
+					// вставки): клик по видимому редактору → очистка →
+					// keyboard.type → Enter. Так ответ доходит детерминированно.
+					result = await aiResponseService._keyboardSend(page, {
+						chatId,
+						message,
+					});
+					if (result && result.success && result.delivered) {
 						console.log(
-							`[AI Response Service] ⚠️  Pre-click on editor failed: ${clickError.message}`,
+							`[AI Response Service] ✅ Keyboard-primary delivered on attempt ${sendAttempt} (verified by: ${result.verifiedBy || 'unanswered_flag'})`,
 						);
+						messageSent = true;
 					}
 
+					// Запасной путь: programmatic вставка через evaluate
+					// (только если ручной ввод не дошёл).
+					if (!messageSent) {
 					result = await page.evaluate(
 						async ({ cId, msg, attempt }) => {
 							try {
@@ -314,8 +500,30 @@ const aiResponseService = {
 							// зарегистрировал его (прямая запись textContent иногда
 							// игнорируется — сообщение тогда молча не уходит:
 							// msgCount не растёт, unAnswered висит true).
+							// Порядок строгий: focus → click → ввод (никогда write → focus).
 							editor.focus();
 							if (typeof editor.click === 'function') editor.click();
+							const activeIsEditor =
+								!!document.activeElement &&
+								(document.activeElement === editor ||
+									(document.activeElement.classList &&
+										document.activeElement.classList.contains(
+											'emojionearea-editor',
+										)));
+							editorDebug.focused = activeIsEditor;
+							try {
+								const ae = document.activeElement;
+								editorDebug.activeElement = ae
+									? `${ae.tagName}.${String(ae.className || '').slice(0, 60)}`
+									: 'none';
+							} catch (e) {
+								editorDebug.activeElement = 'unknown';
+							}
+							if (!activeIsEditor) {
+								console.log(
+									'[AI Response] ⚠️  Editor not focused after focus()+click() — execCommand may fail, keyboard fallback may be needed',
+								);
+							}
 
 							let inserted = false;
 							try {
@@ -501,6 +709,7 @@ const aiResponseService = {
 						},
 						{ cId: chatId, msg: message, attempt: sendAttempt },
 					);
+					} // end запасного programmatic-пути (выполняется только если keyboard-primary не доставил)
 
 					// Проверяем результат
 					if (result.success && result.delivered) {
@@ -522,137 +731,8 @@ const aiResponseService = {
 					}
 				}
 
-				// 🔄 FALLBACK: Enter-submit доверенной клавиатурой.
-				// modelsChat.sendMessage() иногда молча no-op (текст в редакторе
-				// есть, readback ок, но сообщение не появляется). Enter в редакторе —
-				// штатный путь отправки emojionearea. Только если fill сработал
-				// (иначе слать нечего) и сообщения ещё нет (anti-double-send).
-				if (
-					!messageSent &&
-					result &&
-					result.error &&
-					result.error.includes('unAnswered still true')
-				) {
-					console.log('[AI Response Service] ⌨️  Trying keyboard-type + Enter fallback...');
-					try {
-						const normHead = String(message || '')
-							.replace(/\s+/g, ' ')
-							.trim()
-							.slice(0, 40);
-
-						// Навигация к чату (свежая, как в основном пути)
-						const navOk = await page
-							.evaluate(cId => {
-								try {
-									if (typeof modelsChat === 'undefined') return false;
-									modelsChat.selectChat(cId);
-									return true;
-								} catch (e) {
-									return false;
-								}
-							}, chatId)
-							.catch(() => false);
-						if (!navOk) {
-							throw new Error('Failed to navigate to chat for keyboard fallback');
-						}
-						await new Promise(resolve => setTimeout(resolve, 1000));
-
-						// Очистить редактор доверенным способом
-						const editorLocator = page.locator('.emojionearea-editor').first();
-						await editorLocator.click({ timeout: 5000 });
-						await new Promise(resolve => setTimeout(resolve, 400));
-						await page.keyboard.press('ControlOrMeta+a');
-						await new Promise(resolve => setTimeout(resolve, 200));
-						await page.keyboard.press('Backspace');
-						await new Promise(resolve => setTimeout(resolve, 300));
-
-						// Печатаем текст настоящей клавиатурой (доверенные события)
-						await page.keyboard.type(message, { delay: 20 });
-						await new Promise(resolve => setTimeout(resolve, 500));
-
-						// Anti-double-send: сообщение могло уже уйти
-						const preCheck = await page
-							.evaluate(msgHead => {
-								const norm = s =>
-									String(s || '')
-										.replace(/\s+/g, ' ')
-										.trim()
-										.slice(0, 40);
-								const list = modelsChat?.getChats?.active?.message || [];
-								const last = list.length > 0 ? list[list.length - 1] : null;
-								const manUid = modelsChat?.getChats?.active?.members?.find(
-									m => m.type === 10,
-								)?.uid;
-								const lastBody = last?.body ? norm(last.body) : '';
-								return {
-									alreadyThere:
-										!!last &&
-										manUid !== undefined &&
-										last.uid !== manUid &&
-										msgHead !== '' &&
-										(lastBody.startsWith(msgHead) || msgHead.startsWith(lastBody)),
-									count: list.length,
-								};
-							}, normHead)
-							.catch(() => ({ alreadyThere: false, count: -1 }));
-
-						if (preCheck.alreadyThere) {
-							console.log('[AI Response Service] ✅ Message already present, Enter skipped');
-							messageSent = true;
-							result = {
-								success: true,
-								delivered: true,
-								message: 'Message verified by presence in chat',
-								chatId,
-								verifiedBy: 'message_present',
-							};
-						} else {
-							await page.keyboard.press('Enter');
-							console.log('[AI Response Service] ⌨️  Typed + Enter pressed, waiting 4s...');
-							await new Promise(resolve => setTimeout(resolve, 4000));
-
-							const verify = await page
-								.evaluate(msgHead => {
-									const norm = s =>
-										String(s || '')
-											.replace(/\s+/g, ' ')
-											.trim()
-											.slice(0, 40);
-									const active = modelsChat?.getChats?.active;
-									const list = active?.message || [];
-									const last = list.length > 0 ? list[list.length - 1] : null;
-									const manUid = active?.members?.find(m => m.type === 10)?.uid;
-									const lastBody = last?.body ? norm(last.body) : '';
-									return {
-										unAnswered: active?.unAnswered ?? null,
-										count: list.length,
-										appeared:
-											!!last &&
-											manUid !== undefined &&
-											last.uid !== manUid &&
-											msgHead !== '' &&
-											(lastBody.startsWith(msgHead) || msgHead.startsWith(lastBody)),
-									};
-								}, normHead)
-								.catch(() => ({ unAnswered: null, count: -1, appeared: false }));
-
-							console.log(`[AI Response Service] ⌨️  Keyboard-submit check: ${JSON.stringify(verify)}`);
-							if (verify.unAnswered === false || verify.appeared) {
-								console.log('[AI Response Service] ✅ Keyboard-submit delivered the message');
-								messageSent = true;
-								result = {
-									success: true,
-									delivered: true,
-									message: 'Message sent via keyboard-submit',
-									chatId,
-									verifiedBy: verify.appeared ? 'message_present' : 'unanswered_flag',
-								};
-							}
-						}
-					} catch (enterError) {
-						console.log(`[AI Response Service] ⚠️  Keyboard-submit fallback failed: ${enterError.message}`);
-					}
-				}
+				// Keyboard-ввод уже идёт первичным в каждой попытке выше
+				// (_keyboardSend), дублирующий пост-fallback удалён.
 
 				// Проверяем финальный результат
 				if (!messageSent) {

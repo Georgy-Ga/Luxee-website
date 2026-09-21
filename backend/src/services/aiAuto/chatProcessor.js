@@ -614,6 +614,32 @@ const processSingleChat = async ({
 			timestamp: aiResponse.sendResult.timestamp,
 		};
 	} catch (error) {
+		const isContextClosed = error.message && error.message.includes('Target page, context or browser has been closed');
+		const isPayment = error.isPaymentRequired || error.response?.status === 402;
+		if (isContextClosed) {
+			utils.log('Chat Processor', `⚠️ Context closed (AI stopped mid-flight) — aborting gracefully: ${error.message.slice(0,120)}`);
+			cycleLogger.logEvent(accountId, 'chat', 'context_closed', {
+				chatId: chat.chatId,
+				manName: chat.manName,
+				profileName: profile.username,
+				isCatchUp,
+				reason: 'context_closed',
+				sent: false,
+			});
+			return { sent: false, reason: 'context_closed', error: error.message };
+		}
+		if (isPayment) {
+			utils.logError('Chat Processor', `❌ Payment required (DeepSeek balance) — set AI_PROVIDER=nvidia or top up`, error);
+			cycleLogger.logEvent(accountId, 'chat', 'payment_required', {
+				chatId: chat.chatId,
+				manName: chat.manName,
+				profileName: profile.username,
+				isCatchUp,
+				reason: 'payment_required',
+				sent: false,
+			});
+			return { sent: false, reason: 'payment_required', error: error.message };
+		}
 		utils.logError('Chat Processor', `❌ Unexpected error:`, error);
 		cycleLogger.logEvent(accountId, 'chat', 'exception', {
 			chatId: chat.chatId,
