@@ -290,11 +290,36 @@ const getActiveProfile = async (page, accountId, maxRetries = 3) => {
 				return basicProfile;
 			}
 
-			// Профиль не найден (но API доступен)
+			// Профиль не найден (но API доступен): страница могла зависнуть в
+			// CatchUp-оверелее или переходном состоянии — уводим на стабильный
+			// /chats/ (это и есть выход из CatchUp), иначе делаем reload.
+			// Без этого каждая попытка падает одинаково и цикл вечно холостит.
 			log(
 				'AI Auto',
 				`⚠️  No active profile (attempt ${attempt + 1}/${maxRetries})`,
 			);
+			if (attempt < maxRetries - 1) {
+				try {
+					const currentUrl = page.url();
+					if (!currentUrl.includes('/chats/')) {
+						log('AI Auto', `🔄 No profile — navigating to stable /chats/ (exit CatchUp): ${currentUrl}`);
+						await page.goto('https://luxee.io/chats/', {
+							waitUntil: 'domcontentloaded',
+							timeout: 30000,
+						});
+					} else {
+						log('AI Auto', `🔄 No profile — reloading page: ${currentUrl}`);
+						await page.reload({
+							waitUntil: 'domcontentloaded',
+							timeout: 30000,
+						});
+					}
+					await sleep(3000);
+					log('AI Auto', '✅ Recovery navigation done, re-checking profile...');
+				} catch (recoveryError) {
+					logError('AI Auto', `❌ Profile recovery navigation failed:`, recoveryError);
+				}
+			}
 		} catch (error) {
 			// Если modelsChat недоступен → reload страницы
 			if (error.message.includes('modelsChat_not_available')) {

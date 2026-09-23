@@ -11,6 +11,61 @@ import aiManagementService from './aiManagementService/index.js';
 import aiService from './aiService/index.js';
 import aiBrowserContextService from './browser/aiBrowserContextService.js';
 import pageHelpers from './browser/pageHelpers.js';
+import chatMessagesExtractorService from './luxeeApi/chatMessagesExtractorService.js';
+
+// Нормализация для сравнения текстов: без смайлов/пунктуации/регистра/лишних
+// пробелов. Иначе несовпадение рендера (эмодзи-шрифты, кавычки, тире) даёт
+// ложный fail и мы бесконечно переотправляем доставленное.
+const normalizeForMatch = s =>
+	String(s || '')
+		.toLowerCase()
+		.replace(
+			/[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}\u{2B00}-\u{2BFF}\u{FE0F}\u{200D}\u{2190}-\u{21FF}\u{2300}-\u{23FF}]/gu,
+			'',
+		)
+		.replace(/[^\p{L}\p{N}\s]/gu, '')
+		.replace(/\s+/g, ' ')
+		.trim();
+
+const headsMatch = (a, b, n = 60) => {
+	const A = normalizeForMatch(a).slice(0, n);
+	const B = normalizeForMatch(b).slice(0, n);
+	return !!A && !!B && (A.startsWith(B) || B.startsWith(A));
+};
+
+// Проверка доставки по ПЕРЕЧИТАННОЙ истории (6 последних сообщений):
+// 1) последнее сообщение — точно наше (isFromProfile),
+// 2) его текст совпадает с отправленным (без учёта смайлов и ерунды).
+// Флаг unAnswered доказательством НЕ считается — замечен врущим в обе
+// стороны (false без сообщения; true при фантомном посте).
+const verifyDeliveryByHistory = async (page, chatId, message) => {
+	try {
+		const activeChatId = await page
+			.evaluate(() => window.modelsChat?.getChats?.active?.identity)
+			.catch(() => null);
+		if (activeChatId !== chatId) {
+			return { delivered: false, reason: 'chat_changed' };
+		}
+		const hist = await chatMessagesExtractorService.getChatHistory(page, 6);
+		if (!hist || hist.error || !hist.lastMessage) {
+			return { delivered: false, reason: 'no_history' };
+		}
+		const last = hist.lastMessage;
+		if (!last.isFromProfile) {
+			return {
+				delivered: false,
+				reason: 'last_not_ours',
+				lastAuthor: last.author || null,
+			};
+		}
+		if (!headsMatch(last.text, message)) {
+			return { delivered: false, reason: 'text_mismatch' };
+		}
+		return { delivered: true, verifiedBy: 'history_match' };
+	} catch (e) {
+		return { delivered: false, reason: `verify_error: ${e.message}` };
+	}
+};
 
 const aiResponseService = {
 	/**
@@ -39,6 +94,7 @@ const aiResponseService = {
 		typeInstructions = '',
 		profileName = '',
 		manName = '',
+		activityCenterData = null,
 	}) => {
 		try {
 			console.log('[AI Response Service] Generating response...');
@@ -63,17 +119,18 @@ const aiResponseService = {
 				'[AI Response Service] AI checks passed, generating response...',
 			);
 
-			// 3. Генерируем ответ через aiService с историей
-			const response = await aiService.generateResponse({
-				profile,
-				manMessage,
-				messageType,
-				conversationHistory,
-				formattedHistory,
-				typeInstructions,
-				profileName,
-				manName,
-			});
+		// 3. Генерируем ответ через aiService с историей
+		const response = await aiService.generateResponse({
+			profile,
+			manMessage,
+			messageType,
+			conversationHistory,
+			formattedHistory,
+			typeInstructions,
+			profileName,
+			manName,
+			activityCenterData,
+		});
 
 			console.log('[AI Response Service] Response generated successfully');
 
@@ -105,10 +162,6 @@ const aiResponseService = {
 	 */
 	_keyboardSend: async (page, { chatId, message }) => {
 		const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
-		const normHead = String(message || '')
-			.replace(/\s+/g, ' ')
-			.trim()
-			.slice(0, 40);
 		// Текст для печати: в одну строку (Enter внутри = досрочная отправка)
 		const flat = String(message || '').replace(/\r?\n/g, ' ');
 		try {
@@ -137,46 +190,27 @@ const aiResponseService = {
 				.catch(() => false);
 			if (!activeOk) throw new Error(`Failed to navigate to chat ${chatId}`);
 
-			// 2. Снапшот ДО + anti-double (сообщение могло уже уйти)
-			const snapshot = msgHead =>
-				page
-					.evaluate(head => {
-						try {
-							const norm = s =>
-								String(s || '')
-									.replace(/\s+/g, ' ')
-									.trim()
-									.slice(0, 40);
-							const list = modelsChat?.getChats?.active?.message || [];
-							const last = list.length > 0 ? list[list.length - 1] : null;
-							const manUid = modelsChat?.getChats?.active?.members?.find(
-								m => m.type === 10,
-							)?.uid;
-							const lastBody = last?.body ? norm(last.body) : '';
-							return {
-								count: list.length,
-								alreadyThere:
-									!!last &&
-									manUid !== undefined &&
-									last.uid !== manUid &&
-									head !== '' &&
-									(lastBody.startsWith(head) || head.startsWith(lastBody)),
-							};
-						} catch (e) {
-							return { count: -1, alreadyThere: false };
-						}
-					}, msgHead)
-					.catch(() => ({ count: -1, alreadyThere: false }));
-			const before = await snapshot(normHead);
-			if (before.alreadyThere) {
-				return {
-					success: true,
-					delivered: true,
-					message: 'Message already delivered (duplicate prevented)',
-					chatId,
-					verifiedBy: 'message_present',
-				};
-			}
+		// 2. Anti-double по ПЕРЕЧИТАННОЙ истории (а не локальному списку —
+		// он бывает оптимистичным: фантомный пост виден локально, но его
+		// нет в треде). Если наше сообщение реально последнее — не печатаем.
+		const histBefore = await chatMessagesExtractorService
+			.getChatHistory(page, 6)
+			.catch(() => null);
+		const beforeLast =
+			histBefore && !histBefore.error ? histBefore.lastMessage : null;
+		if (
+			beforeLast &&
+			beforeLast.isFromProfile &&
+			headsMatch(beforeLast.text, flat)
+		) {
+			return {
+				success: true,
+				delivered: true,
+				message: 'Message already in chat history (duplicate prevented)',
+				chatId,
+				verifiedBy: 'history_match',
+			};
+		}
 
 			// 3. Доверенный клик по ВИДИМОМУ редактору + проверка фокуса
 			const editorLocator = page.locator('.emojionearea-editor:visible').first();
@@ -211,67 +245,115 @@ const aiResponseService = {
 			await page.keyboard.type(flat, { delay: 20 });
 			await sleep(500);
 
-			// 5. Anti-double перед Enter + отправка + проверка
-			const pre = await snapshot(normHead);
-			if (pre.alreadyThere) {
-				return {
-					success: true,
-					delivered: true,
-					message: 'Message verified by presence in chat',
-					chatId,
-					verifiedBy: 'message_present',
-				};
-			}
-			await page.keyboard.press('Enter');
-			await sleep(4000);
-			const verify = await page
-				.evaluate(head => {
+			// 4b. Readback редактора ПЕРЕД Enter: текст реально лёг в поле?
+			// Если страница за это время ушла (в т.ч. ручной клик по контексту)
+			// или редактор пересоздался — Enter вслепую не жмём.
+			const readEditorLen = () =>
+				page
+					.evaluate(() => {
+						try {
+							const editors = Array.from(
+								document.querySelectorAll('.emojionearea-editor'),
+							);
+							const vis = editors.find(el => {
+								try {
+									const r = el.getBoundingClientRect();
+									return r.width > 0 && r.height > 0 && el.offsetParent !== null;
+								} catch (e) {
+									return false;
+								}
+							});
+							return (vis?.textContent || '').trim().length;
+						} catch (e) {
+							return -1;
+						}
+					})
+					.catch(() => -1);
+			const chatStillOk = await page
+				.evaluate(cId => {
 					try {
-						const norm = s =>
-							String(s || '')
-								.replace(/\s+/g, ' ')
-								.trim()
-								.slice(0, 40);
-						const active = modelsChat?.getChats?.active;
-						const list = active?.message || [];
-						const last = list.length > 0 ? list[list.length - 1] : null;
-						const manUid = active?.members?.find(m => m.type === 10)?.uid;
-						const lastBody = last?.body ? norm(last.body) : '';
-						return {
-							unAnswered: active?.unAnswered ?? null,
-							count: list.length,
-							appeared:
-								!!last &&
-								manUid !== undefined &&
-								last.uid !== manUid &&
-								head !== '' &&
-								(lastBody.startsWith(head) || head.startsWith(lastBody)),
-						};
+						return modelsChat?.getChats?.active?.identity === cId;
 					} catch (e) {
-						return { unAnswered: null, count: -1, appeared: false };
+						return false;
 					}
-				}, normHead)
-				.catch(() => ({ unAnswered: null, count: -1, appeared: false }));
-			if (verify.unAnswered === false || verify.appeared) {
+				}, chatId)
+				.catch(() => false);
+			if (!chatStillOk) {
 				return {
-					success: true,
-					delivered: true,
-					message: 'Message sent via keyboard-submit',
-					chatId,
-					verifiedBy: verify.appeared ? 'message_present' : 'unanswered_flag',
+					success: false,
+					delivered: false,
+					error: 'Chat changed before Enter (page navigated away)',
+					debug: { focused },
 				};
 			}
+			let editorLen = await readEditorLen();
+			if (!editorLen || editorLen < 0) {
+				// Поле пустое — печать ушла в никуда (тред не успел прогрузиться,
+				// редактор подменился). Перекликиваем и печатаем заново один раз.
+				console.log('[AI Response Service] ⚠️  Editor empty after typing, re-click + re-type once...');
+				try {
+					await editorLocator.click({ timeout: 5000 }).catch(() => {});
+					await sleep(400);
+					await page.keyboard.press('ControlOrMeta+a');
+					await sleep(200);
+					await page.keyboard.press('Backspace');
+					await sleep(300);
+					await page.keyboard.type(flat, { delay: 20 });
+					await sleep(500);
+				} catch (e) {}
+				editorLen = await readEditorLen();
+				if (!editorLen || editorLen < 0) {
+					return {
+						success: false,
+						delivered: false,
+						error: 'Editor empty after re-type, Enter skipped',
+						debug: { focused },
+					};
+				}
+			}
+
+		// 5. Anti-double перед Enter — тоже по истории: если текст уже в треде,
+		// Enter не жмём (не плодим дубли).
+		const histPre = await chatMessagesExtractorService
+			.getChatHistory(page, 6)
+			.catch(() => null);
+		const preLast = histPre && !histPre.error ? histPre.lastMessage : null;
+		if (preLast && preLast.isFromProfile && headsMatch(preLast.text, flat)) {
 			return {
-				success: false,
-				delivered: false,
-				error: 'Message not delivered - unAnswered still true',
-				debug: {
-					focused,
-					msgCountBefore: before.count,
-					msgCountAfter: verify.count,
-					unAnsweredFinal: verify.unAnswered,
-				},
+				success: true,
+				delivered: true,
+				message: 'Message already in chat history, Enter skipped',
+				chatId,
+				verifiedBy: 'history_match',
 			};
+		}
+		await page.keyboard.press('Enter');
+		// Даём сайту persist: историю перечитываем только после паузы 2с.
+		// Проверяем по ПЕРЕЧИТАННОЙ истории (последнее — наше + текст совпал),
+		// а не по мгновенному локальному слепку — он бывает оптимистичным.
+		await sleep(2000);
+		const verify = await verifyDeliveryByHistory(page, chatId, flat);
+		console.log(
+			`[AI Response Service] ⌨️  History-verify: delivered=${verify.delivered} (${verify.reason || verify.verifiedBy})`,
+		);
+		if (verify.delivered) {
+			return {
+				success: true,
+				delivered: true,
+				message: 'Message verified in chat history',
+				chatId,
+				verifiedBy: 'history_match',
+			};
+		}
+		return {
+			success: false,
+			delivered: false,
+			error: `Message not in chat history (${verify.reason || 'unknown'})`,
+			debug: {
+				focused,
+				verifyReason: verify.reason,
+			},
+		};
 		} catch (kbError) {
 			return { success: false, delivered: false, error: kbError.message };
 		}
@@ -281,6 +363,12 @@ const aiResponseService = {
 		try {
 			console.log('[AI Response Service] Sending AI response...');
 			console.log('[AI Response Service] Chat:', chatId);
+
+			// 0. Пустое сообщение не отправляем вообще (не жмём Enter впустую):
+			// бывает после чистки кривого ответа ИИ (одна кавычка и т.п.)
+			if (!message || !String(message).trim()) {
+				throw new Error('AI Message is empty — refusing to send, will regenerate');
+			}
 
 			// 1. Проверяем может ли использоваться AI (перед отправкой)
 			const canUse = await aiManagementService.canAccountUseAi(
@@ -367,7 +455,7 @@ const aiResponseService = {
 					});
 					if (result && result.success && result.delivered) {
 						console.log(
-							`[AI Response Service] ✅ Keyboard-primary delivered on attempt ${sendAttempt} (verified by: ${result.verifiedBy || 'unanswered_flag'})`,
+							`[AI Response Service] ✅ Keyboard-primary delivered on attempt ${sendAttempt} (verified by: ${result.verifiedBy || 'history_match'})`,
 						);
 						messageSent = true;
 					}
@@ -607,96 +695,29 @@ const aiResponseService = {
 									console.log('[AI Response] ✅ Message already present (no duplicate send)');
 									return {
 										success: true,
-										delivered: true,
+										delivered: false,
+										needsHistoryVerify: true,
 										message: 'Message already delivered (duplicate prevented)',
 										chatId: cId,
-										verifiedBy: 'message_present',
 									};
 								}
 							}
 
-							// Отправляем
+							// Отправляем штатным путём сайта
 							console.log(`[AI Response] 📤 Calling modelsChat.sendMessage()... (attempt ${attempt})`);
 							modelsChat.sendMessage();
 
-							// ⏱️ Ждём 300ms для WebSocket обновления
-							console.log('[AI Response] ⏳ Waiting 300ms for WebSocket update...');
-							await new Promise(resolve => setTimeout(resolve, 300));
+							// Небольшая пауза, чтобы ввод осел. Итоговая проверка —
+							// снаружи (Node): перечитанная история через 2с.
+							// Здесь успех НЕ объявляем: локальный слепок бывает
+							// оптимистичным (фантомный пост + висящий unAnswered).
+							await new Promise(resolve => setTimeout(resolve, 700));
 
-							// 🔍 ПРОВЕРКА ДОСТАВКИ #1: unAnswered должен стать false
-							const unAnsweredAfter = modelsChat.getChats?.active?.unAnswered;
-							console.log(`[AI Response] 📊 unAnswered AFTER send: ${unAnsweredAfter}`);
-
-							if (unAnsweredAfter === false) {
-								console.log('[AI Response] ✅ Message delivered successfully (unAnswered=false)');
-								return {
-									success: true,
-									delivered: true,
-									message: 'Message sent and delivered',
-									chatId: cId,
-									verifiedBy: 'unanswered_flag',
-								};
-							}
-
-							// Если ещё true - даём второй шанс (3 секунды)
-							console.log('[AI Response] ⚠️  unAnswered still true, waiting 3 seconds...');
-							await new Promise(resolve => setTimeout(resolve, 3000));
-
-							// 🔍 ПРОВЕРКА ДОСТАВКИ #2: флаг + факт появления сообщения.
-							// Флаг может отставать (медленный WS) — тогда доказательством
-							// служит выросший счётчик + наше сообщение последним от профиля.
-							const unAnsweredFinal = modelsChat.getChats?.active?.unAnswered;
-							console.log(`[AI Response] 📊 unAnswered FINAL check: ${unAnsweredFinal}`);
-							const after = snapshotMessages();
-							console.log(
-								`[AI Response] 📊 Messages: ${before.count} → ${after.count}, lastFromProfile=${after.lastFromProfile}`
-							);
-
-							if (unAnsweredFinal === false) {
-								console.log('[AI Response] ✅ Message delivered after delay (unAnswered=false)');
-								return {
-									success: true,
-									delivered: true,
-									message: 'Message sent and delivered after delay',
-									chatId: cId,
-									verifiedBy: 'unanswered_flag',
-								};
-							}
-
-							const appeared =
-								after.count > before.count &&
-								after.lastFromProfile === true &&
-								after.lastId !== before.lastId &&
-								msgHead !== '' &&
-								(after.lastBody.startsWith(msgHead) ||
-									msgHead.startsWith(after.lastBody));
-
-							if (appeared) {
-								console.log('[AI Response] ✅ Message verified by presence (flag lagged)');
-								return {
-									success: true,
-									delivered: true,
-									message: 'Message verified by presence in chat',
-									chatId: cId,
-									verifiedBy: 'message_present',
-								};
-							}
-
-							// Сообщение НЕ доставлено
-							console.error('[AI Response] ❌ Message NOT delivered (unAnswered still true)');
 							return {
-								success: false,
+								success: true,
 								delivered: false,
-								error: 'Message not delivered - unAnswered still true',
+								needsHistoryVerify: true,
 								chatId: cId,
-								debug: {
-									unAnsweredBefore,
-									unAnsweredAfter,
-									unAnsweredFinal,
-									msgCountBefore: before.count,
-									msgCountAfter: after.count,
-									...(typeof editorDebug !== 'undefined' ? editorDebug : {}),
-								},
 							};
 							} catch (error) {
 								console.error('[AI Response] ❌ Error during send:', error.message);
@@ -711,9 +732,37 @@ const aiResponseService = {
 					);
 					} // end запасного programmatic-пути (выполняется только если keyboard-primary не доставил)
 
+					// Единая проверка доставки: перечитанная история
+					// (последнее — наше + текст совпал без учёта смайлов).
+					// Keyboard-путь уже проверен внутри _keyboardSend; здесь —
+					// programmatic-путь. Флаг unAnswered доказательством НЕ считается.
+					if (result && result.success && result.needsHistoryVerify && !messageSent) {
+						await new Promise(resolve => setTimeout(resolve, 2000));
+						const hv = await verifyDeliveryByHistory(page, chatId, message);
+						console.log(
+							`[AI Response Service] 📜 History-verify: delivered=${hv.delivered} (${hv.reason || hv.verifiedBy})`,
+						);
+						if (hv.delivered) {
+							result = {
+								success: true,
+								delivered: true,
+								message: 'Message verified in chat history',
+								chatId,
+								verifiedBy: 'history_match',
+							};
+						} else {
+							result = {
+								success: false,
+								delivered: false,
+								error: `Message not in chat history (${hv.reason || 'unknown'})`,
+								chatId,
+							};
+						}
+					}
+
 					// Проверяем результат
 					if (result.success && result.delivered) {
-						console.log(`[AI Response Service] ✅ Message delivered on attempt ${sendAttempt} (verified by: ${result.verifiedBy || 'unanswered_flag'})`);
+						console.log(`[AI Response Service] ✅ Message delivered on attempt ${sendAttempt} (verified by: ${result.verifiedBy || 'history_match'})`);
 						messageSent = true;
 						break;
 					}
@@ -752,97 +801,6 @@ const aiResponseService = {
 			};
 		} catch (error) {
 			console.error('[AI Response Service] Error sending AI response:', error);
-			throw error;
-		}
-	},
-
-	/**
-	 * Полный цикл: генерация + отправка AI ответа
-	 * @param {Object} params
-	 * @param {string} params.userId - ID пользователя
-	 * @param {string} params.accountId - ID Luxee аккаунта
-	 * @param {number} params.profileUid - UID профиля
-	 * @param {string} params.chatId - ID чата
-	 * @param {Object} params.profile - Профиль девушки
-	 * @param {string} params.manMessage - Сообщение от мужчины
-	 * @param {number} params.messageType - Тип сообщения (1 = текст, другие = эмодзи/медиа)
-	 * @param {Array} params.conversationHistory - История переписки
-	 * @returns {Promise<Object>} - Результат
-	 */
-	generateAndSend: async ({
-		userId,
-		accountId,
-		profileUid,
-		chatId,
-		profile,
-		manMessage,
-		messageType = 1,
-		conversationHistory = [],
-		formattedHistory = '',
-		typeInstructions = '',
-		profileName = '',
-		manName = '',
-	}) => {
-		try {
-			console.log('[AI Response Service] Starting generate and send cycle...');
-
-			// 1. Генерируем ответ с новыми параметрами
-			const aiResponse = await aiResponseService.generateResponse({
-				userId,
-				accountId,
-				profile,
-				manMessage,
-				messageType,
-				conversationHistory,
-				formattedHistory,
-				typeInstructions,
-				profileName,
-				manName,
-			});
-
-			console.log('[AI Response Service] AI response:', aiResponse);
-
-			// 2. Проверяем статус AI ещё раз перед отправкой
-			const canUse = await aiManagementService.canAccountUseAi(
-				userId,
-				accountId,
-			);
-			if (!canUse) {
-				console.log(
-					'[AI Response Service] AI was disabled during generation, not sending',
-				);
-				return {
-					success: false,
-					cancelled: true,
-					reason: 'AI disabled during generation',
-					generatedResponse: aiResponse.response, // ✅ FIX: Extract text from object
-				};
-			}
-
-			// 3. Отправляем ответ
-			// ✅ FIX: aiResponse is {response: string, retries: number}, extract .response
-			const sendResult = await aiResponseService.sendResponse({
-				userId,
-				accountId,
-				profileUid,
-				chatId,
-				message: aiResponse.response, // ✅ FIX: Was sending [object Object]
-			});
-
-			console.log(
-				'[AI Response Service] Generate and send cycle completed successfully',
-			);
-
-			return {
-				success: true,
-				generatedResponse: aiResponse,
-				sendResult,
-			};
-		} catch (error) {
-			console.error(
-				'[AI Response Service] Error in generate and send cycle:',
-				error,
-			);
 			throw error;
 		}
 	},

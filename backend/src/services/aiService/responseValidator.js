@@ -2,6 +2,9 @@
 
 import { FORBIDDEN_PHRASES } from './config.js';
 
+// Жёсткий лимит сайта: сообщения длиннее не принимаются
+export const MAX_REPLY_CHARS = 200;
+
 /**
  * Проверить содержит ли ответ запрещенные фразы
  */
@@ -47,3 +50,8 @@ export const cleanResponse = (response) => {
 
 	return cleaned.trim();
 };
+
+/**
+ * Длина в кодпоинтах (эмодзи не рвём и считаем как 1 символ)
+ */
+export const replyLength = text => Array.from(String(text || '')).length;

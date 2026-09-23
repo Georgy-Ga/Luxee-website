@@ -64,7 +64,8 @@ export const buildMessages = async ({
 	formattedHistory = '',
 	typeInstructions = '',
 	profileName = '',
-	manName = ''
+	manName = '',
+	activityCenterData = null,
 }) => {
 	console.log('');
 	console.log('📝 [AI DEBUG] ===== BUILDING PROMPT FOR AI =====');
@@ -85,17 +86,39 @@ export const buildMessages = async ({
 	
 	if (isActivityCenter) {
 		console.log('  🔔 ACTIVITY CENTER MODE DETECTED - using special prompt');
-		
+
+		// Личность анкеты: ИИ должна знать, от чьего имени пишет первое сообщение
+		const profileContext = buildProfileContext(profile, customRules);
+
 		// Используем специальный промпт для Activity Center
 		messages.push({
 			role: 'system',
 			content: ACTIVITY_CENTER_PROMPT,
 		});
-		
-		// Для Activity Center НЕ нужен profile context (возраст, город и т.д.)
+
+		// Тип активности: favorite / like / wink — от этого зависит тон сообщения.
+		// Раньше тип терялся по дороге (activityCenterData дропался), теперь доходит.
+		const activityType = activityCenterData?.activityType || 'unknown';
+		let activityLine = 'showed interest in your profile';
+		if (activityType === 'favorite') {
+			activityLine = 'subscribed to/favorited your profile — start warm and welcoming, show you noticed him';
+		} else if (activityType === 'like') {
+			activityLine = 'liked your profile — start warm and slightly flirty, show you noticed him';
+		} else if (activityType === 'wink') {
+			activityLine = 'winked at you — this is a playful first move, be fun and flirty';
+		}
+		console.log('  🔔 Activity type:', activityType);
+
+		// Для Activity Center НЕ нужен возраст/город в явном виде, но имя анкеты —
+		// обязательно: без него ИИ не понимает, кто она.
 		// Свежую выборку примеров подставляем сюда (не в system) — разнообразие без ~1500 токенов за раз
 		const sampleExamples = getSampleActivityExamples(2);
-		const userMessage = `Write ONE engaging question to start a conversation with a man named ${manName || 'him'}. Make it unique, interesting, and thought-provoking.\n\nStyle examples (do NOT copy, vary the topic):\n${sampleExamples}`;
+		const userMessage = `${profileContext}
+
+A man named ${manName || 'him'} just ${activityLine}.
+Write ONE engaging question to start a conversation with him. Make it unique, interesting, and thought-provoking. Keep it under 200 characters.
+
+Style examples (do NOT copy, vary the topic):\n${sampleExamples}`;
 		
 		messages.push({
 			role: 'user',
@@ -193,7 +216,7 @@ export const buildMessages = async ({
 
 ${messageContext}Man's message: "${manMessage}"
 
-Generate a natural, friendly response as ${userName}. Write a complete message (1-3 sentences).`;
+Generate a natural, friendly response as ${userName}. Write a complete message (1-3 sentences, strictly under 200 characters total — the site rejects longer messages).`;
 
 	messages.push({
 		role: 'user',
@@ -212,74 +235,3 @@ Generate a natural, friendly response as ${userName}. Write a complete message (
 	return messages;
 };
 
-/**
- * 🆕 Построить промпт для Activity Center (первое сообщение)
- * Используется когда мужчина поставил лайк/подмигнул/подписался
- * НЕ использует историю сообщений (её нет)
- */
-export const buildActivityCenterPrompt = async ({
-	activityType,
-	manName,
-	profile,
-	customRules,
-}) => {
-	console.log('');
-	console.log('🔔 [ACTIVITY CENTER] ===== BUILDING FIRST MESSAGE PROMPT =====');
-	console.log('  👤 Profile:', profile?.username || 'N/A');
-	console.log('  👨 Man name:', manName);
-	console.log('  🎯 Activity type:', activityType);
-	console.log('  📋 Custom rules count:', customRules?.length || 0);
-
-	const messages = [];
-	const profileContext = buildProfileContext(profile, customRules);
-
-	// Получаем системный промпт
-	const systemPrompt = await getProfilePrompt(profile?.uid);
-	console.log('  🎯 System prompt type:', systemPrompt === SYSTEM_PROMPT ? 'DEFAULT' : 'CUSTOM');
-
-	messages.push({
-		role: 'system',
-		content: systemPrompt,
-	});
-
-	// Определяем инструкции в зависимости от типа активности
-	let activityInstructions = '';
-	switch (activityType) {
-		case 'favorite':
-			activityInstructions = `A man named "${manName}" just followed/subscribed to your profile. This is his first action. Write a friendly, welcoming first message to start a conversation. Show interest and ask a question to engage him.`;
-			break;
-		case 'like':
-			activityInstructions = `A man named "${manName}" just liked your profile. This is his first action. Write a warm, flirty first message to start a conversation. Show you noticed and are interested. Ask a question to get him talking.`;
-			break;
-		case 'wink':
-			activityInstructions = `A man named "${manName}" just winked at you. This is a playful first move. Write a fun, flirty first message in response. Be playful and ask an engaging question.`;
-			break;
-		default:
-			activityInstructions = `A man named "${manName}" showed interest in your profile. Write a friendly first message to start a conversation.`;
-	}
-
-	console.log('  💬 Activity instructions:', activityInstructions);
-
-	// Собираем финальный промпт
-	const userMessage = `${profileContext}
-
-${activityInstructions}
-
-IMPORTANT: This is the FIRST message in the conversation. There is NO previous chat history. Write a complete, standalone message (1-3 sentences) as ${profile?.username || 'yourself'}.`;
-
-	messages.push({
-		role: 'user',
-		content: userMessage,
-	});
-
-	console.log('  📨 Total messages in array:', messages.length);
-	console.log('  📄 Messages structure:');
-	messages.forEach((msg, idx) => {
-		const preview = msg.content.substring(0, 100);
-		console.log(`    ${idx + 1}. [${msg.role}] ${preview}${msg.content.length > 100 ? '...' : ''}`);
-	});
-	console.log('═'.repeat(80));
-	console.log('');
-
-	return messages;
-};

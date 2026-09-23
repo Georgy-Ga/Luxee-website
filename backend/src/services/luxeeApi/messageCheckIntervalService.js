@@ -90,35 +90,6 @@ const messageCheckIntervalService = {
 		}
 	},
 
-	/**
-	 * Остановить все проверки
-	 */
-	stopAll: () => {
-		try {
-			const userIds = Array.from(checkIntervals.keys());
-			for (const userId of userIds) {
-				messageCheckIntervalService.stop(userId);
-			}
-			console.log('[Message Check Interval] All stopped');
-		} catch (error) {
-			console.error('[Message Check Interval] Error stopping all:', error);
-		}
-	},
-
-	/**
-	 * Получить последний результат проверки
-	 */
-	getLastResult: userId => {
-		return lastCheckResults.get(userId);
-	},
-
-	/**
-	 * Получить статистику
-	 */
-	getStats: () => ({
-		activeChecks: checkIntervals.size,
-		userIds: Array.from(checkIntervals.keys()),
-	}),
 };
 
 export default messageCheckIntervalService;

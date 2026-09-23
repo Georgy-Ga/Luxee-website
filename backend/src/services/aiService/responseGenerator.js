@@ -6,6 +6,8 @@ import { buildMessages } from './promptBuilder.js';
 import {
 	cleanResponse,
 	containsForbiddenPhrases,
+	MAX_REPLY_CHARS,
+	replyLength,
 } from './responseValidator.js';
 
 // Ретраи только для forbidden-phrases. Было 3: каждая попытка слала ВЕСЬ
@@ -27,6 +29,7 @@ export const generateResponse = async ({
 	typeInstructions = '',
 	profileName = '',
 	manName = '',
+	activityCenterData = null,
 }) => {
 	try {
 		console.log('');
@@ -60,6 +63,7 @@ export const generateResponse = async ({
 			typeInstructions,
 			profileName,
 			manName,
+			activityCenterData,
 		});
 
 		// Пытаемся получить ответ (с повторами если AI призналась что она бот)
@@ -125,7 +129,59 @@ export const generateResponse = async ({
 		}
 
 		// Очищаем ответ
-		const cleanedResponse = cleanResponse(aiResponse);
+		let cleanedResponse = cleanResponse(aiResponse);
+
+		// 📏 Лимит сайта: ответ обязан быть ≤200 символов. БЕЗ обрезки:
+// сначала просим переписать тот же ответ короче, затем (если всё ещё
+// длинно) — сгенерировать новый короткий ответ. Ограничено 3 доп-запросами,
+// чтобы не жечь токены. Не влезли — бросаем ошибку: цикл повторит позже
+// с новой генерацией, обрезанный кусок не уйдёт никогда.
+		const MAX_LENGTH_ATTEMPTS = 3;
+		let lengthAttempts = 0;
+		while (
+			replyLength(cleanedResponse) > MAX_REPLY_CHARS &&
+			lengthAttempts < MAX_LENGTH_ATTEMPTS
+		) {
+			lengthAttempts++;
+			console.log(
+				`  📏 Too long (${replyLength(cleanedResponse)} chars), shorten attempt ${lengthAttempts}/${MAX_LENGTH_ATTEMPTS}...`,
+			);
+			messages.push({
+				role: 'user',
+				content:
+					lengthAttempts === 1
+						? `Too long — rewrite the same reply strictly under ${MAX_REPLY_CHARS} characters, keep the meaning and stay natural.`
+						: `Generate a NEW short reply strictly under ${MAX_REPLY_CHARS} characters. Do not repeat the previous long reply, write it fresh and concise.`,
+			});
+			try {
+				const retryRaw = await sendAIRequest(messages, retryCount);
+				const retryCleaned = cleanResponse(retryRaw);
+				if (retryCleaned && !containsForbiddenPhrases(retryCleaned)) {
+					aiResponse = retryRaw;
+					cleanedResponse = retryCleaned;
+					console.log(
+						`  📏 Attempt ${lengthAttempts} result: ${replyLength(cleanedResponse)} chars`,
+					);
+				} else {
+					console.log('  📏 Attempt produced empty/forbidden text, trying again...');
+				}
+			} catch (shortenError) {
+				console.log(
+					`  📏 Shorten attempt failed (${shortenError.message}), stop retrying length`,
+				);
+				break;
+			}
+		}
+		if (replyLength(cleanedResponse) > MAX_REPLY_CHARS) {
+			throw new Error(
+				`AI reply exceeds ${MAX_REPLY_CHARS} chars after ${lengthAttempts} shorten attempts — will regenerate on retry`,
+			);
+		}
+		// Пустой ответ после чистки (бывает: модель вернула одну кавычку,
+		// finish_reason=length) — отправлять нечего, пусть цикл сгенерирует заново.
+		if (!cleanedResponse || replyLength(cleanedResponse) === 0) {
+			throw new Error('AI returned empty response after cleaning — will regenerate on retry');
+		}
 
 		console.log('  🧹 Response cleaned');
 		console.log('  📤 Final response:', cleanedResponse);

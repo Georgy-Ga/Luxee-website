@@ -2,10 +2,55 @@
 // Обработка одного чата: навигация, извлечение истории, генерация, отправка
 
 import aiResponseService from '../aiResponseService.js';
+import { MAX_REPLY_CHARS, replyLength } from '../aiService/responseValidator.js';
 import chatMessagesExtractorService from '../luxeeApi/chatMessagesExtractorService.js';
 import profileScanner from './profileScanner.js';
 import cycleLogger from './cycleLogger.js';
 import utils from './utils.js';
+
+// Кэш сгенерированных, но НЕ отправленных ответов.
+// Сгенерировали за токены, а отправка упала (сеть/таймаут/недоставка):
+// следующий цикл сначала пробует отправить ЭТОТ ЖЕ текст по ТОМУ ЖЕ
+// сообщению мужчины — без нового обращения к ИИ. Новое сообщение мужчины
+// или истечение TTL (10 мин) = новый ключ = новая генерация.
+// Отправленный ответ из кэша удаляется.
+const PENDING_REPLY_TTL_MS = 10 * 60 * 1000;
+const PENDING_REPLY_MAX = 200;
+const pendingReplies = new Map(); // key(`${chatId}||${manKey}`) -> { text, ts }
+const pendingReplyKey = (chatId, manKey) => `${chatId}||${manKey}`;
+const getPendingReply = (chatId, manKey) => {
+	const key = pendingReplyKey(chatId, manKey);
+	const rec = pendingReplies.get(key);
+	if (!rec) return null;
+	if (Date.now() - rec.ts > PENDING_REPLY_TTL_MS) {
+		pendingReplies.delete(key);
+		return null;
+	}
+	return rec.text;
+};
+const storePendingReply = (chatId, manKey, text) => {
+	if (pendingReplies.size >= PENDING_REPLY_MAX) {
+		pendingReplies.delete(pendingReplies.keys().next().value);
+	}
+	pendingReplies.set(pendingReplyKey(chatId, manKey), { text, ts: Date.now() });
+};
+const dropPendingReply = (chatId, manKey) => {
+	pendingReplies.delete(pendingReplyKey(chatId, manKey));
+};
+
+// Флаг unAnswered врёт в обе стороны (false без нашего сообщения; true при
+// фантомном посте). При false перепроверяем по истории: если последнее от
+// мужчины — отвечать НАДО, иначе вечный скип без ответа.
+// Возвращает true (точно отвечен) / false (точно не отвечен) / null (неизвестно).
+const isTrulyAnswered = async page => {
+	try {
+		const hist = await chatMessagesExtractorService.getChatHistory(page, 6);
+		if (!hist || hist.error || !hist.lastMessage) return null;
+		return !!hist.lastMessage.isFromProfile;
+	} catch (e) {
+		return null;
+	}
+};
 
 /**
  * Обработать один чат
@@ -190,18 +235,28 @@ const processSingleChat = async ({
 		}
 
 		if (!unAnsweredCheck.isUnAnswered) {
-			utils.log(
-				'Chat Processor',
-				`⏭️  Chat already answered (unAnswered = false) - skipping`,
-			);
-			cycleLogger.logEvent(accountId, 'chat', 'skipped', {
-				chatId: chat.chatId,
-				manName: chat.manName,
-				profileName: profile.username,
-				isCatchUp,
-				reason: 'already_answered',
-			});
-			return { sent: false, reason: 'already_answered' };
+			// Флаг false — но он врёт: проверяем последнее в истории.
+			// Если последнее от мужчины — отвечаем (иначе вечный скип).
+			const truly = await isTrulyAnswered(page);
+			if (truly === false) {
+				utils.log(
+					'Chat Processor',
+					`⚠️  unAnswered=false but last message is from man — proceeding (flag unreliable)`,
+				);
+			} else {
+				utils.log(
+					'Chat Processor',
+					`⏭️  Chat already answered (unAnswered = false) - skipping`,
+				);
+				cycleLogger.logEvent(accountId, 'chat', 'skipped', {
+					chatId: chat.chatId,
+					manName: chat.manName,
+					profileName: profile.username,
+					isCatchUp,
+					reason: 'already_answered',
+				});
+				return { sent: false, reason: 'already_answered' };
+			}
 		}
 
 			utils.log('Chat Processor', `✅ unAnswered = true, proceeding...`);
@@ -380,7 +435,11 @@ const processSingleChat = async ({
 			`🤖 Generating response (type: ${messageType})...`,
 		);
 
-	// ========== АДАПТИВНАЯ ЗАДЕРЖКА НА "ПЕЧАТАНИЕ" ==========
+	// ========== АДАПТИВНАЯ ЗАДЕРЖКА НА "ПЕЧАТАНИЕ" (дедлайн, лимиты без изменений) ==========
+	// Лимиты ТЕ ЖЕ (7–13с / 25с минимум / 45с urgent / 0.5с техминимум): ответ
+	// никогда не уйдёт раньше, чем уходил раньше. Новое: генерация идёт ВНУТРИ
+	// окна задержки, а не после него — типичный кейс ~35-40с вместо ~45-50с,
+	// худший успех ограничен генерацией (45с) + отправкой.
 	const MIN_DELAY = 7000;  // 7 секунд
 	const MAX_DELAY = 13000; // 13 секунд
 	const MIN_REALISTIC_TIME = 25000; // 25 секунд - минимальное реалистичное время ответа
@@ -442,8 +501,66 @@ const processSingleChat = async ({
 			);
 		}
 		
-		console.log(`[🚦 CHAT PROCESSOR] 💭 TYPING DELAY: ${Math.round(typingDelay / 1000)} seconds`);
-		await utils.sleep(typingDelay);
+		console.log(`[🚦 CHAT PROCESSOR] 💭 TYPING DELAY TARGET: ${Math.round(typingDelay / 1000)} seconds (generation runs inside this window)`);
+		// Дедлайн: момент, когда закончилась бы старая задержка.
+		// НЕ спим здесь — спим остаток ПОСЛЕ генерации ниже.
+		const delayDeadline = Date.now() + typingDelay;
+
+		// ========== КЭШ НЕОТПРАВЛЕННОГО ОТВЕТА (без повторной генерации) ==========
+		// Ключ: чат + последнее сообщение мужчины. Тот же ключ = тот же контекст
+		// для ИИ = отправляем готовый текст, новое обращение НЕ нужно.
+		const manKey = history.lastMessage
+			? `${history.lastMessage.messageType}:${String(history.lastMessage.text || '').slice(0, 120)}`
+			: 'first-message';
+		let replyText = null;
+		const cachedReply = getPendingReply(chat.chatId, manKey);
+		if (cachedReply) {
+			utils.log('Chat Processor', `♻️  Reusing generated reply (no new AI call)`);
+			console.log('[🚦 CHAT PROCESSOR] ♻️  Cached reply found, skipping AI generation');
+			replyText = cachedReply;
+		} else {
+			// ========== ГЕНЕРАЦИЯ ОТВЕТА (внутри окна задержки) ==========
+			console.log('[🚦 CHAT PROCESSOR] ========================================');
+			console.log('[🚦 CHAT PROCESSOR] 🤖 AI GENERATION START');
+			console.log('[🚦 CHAT PROCESSOR] Current URL:', page.url());
+			console.log('[🚦 CHAT PROCESSOR] Chat ID:', chat.chatId);
+			console.log('[🚦 CHAT PROCESSOR] Time:', new Date().toISOString());
+
+			utils.log('Chat Processor', `🤖 Generating AI response (type: ${messageType})...`);
+
+			console.log('[🚦 CHAT PROCESSOR] ⏳ Calling aiResponseService.generateResponse()...');
+			const genResult = await aiResponseService.generateResponse({
+				userId,
+				accountId,
+				profile: {
+					// uid обязателен: без него getProfilePrompt(uid) всегда возвращает
+					// дефолтный SYSTEM_PROMPT, кастомные промпты из Mongo молча не работали
+					uid: profile.uid,
+					username: profile.username,
+					age: profile.age,
+					country: profile.country,
+					city: profile.city,
+				},
+				manMessage: history.lastMessage?.text || '',
+				formattedHistory: formattedHistory,
+				profileName: profile.username,
+				manName: chat.manName || history.manName || 'there',
+				typeInstructions: typeInstructions,
+				messageType: messageType,
+			});
+			replyText = genResult.response;
+			storePendingReply(chat.chatId, manKey, replyText);
+		}
+
+		// Досыпаем остаток задержки: генерация была быстрой — ждём как раньше;
+		// долгой — она уже покрыла окно (ответ и так не моментальный).
+		const remainDelay = delayDeadline - Date.now();
+		if (remainDelay > 0) {
+			console.log(`[🚦 CHAT PROCESSOR] 💭 Sleeping remaining ${Math.round(remainDelay / 1000)}s of typing delay`);
+			await utils.sleep(remainDelay);
+		} else {
+			console.log('[🚦 CHAT PROCESSOR] ✅ Generation covered typing delay, no extra sleep');
+		}
 		console.log('[🚦 CHAT PROCESSOR] ✅ Typing delay completed');
 
 		// Повторная проверка unAnswered ПОСЛЕ задержки (только обычные чаты).
@@ -456,109 +573,103 @@ const processSingleChat = async ({
 				chat.chatId,
 			);
 		if (!recheck.error && !recheck.isUnAnswered) {
+			// Тот же кросс-чек: флаг false + последнее от мужчины = отвечаем.
+			const trulyRechecked = await isTrulyAnswered(page);
+			if (trulyRechecked !== false) {
+				utils.log(
+					'Chat Processor',
+					`⏭️  Chat answered during typing delay (unAnswered = false) - skipping generation`,
+				);
+				cycleLogger.logEvent(accountId, 'chat', 'skipped', {
+					chatId: chat.chatId,
+					manName: chat.manName,
+					profileName: profile.username,
+					isCatchUp,
+					reason: 'already_answered',
+				});
+				return { sent: false, reason: 'already_answered' };
+			}
 			utils.log(
 				'Chat Processor',
-				`⏭️  Chat answered during typing delay (unAnswered = false) - skipping generation`,
+				`⚠️  unAnswered=false but last message is from man — proceeding (flag unreliable)`,
 			);
-			cycleLogger.logEvent(accountId, 'chat', 'skipped', {
+		}
+		}
+
+		// ========== ОТПРАВКА ГОТОВОГО ОТВЕТА (без повторной генерации) ==========
+		// Финальная гарантия лимита сайта: длиннее 200 — НЕ отправляем вообще
+		// (без обрезки), кэш сбрасываем, следующий цикл сгенерирует заново.
+		if (replyLength(replyText) > MAX_REPLY_CHARS) {
+			utils.logError(
+				'Chat Processor',
+				`❌ Reply exceeds ${MAX_REPLY_CHARS} chars (${replyLength(replyText)}) — dropping, will regenerate`,
+			);
+			dropPendingReply(chat.chatId, manKey);
+			cycleLogger.logEvent(accountId, 'chat', 'generation_failed', {
 				chatId: chat.chatId,
 				manName: chat.manName,
 				profileName: profile.username,
 				isCatchUp,
-				reason: 'already_answered',
+				reason: 'reply_too_long',
+				sent: false,
 			});
-			return { sent: false, reason: 'already_answered' };
+			return { sent: false, reason: 'generation_failed' };
 		}
-		}
-
-		// ========== ГЕНЕРАЦИЯ И ОТПРАВКА ОТВЕТА ==========
 		console.log('[🚦 CHAT PROCESSOR] ========================================');
-		console.log('[🚦 CHAT PROCESSOR] 🤖 AI GENERATION & SEND START');
+		console.log('[🚦 CHAT PROCESSOR] 📤 AI SEND START (text ready, no regeneration)');
 		console.log('[🚦 CHAT PROCESSOR] Current URL:', page.url());
 		console.log('[🚦 CHAT PROCESSOR] Chat ID:', chat.chatId);
 		console.log('[🚦 CHAT PROCESSOR] Time:', new Date().toISOString());
-		
-		utils.log('Chat Processor', `🤖 Generating and sending AI response...`);
 
-		console.log('[🚦 CHAT PROCESSOR] ⏳ Calling aiResponseService.generateAndSend()...');
-		const aiResponse = await aiResponseService.generateAndSend({
+		utils.log('Chat Processor', `📤 Sending AI response...`);
+
+		console.log('[🚦 CHAT PROCESSOR] ⏳ Calling aiResponseService.sendResponse()...');
+		const sendResult = await aiResponseService.sendResponse({
 			userId,
 			accountId,
 			profileUid: profile.uid,
 			chatId: chat.chatId,
-			profile: {
-				// uid обязателен: без него getProfilePrompt(uid) всегда возвращает
-				// дефолтный SYSTEM_PROMPT, кастомные промпты из Mongo молча не работали
-				uid: profile.uid,
-				username: profile.username,
-				age: profile.age,
-				country: profile.country,
-				city: profile.city,
-			},
-			manMessage: history.lastMessage?.text || '',
-			formattedHistory: formattedHistory,
-			profileName: profile.username,
-			manName: chat.manName || history.manName || 'there',
-			typeInstructions: typeInstructions,
-			messageType: messageType,
-			// skipSending убран - функция всегда генерирует И отправляет
+			message: replyText,
 		});
 
 		// ========== ПРОВЕРКА РЕЗУЛЬТАТА ==========
 		console.log('[🔧 PROCESSOR] ========== AI RESPONSE RESULT ==========');
 		console.log('[🔧 PROCESSOR] Response structure:', {
-			hasResponse: !!aiResponse,
-			success: aiResponse?.success,
-			hasGeneratedResponse: !!aiResponse?.generatedResponse,
-			generatedText: aiResponse?.generatedResponse?.response?.substring(0, 50),
-			hasSendResult: !!aiResponse?.sendResult,
-			sendSuccess: aiResponse?.sendResult?.success,
-			sendTimestamp: aiResponse?.sendResult?.timestamp,
+			hasResponse: !!replyText,
+			generatedText: String(replyText || '').substring(0, 50),
+			hasSendResult: !!sendResult,
+			sendSuccess: sendResult?.success,
+			sendTimestamp: sendResult?.timestamp,
 		});
 
-		utils.log('Chat Processor', `🔍 Checking AI response result...`);
+		utils.log('Chat Processor', `🔍 Checking send result...`);
 
-	// ✅ ИСПРАВЛЕНО: Проверяем ПРАВИЛЬНЫЕ поля
-	if (!aiResponse || !aiResponse.success) {
-		utils.logError('Chat Processor', `❌ AI generation failed`);
-		console.log(
-			'[🔧 PROCESSOR] ❌ GENERATION FAILED - Full response:',
-			aiResponse,
-		);
-		cycleLogger.logEvent(accountId, 'chat', 'generation_failed', {
-			chatId: chat.chatId,
-			manName: chat.manName,
-			profileName: profile.username,
-			isCatchUp,
-			reason: aiResponse?.cancelled ? 'ai_disabled_during_generation' : 'generation_failed',
-			sent: false,
-		});
-		return { sent: false, reason: 'generation_failed' };
-	}
-		utils.log('Chat Processor', `   ✓ Generation: SUCCESS`);
-
-	if (!aiResponse.sendResult || !aiResponse.sendResult.success) {
-		utils.logError('Chat Processor', `❌ Message sending failed`);
-		console.log(
-			'[🔧 PROCESSOR] ❌ SEND FAILED - sendResult:',
-			aiResponse.sendResult,
-		);
-		cycleLogger.logEvent(accountId, 'chat', 'send_failed', {
-			chatId: chat.chatId,
-			manName: chat.manName,
-			profileName: profile.username,
-			isCatchUp,
-			reason: 'send_failed',
-			sent: false,
-		});
-		return { sent: false, reason: 'send_failed' };
-	}
+		if (!sendResult || !sendResult.success) {
+			utils.logError('Chat Processor', `❌ Message sending failed`);
+			console.log(
+				'[🔧 PROCESSOR] ❌ SEND FAILED - sendResult:',
+				sendResult,
+			);
+			cycleLogger.logEvent(accountId, 'chat', 'send_failed', {
+				chatId: chat.chatId,
+				manName: chat.manName,
+				profileName: profile.username,
+				isCatchUp,
+				reason: 'send_failed',
+				sent: false,
+			});
+			// Кэш НЕ удаляем: следующий цикл отправит этот же текст без новой генерации
+			return { sent: false, reason: 'send_failed' };
+		}
 		utils.log('Chat Processor', `   ✓ Sending: SUCCESS`);
 
+		// Отправлено — кэш больше не нужен
+		dropPendingReply(chat.chatId, manKey);
+
 		// Извлекаем сгенерированный текст из правильного места
-		const generatedText = aiResponse.generatedResponse?.response || 'N/A';
+		const generatedText = replyText || 'N/A';
 		const sendTime = new Date(
-			aiResponse.sendResult.timestamp,
+			sendResult.timestamp,
 		).toLocaleTimeString();
 
 		utils.log(
@@ -574,7 +685,7 @@ const processSingleChat = async ({
 		);
 		console.log(
 			'[🔧 PROCESSOR] Send timestamp:',
-			aiResponse.sendResult.timestamp,
+			sendResult.timestamp,
 		);
 
 		// ✅ Сообщение УЖЕ отправлено - возвращаем успех
@@ -611,7 +722,7 @@ const processSingleChat = async ({
 			profileUid: profile.uid,
 			manName: chat.manName,
 			generatedText: generatedText.substring(0, 100),
-			timestamp: aiResponse.sendResult.timestamp,
+			timestamp: sendResult.timestamp,
 		};
 	} catch (error) {
 		const isContextClosed = error.message && error.message.includes('Target page, context or browser has been closed');

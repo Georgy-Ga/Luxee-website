@@ -153,37 +153,8 @@ const getSummary = accountId => {
 	return [...summaries.values()];
 };
 
-const getTrackedAccounts = () =>
-	[...byAccount.entries()].map(([accountId, list]) => ({
-		accountId,
-		events: list.length,
-		lastEventAt: list.length > 0 ? list[list.length - 1].ts : null,
-	}));
-
-/**
- * Очистка (для отладки)
- */
-const clear = accountId => {
-	if (accountId) {
-		byAccount.delete(accountId);
-		summaries.delete(accountId);
-		// Глобальную ленту чистим только от событий аккаунта
-		for (let i = events.length - 1; i >= 0; i--) {
-			if (events[i].accountId === accountId) events.splice(i, 1);
-		}
-		return true;
-	}
-	events.length = 0;
-	byAccount.clear();
-	summaries.clear();
-	return true;
-};
-
 export default {
 	logEvent,
 	getEvents,
 	getSummary,
-	getTrackedAccounts,
-	clear,
-	limits: { MAX_GLOBAL_EVENTS, MAX_ACCOUNT_EVENTS },
 };

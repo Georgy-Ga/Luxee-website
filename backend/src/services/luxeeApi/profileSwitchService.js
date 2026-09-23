@@ -247,45 +247,7 @@ const processQueue = async (page, accountId) => {
 	);
 };
 
-/**
- * Получить текущий активный профиль
- * @param {Object} page - Playwright page
- * @returns {Promise<number|null>} - UID активного профиля
- */
-const getCurrentProfile = async page => {
-	try {
-		const uid = await page.evaluate(() => {
-			return window.modelsChat?.getProfile?.active?.inner?.uid || null;
-		});
-		return uid;
-	} catch (error) {
-		console.error('[Profile Switch] Error getting current profile:', error);
-		return null;
-	}
-};
 
-/**
- * Получить статус очереди для аккаунта
- * @param {string} accountId - ID аккаунта
- * @returns {Object|null} - Информация о очереди
- */
-const getQueueStatus = accountId => {
-	if (!profileSwitchQueues.has(accountId)) {
-		return null;
-	}
-
-	const q = profileSwitchQueues.get(accountId);
-	return {
-		isProcessing: q.isProcessing,
-		currentProfileUid: q.currentProfileUid,
-		queueLength: q.queue.length,
-		queuedProfiles: q.queue.map(item => ({
-			profileUid: item.profileUid,
-			caller: item.caller,
-			waitingMs: Date.now() - item.timestamp,
-		})),
-	};
-};
 
 /**
  * Принудительно очистить очередь (для экстренных случаев)
@@ -357,39 +319,10 @@ const deleteQueue = accountId => {
 	);
 };
 
-/**
- * Получить статистику по всем очередям
- * @returns {Object} - Общая статистика
- */
-const getGlobalStats = () => {
-	const stats = {
-		totalAccounts: profileSwitchQueues.size,
-		activeProcessors: 0,
-		totalQueuedRequests: 0,
-		accounts: [],
-	};
-
-	profileSwitchQueues.forEach((q, accountId) => {
-		if (q.isProcessing) stats.activeProcessors++;
-		stats.totalQueuedRequests += q.queue.length;
-
-		stats.accounts.push({
-			accountId,
-			isProcessing: q.isProcessing,
-			currentProfileUid: q.currentProfileUid,
-			queueLength: q.queue.length,
-		});
-	});
-
-	return stats;
-};
 
 export default {
 	switchProfile,
-	getCurrentProfile,
-	getQueueStatus,
 	clearQueue,
 	forceUnlock,
 	deleteQueue,
-	getGlobalStats,
 };

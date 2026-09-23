@@ -1452,44 +1452,80 @@ const processAccountMessages = async (accountId, userId, page) => {
 					utils.log('AI Auto', '🤖 Generating and sending first message...');
 
 						try {
-							// Используем aiResponseService.generateAndSend напрямую
-						const aiResponse = await aiResponseService.generateAndSend({
+							// Split pipeline как в чатах: generateResponse → задержка → sendResponse
+
+						// ✅ Первое сообщение AC — тем же pipeline, что catchup/unanswered:
+						// генерация → анти-спам задержка 7–13с → отправка keyboard-first.
+						// Надёжность важнее скорости: при сетевом таймауте генерации —
+						// одна немедленная повторная попытка, затем выход (следующий цикл
+						// доберёт; нотификация остаётся непрочитанной).
+						const acDelayTarget = 7000 + Math.random() * 6000;
+						const acDelayDeadline = Date.now() + acDelayTarget;
+						const isAcGenTimeout = e => /timeout|econnaborted|etimedout|network error|socket hang up|econnreset/i.test(String(e && e.message || ''));
+						let acGen = null;
+						let acGenError = null;
+						for (let acAttempt = 1; acAttempt <= 2 && !acGen; acAttempt++) {
+							try {
+								acGen = await aiResponseService.generateResponse({
+									userId,
+									accountId,
+									profile: {
+										uid: targetProfile.uid,
+										username: targetProfile.username,
+										age: targetProfile.age,
+										country: targetProfile.country,
+										city: targetProfile.city,
+									},
+									manMessage: '',
+									messageType: 'activity_center',
+									conversationHistory: [],
+									formattedHistory: '',
+									typeInstructions: '',
+									profileName: targetProfile.username,
+									manName: notification.manName,
+									activityCenterData: {
+										activityType: notification.activityType || 'unknown',
+										isFirstMessage: true,
+									},
+								});
+							} catch (genError) {
+								acGenError = genError;
+								if (isAcGenTimeout(genError) && acAttempt < 2) {
+									utils.log('AI Auto', `⏳ Activity Center generation timeout (attempt ${acAttempt}/2), retrying in 5s...`);
+									await utils.sleep(5000);
+									continue;
+								}
+								throw genError;
+							}
+						}
+						if (!acGen) throw acGenError;
+
+						// Анти-спам задержка: досыпаем остаток окна 7–13с (генерация шла внутри)
+						const acRemain = acDelayDeadline - Date.now();
+						if (acRemain > 0) {
+							utils.log('AI Auto', `⏱️  Activity Center typing delay: ${Math.round(acRemain / 1000)}s`);
+							await utils.sleep(acRemain);
+						} else {
+							utils.log('AI Auto', '✅ Generation covered Activity Center delay, sending');
+						}
+
+						// Отправка готового текста (без повторной генерации)
+						const aiResponse = await aiResponseService.sendResponse({
 							userId,
 							accountId,
 							profileUid: targetProfile.uid,
 							chatId: clickResult.chatId,
-							profile: {
-								uid: targetProfile.uid,
-								username: targetProfile.username,
-								age: targetProfile.age,
-								country: targetProfile.country,
-								city: targetProfile.city,
-							},
-							manMessage: '', // Для Activity Center нет сообщения от мужчины
-							formattedHistory: '', // Нет истории
-							profileName: targetProfile.username,
-								manName: notification.manName,
-								typeInstructions: '', // Пустые инструкции - используется кастомная логика
-								messageType: 'activity_center', // Специальный тип
-								// Передаем данные Activity Center
-								activityCenterData: {
-									activityType: notification.activityType,
-									isFirstMessage: true,
-								},
-							});
+							message: acGen.response,
+						});
 
-							if (
-								aiResponse &&
-								aiResponse.success &&
-								aiResponse.sendResult?.success
-							) {
+							if (aiResponse && aiResponse.success) {
 								utils.log(
 									'AI Auto',
 									`✅ Sent message to ${notification.manName} from Activity Center`,
 								);
 
 								const generatedText =
-									aiResponse.generatedResponse?.response || 'N/A';
+									acGen.response || 'N/A';
 								utils.log(
 									'AI Auto',
 									`📝 Message: "${generatedText.substring(0, 60)}..."`,

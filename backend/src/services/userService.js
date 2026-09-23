@@ -6,6 +6,7 @@ import tokenService from './tokenService.js';
 import aiBrowserContextService from './browser/aiBrowserContextService.js';
 import aiAutoResponseService from './aiAutoResponseService.js';
 import keepAliveService from './luxeeApi/keepAliveService.js';
+import profileSwitchService from './luxeeApi/profileSwitchService.js';
 import onlineKeeperService from './onlineKeeperService.js';
 import { setAllOfflineViaNewContext } from './luxeeApi/onlineRecoveryService.js';
 import messageCheckIntervalService from './luxeeApi/messageCheckIntervalService.js';
@@ -182,6 +183,11 @@ const userService = {
 			// но если ИИ не был запущен — гасим напрямую (идемпотентно)
 			try {
 				onlineKeeperService.stop(accountId);
+			} catch (e) {}
+
+			// Очередь переключения профилей — удалить, чтобы не копилась
+			try {
+				profileSwitchService.deleteQueue(accountId);
 			} catch (e) {}
 				
 				// Закрываем AI контекст

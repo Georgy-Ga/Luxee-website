@@ -91,33 +91,6 @@ const answeredChatService = {
 	},
 
 	/**
-	 * Удалить чат из отвеченных (когда мужчина написал снова)
-	 */
-	removeAnsweredChat: async ({ accountId, profileUid, chatId }) => {
-		try {
-			console.log(`[Answered Chat] Removing chat ${chatId} from profile ${profileUid}`);
-
-			const answeredChat = await AnsweredChat.findOne({ accountId, profileUid });
-			
-			if (!answeredChat) {
-				return;
-			}
-
-			const initialLength = answeredChat.chats.length;
-			answeredChat.chats = answeredChat.chats.filter(c => c.chatId !== chatId);
-
-			if (answeredChat.chats.length < initialLength) {
-				await answeredChat.save();
-				console.log(`[Answered Chat] Removed chat ${chatId}. Remaining: ${answeredChat.chats.length}`);
-			} else {
-				console.log(`[Answered Chat] Chat ${chatId} not found in answered chats`);
-			}
-		} catch (error) {
-			console.error('[Answered Chat] Error removing chat:', error);
-		}
-	},
-
-	/**
 	 * Удалить несколько чатов из отвеченных
 	 */
 	removeAnsweredChats: async ({ accountId, profileUid, chatIds }) => {

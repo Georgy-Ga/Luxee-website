@@ -135,8 +135,14 @@ const keepAliveService = {
 								// В случае ошибки проверяем AI Auto и продолжаем
 							}
 
-							// 🛡️ БЕЗОПАСНОСТЬ: Проверка #1 - AI Auto не работает?
-							const lockStatus = aiAuto.getAccountLockStatus(accountId);
+						// 🛡️ БЕЗОПАСНОСТЬ: Проверка #1 - AI Auto не работает?
+						// Лок висит на accountId (без суффикса _ai): для AI-контекста
+						// проверяем базовый id, иначе guard мёртвый и keep-alive
+						// может перезагрузить AI-страницу прямо во время отправки.
+						const lockId = accountId.endsWith('_ai')
+							? accountId.slice(0, -3)
+							: accountId;
+						const lockStatus = aiAuto.getAccountLockStatus(lockId);
 							if (lockStatus?.isLocked) {
 								console.log(
 									`[Keep-Alive] ⏸️  AI Auto is processing ${accountId}, skipping offline→online fix`,
@@ -147,8 +153,8 @@ const keepAliveService = {
 							await popupButton.click({ timeout: 3000 });
 							await page.waitForTimeout(500);
 
-							// 🛡️ БЕЗОПАСНОСТЬ: Проверка #2 - AI Auto не начал работу?
-							const lockAfterClick = aiAuto.getAccountLockStatus(accountId);
+						// 🛡️ БЕЗОПАСНОСТЬ: Проверка #2 - AI Auto не начал работу?
+						const lockAfterClick = aiAuto.getAccountLockStatus(lockId);
 							if (lockAfterClick?.isLocked) {
 								console.log(
 									`[Keep-Alive] ⚠️  AI Auto started during click, canceling reload`,
@@ -201,6 +207,13 @@ const keepAliveService = {
 				clearInterval(intervalId);
 				keepAliveIntervals.delete(accountId);
 				console.log(`[Keep-Alive] Stopped for account ${accountId}`);
+			}
+			// Вынимаем уже поставленные в общую очередь записи аккаунта:
+			// иначе остановленный аккаунт всё равно обработается processor'ом
+			for (let i = keepAliveQueue.length - 1; i >= 0; i--) {
+				if (keepAliveQueue[i] && keepAliveQueue[i].accountId === accountId) {
+					keepAliveQueue.splice(i, 1);
+				}
 			}
 		} catch (error) {
 			console.error(

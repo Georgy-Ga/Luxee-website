@@ -5,9 +5,6 @@ class RequestQueueService {
 	constructor() {
 		// Очереди для каждого аккаунта: accountId -> Promise
 		this.queues = new Map();
-		// Глобальная очередь для отправки сообщений
-		this.globalSendQueue = Promise.resolve();
-		this.globalSendLock = false;
 	}
 
 	/**
@@ -35,40 +32,22 @@ class RequestQueueService {
 		
 		// Сохраняем новый промис в очередь
 		this.queues.set(accountId, newQueue);
-		
+
+		// Авточистка: когда цепочка settlement'ится и новее ничего не встало —
+		// убираем запись, иначе Map растёт бесконечно, а isLocked-подобные
+		// проверки по has() врут навсегда
+		const cleanup = () => {
+			if (this.queues.get(accountId) === newQueue) {
+				this.queues.delete(accountId);
+			}
+		};
+		newQueue.then(cleanup, cleanup);
+
 		return newQueue;
 	}
 
 	/**
-	 * Выполнить отправку сообщения в глобальной очереди
-	 * Гарантирует что сообщения отправляются строго по очереди
-	 * @param {Function} fn - Функция отправки сообщения
-	 * @returns {Promise} Результат выполнения функции
-	 */
-	async executeMessageSend(fn) {
-		// Добавляем в глобальную очередь
-		this.globalSendQueue = this.globalSendQueue.then(async () => {
-			this.globalSendLock = true;
-			try {
-				console.log('[Global Send Queue] Starting message send');
-				const result = await fn();
-				console.log('[Global Send Queue] Message sent successfully');
-				// Задержка между отправками для стабильности
-				await new Promise(resolve => setTimeout(resolve, 1000));
-				return result;
-			} catch (error) {
-				console.error('[Global Send Queue] Error sending message:', error.message);
-				throw error;
-			} finally {
-				this.globalSendLock = false;
-			}
-		});
-
-		return this.globalSendQueue;
-	}
-
-	/**
-	 * Проверить, есть ли активная очередь для аккаунта
+	 * Есть ли незавершённая цепочка для аккаунта
 	 * @param {string} accountId - ID аккаунта
 	 * @returns {boolean}
 	 */
@@ -77,29 +56,13 @@ class RequestQueueService {
 	}
 
 	/**
-	 * Проверить, идет ли отправка сообщения
-	 * @returns {boolean}
-	 */
-	isSendingMessage() {
-		return this.globalSendLock;
-	}
-
-	/**
-	 * Очистить очередь для аккаунта
+	 * Сбросить очередь аккаунта (для удаления/отключения)
 	 * @param {string} accountId - ID аккаунта
 	 */
 	clearQueue(accountId) {
 		this.queues.delete(accountId);
 	}
 
-	/**
-	 * Очистить все очереди
-	 */
-	clearAll() {
-		this.queues.clear();
-		this.globalSendQueue = Promise.resolve();
-		this.globalSendLock = false;
-	}
 }
 
 // Экспортируем синглтон

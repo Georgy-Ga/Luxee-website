@@ -29,7 +29,7 @@ export const sendAIRequest = async (messages, retryCount = 0) => {
 		console.log('    - Top P: 0.95 (more diverse)');
 		console.log('    - Frequency penalty: 0.7 (avoid repetition)');
 		console.log('    - Presence penalty: 0.6 (encourage new topics)');
-		console.log('    - Timeout: 30000ms');
+		console.log('    - Timeout: 45000ms');
 
 		const requestBody = {
 			model: AI_MODEL,
@@ -66,7 +66,7 @@ export const sendAIRequest = async (messages, retryCount = 0) => {
 					'Content-Type': 'application/json',
 					Authorization: `Bearer ${AI_API_KEY}`,
 				},
-				timeout: 30000, // 30 секунд таймаут
+				timeout: 45000, // 45 секунд таймаут (было 30: NVIDIA на длинных промптах отвечала 28с+)
 			},
 		);
 		const duration = Date.now() - startTime;

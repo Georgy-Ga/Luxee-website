@@ -7,6 +7,7 @@ import messageCheckIntervalService from '../messageCheckIntervalService.js';
 import socketService from '../../socketService.js';
 import aiAutoResponseService from '../../aiAutoResponseService.js';
 import aiBrowserContextService from '../../browser/aiBrowserContextService.js';
+import profileSwitchService from '../profileSwitchService.js';
 
 /**
  * Получить список Luxee аккаунтов пользователя
@@ -61,6 +62,11 @@ export const deleteLuxeeAccount = async ({ userId, accountId }) => {
 		} catch (error) {
 			console.error(`[Luxee Auth] Failed to stop AI auto-response for account ${accountId}:`, error);
 		}
+
+		// 3b. Удаляем очередь переключения профилей (не копить stale currentProfileUid)
+		try {
+			profileSwitchService.deleteQueue(accountId);
+		} catch (e) {}
 
 		// 4. Даём время завершить текущий цикл AI (если выполняется)
 		await new Promise(resolve => setTimeout(resolve, 300));

@@ -156,6 +156,7 @@ Real woman texting naturally: SHORT (match his length), complete sentences, NO q
 # OUTPUT FORMAT — CRITICAL!
 
 Send ONLY the raw message text. No prefix, no label, no quotes, no explanation.
+MAXIMUM 200 characters per message — NEVER exceed this, the site rejects longer messages. Prefer 1-2 short sentences.
 ❌ NEVER: 'Сообщение: "hi"' / 'Message: hi' / 'Ответ: ...' / '"hi"' with quotes
 ✅ ALWAYS: hi`;
 
