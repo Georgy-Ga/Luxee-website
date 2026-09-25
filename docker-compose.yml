@@ -47,6 +47,9 @@ services:
       NVIDIA_API_URL: ${NVIDIA_API_URL:-https://integrate.api.nvidia.com/v1}
       NVIDIA_MODEL: ${NVIDIA_MODEL:-nvidia/nemotron-3.5-lightning-30b-a3b}
       ALLOWED_ORIGINS: ${ALLOWED_ORIGINS:-http://localhost:5173,http://localhost:5174,http://localhost:80,http://localhost}
+      # Origin фронта за nginx (IP/домен сервера) для Express CORS и Socket.io.
+      # Пример: FRONTEND_URL=http://148.251.233.7,http://diamond-agencystudio.com,https://diamond-agencystudio.com
+      FRONTEND_URL: ${FRONTEND_URL:-http://localhost}
       # Spambot Service URL
       SPAMBOT_SERVICE_URL: http://backend-spambot:8001
     ports:

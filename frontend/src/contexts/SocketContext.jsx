@@ -39,23 +39,10 @@ export const SocketProvider = ({ children }) => {
   		if (import.meta.env.VITE_API_URL) {
     			return import.meta.env.VITE_API_URL.replace('/api', '');
 		}
-  
-		const hostname = window.location.hostname;
-  		const protocol = window.location.protocol;
-  
-  		// Если это IP адрес или localhost - используем :5001
-  		// Паттерн: localhost, 127.0.0.1, или любой IP (xxx.xxx.xxx.xxx)
-  		const isIpOrLocalhost = 
-    			hostname === 'localhost' ||
-    			hostname === '127.0.0.1' ||
-    			/^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}$/.test(hostname);
-  
-  		if (isIpOrLocalhost) {
-    			return `${protocol}//${hostname}:5001`;
-  		}
-  
-  		// Production с доменом - используем nginx (без порта)
-  		return `${protocol}//${hostname}`;
+
+  		// Same origin (nginx проксирует /socket.io на backend):
+  		// работает по IP, домену и через туннель без открытого :5001.
+  		return window.location.origin;
 	};
 
 	const serverUrl = getSocketUrl();

@@ -39,16 +39,27 @@ console.log('[Server] ✓ Socket.io initialized');
 
 app.use(express.json());
 app.use(cookieParser());
-// Настройка CORS для работы в Docker и локально
-const allowedOrigins = process.env.ALLOWED_ORIGINS
-	? process.env.ALLOWED_ORIGINS.split(',')
-	: [
-			'http://localhost:5173',
-			'http://localhost:5174',
-			'http://localhost:80',
-			'http://localhost',
-			'http://192.168.0.41:5173',
-		];
+// Настройка CORS для работы в Docker и локально.
+// Источники: ALLOWED_ORIGINS + FRONTEND_URL (один список на два имени,
+// чтобы origin фронта за nginx — IP/домен сервера — не отшивался).
+// Пробелы по краям и пустые значения чистятся.
+const parseOrigins = v =>
+	(v || '')
+		.split(',')
+		.map(s => s.trim())
+		.filter(Boolean);
+const allowedOrigins = [
+	...(process.env.ALLOWED_ORIGINS
+		? parseOrigins(process.env.ALLOWED_ORIGINS)
+		: [
+				'http://localhost:5173',
+				'http://localhost:5174',
+				'http://localhost:80',
+				'http://localhost',
+				'http://192.168.0.41:5173',
+			]),
+	...parseOrigins(process.env.FRONTEND_URL),
+];
 
 app.use(
 	cors({

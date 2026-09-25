@@ -1,33 +1,15 @@
 import axios from 'axios';
 import Cookies from 'js-cookie';
 
-// Автоматическое определение API URL на основе hostname
-// localhost → http://localhost:5001/api
-// 192.168.0.41 → http://192.168.0.41:5001/api
-// 148.251.233.7 → http://148.251.233.7:5001/api
+// API URL: same-origin через nginx по умолчанию.
+// - Если задан VITE_API_URL (build-arg / .env) — используем его (локальный dev: :5000).
+// - Иначе '/api' того же origin: работает и по IP, и по домену, и через
+//   SSH-туннель (не требует открытого :5001). Nginx проксирует /api на backend.
 const getApiUrl = () => {
-  // Если задан в .env - используем его
   if (import.meta.env.VITE_API_URL) {
     return import.meta.env.VITE_API_URL;
   }
-  
-  // Иначе определяем автоматически по hostname
-  const hostname = window.location.hostname;
-  const protocol = window.location.protocol;  // http: или https:
-
-  // Если это IP адрес или localhost - используем :5001
-  // Паттерн: localhost, 127.0.0.1, 192.168.x.x, 10.x.x.x, 172.x.x.x, или любой IP
-  const isIpOrLocalhost = 
-    hostname === 'localhost' ||
-    hostname === '127.0.0.1' ||
-    /^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}$/.test(hostname);
-
-  if (isIpOrLocalhost) {
-    return `${protocol}//${hostname}:5001/api`;
-  }
-
-  // Production с доменом - используем nginx (без порта)
-  return `${protocol}//${hostname}/api`;
+  return '/api';
 };
 
 const API_URL = getApiUrl();
