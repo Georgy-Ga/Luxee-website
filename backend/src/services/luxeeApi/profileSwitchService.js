@@ -2,6 +2,8 @@
 // Глобальный сервис для переключения профилей с очередью и дедупликацией
 // КРИТИЧНО: Все переключения профилей ДОЛЖНЫ идти через этот сервис!
 
+import { vlog } from '../verbose.js';
+
 // Глобальная очередь для каждого аккаунта (Event Loop Style)
 // accountId → { isProcessing, currentProfileUid, queue: [{ profileUid, caller, resolve, reject, timestamp }] }
 const profileSwitchQueues = new Map();
@@ -22,7 +24,7 @@ const switchProfile = async (page, accountId, profileUid, caller = 'unknown') =>
 			currentProfileUid: null,
 			queue: [],
 		});
-		console.log(
+		vlog(
 			`[Profile Switch] 🆕 Created queue for account ${accountId}`,
 		);
 	}
@@ -31,7 +33,7 @@ const switchProfile = async (page, accountId, profileUid, caller = 'unknown') =>
 
 	// ========== БЫСТРАЯ ПРОВЕРКА: УЖЕ НА НУЖНОМ ПРОФИЛЕ? ==========
 	if (q.currentProfileUid === profileUid && !q.isProcessing) {
-		console.log(
+		vlog(
 			`[Profile Switch] ⚡ Already on profile ${profileUid} (${caller}) - skipping`,
 		);
 		return true;
@@ -92,7 +94,7 @@ const switchProfile = async (page, accountId, profileUid, caller = 'unknown') =>
 
 		q.queue.push(request);
 
-		console.log(
+		vlog(
 			`[Profile Switch] 📥 Queued profile ${profileUid} (${caller}) - queue size: ${q.queue.length}`,
 		);
 
@@ -125,21 +127,21 @@ const processQueue = async (page, accountId) => {
 
 	// Защита от параллельного запуска
 	if (q.isProcessing) {
-		console.log(
+		vlog(
 			`[Profile Switch] ⏸️  Queue already processing for account ${accountId}`,
 		);
 		return;
 	}
 
 	if (q.queue.length === 0) {
-		console.log(
+		vlog(
 			`[Profile Switch] 📭 Queue empty for account ${accountId}`,
 		);
 		return;
 	}
 
 	q.isProcessing = true;
-	console.log(
+	vlog(
 		`[Profile Switch] 🚀 Starting queue processor for account ${accountId} (${q.queue.length} items)`,
 	);
 
@@ -148,10 +150,10 @@ const processQueue = async (page, accountId) => {
 		const request = q.queue.shift(); // FIFO: первый пришёл - первый выполнился
 		const queueWaitTime = Date.now() - request.timestamp;
 
-		console.log(
+		vlog(
 			`[Profile Switch] 🔄 Processing: profile ${request.profileUid} (${request.caller})`,
 		);
-		console.log(
+		vlog(
 			`[Profile Switch] ⏱️  Request waited in queue: ${queueWaitTime}ms`,
 		);
 
@@ -160,7 +162,7 @@ const processQueue = async (page, accountId) => {
 			const switchStartTime = Date.now();
 
 			// 1. Вызов selectProfile в браузере
-			console.log(
+			vlog(
 				`[Browser] 🔄 Switching to profile ${request.profileUid} (caller: ${request.caller})`,
 			);
 
@@ -194,7 +196,7 @@ const processQueue = async (page, accountId) => {
 			// страница могла быть в оверлее (active === null). Даём один
 			// повторный замер через 2с вместо мгновенного reject.
 			if (activeUid !== request.profileUid) {
-				console.log(
+				vlog(
 					`[Profile Switch] ⏳ First check mismatch (expected ${request.profileUid}, got ${activeUid}) - re-checking in 2s... (${request.caller})`,
 				);
 				await new Promise(resolve => setTimeout(resolve, 2000));
@@ -214,7 +216,7 @@ const processQueue = async (page, accountId) => {
 				console.log(
 					`[Profile Switch] ✅ Success: profile ${request.profileUid} (${request.caller}) in ${switchElapsed}ms`,
 				);
-				console.log(
+				vlog(
 					`[Profile Switch] 📊 Remaining in queue: ${q.queue.length}`,
 				);
 			} else {
@@ -242,7 +244,7 @@ const processQueue = async (page, accountId) => {
 
 	// ========== ОЧЕРЕДЬ ПУСТА ==========
 	q.isProcessing = false;
-	console.log(
+	vlog(
 		`[Profile Switch] 🏁 Queue processor finished for account ${accountId}`,
 	);
 };

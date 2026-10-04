@@ -14,6 +14,7 @@ import profileScanner from './profileScanner.js';
 import utils from './utils.js';
 import accountLockService from './accountLockService.js';
 import onlineRecoveryService from '../luxeeApi/onlineRecoveryService.js';
+import { vlog } from '../verbose.js';
 
 // Глобальная блокировка для аккаунтов — теперь Mongo-атомарная (TTL 90с)
 // Фолбэк Map для тестов без Mongo
@@ -108,7 +109,7 @@ const processAccountMessages = async (accountId, userId, page) => {
 		utils.log('AI Auto', `🔒 Account ${accountId} LOCKED (atomic)`);
 
 		// 💓 Heartbeat: цикл легко длится дольше TTL 90с (навигации по 3с,
-		// typing-delay 7–13с, генерация до 30с, ретраи отправки) — без продления
+		// typing-delay 7–25с, генерация до 60с, ретраи отправки) — без продления
 		// второй тик возьмёт лок и пойдёт вторым processSingleChat по той же
 		// page: page.goto наперегонки → ответ не в тот чат или срыв доставки.
 		// Продлеваем expiresAt каждые 30с, пока цикл жив. При падении процесса
@@ -127,6 +128,16 @@ const processAccountMessages = async (accountId, userId, page) => {
 		if (!account || !account.user) {
 			utils.log('AI Auto', `❌ Account or user not found for schedule check`);
 			return { processed: false, reason: 'account_not_found' };
+		}
+
+		// Аккаунт помечен auth_failed (сессия мертва, перелогин не помог) —
+		// цикл не жрёт токены и не долбит сайт, ждём пересоздания админом.
+		if (account.authStatus?.state === 'auth_failed') {
+			utils.log('AI Auto', `🚫 Account ${accountId} auth_failed (needs recreation) — skipping`);
+			cycleLogger.logEvent(accountId, 'cycle', 'skipped', {
+				reason: 'auth_failed',
+			});
+			return { processed: false, reason: 'auth_failed' };
 		}
 
 		const scheduleCheck = await aiScheduleService.checkUserSchedule(
@@ -227,7 +238,7 @@ const processAccountMessages = async (accountId, userId, page) => {
 		);
 
 		console.log('[🤖 AI AUTO] ========== ACTIVE PROFILE ==========');
-		console.log('[🤖 AI AUTO] Profile:', {
+		vlog('[🤖 AI AUTO] Profile:', {
 			username: activeProfile.username,
 			uid: activeProfile.uid,
 			allUids: activeProfile.allUids,
@@ -257,7 +268,7 @@ const processAccountMessages = async (accountId, userId, page) => {
 				reason: 'section_newMessages_disabled',
 			});
 		} else if (!isActiveProfileExcluded) {
-			utils.log(
+			vlog(
 				'AI Auto',
 				`🔍 Checking chats on ACTIVE profile ${activeProfile.username}...`,
 			);
@@ -272,7 +283,7 @@ const processAccountMessages = async (accountId, userId, page) => {
 		// Глобальный флаг для отслеживания успешной отправки
 		let messageSent = false;
 
-		console.log('[🤖 AI AUTO] Active chats found:', activeChats.length);
+		vlog('[🤖 AI AUTO] Active chats found:', activeChats.length);
 
 		// ========== ДЕТЕКЦИЯ И ИСПРАВЛЕНИЕ API РАССИНХРОНА ==========
 		// (для исключённых профилей не выполняем — профиль всё равно пропускаем)
@@ -337,7 +348,7 @@ const processAccountMessages = async (accountId, userId, page) => {
 		}
 		// ========== КОНЕЦ ДЕТЕКЦИИ РАССИНХРОНА ==========
 		if (!isActiveProfileExcluded && activeChats.length > 0) {
-			console.log(
+			vlog(
 				'[🤖 AI AUTO] All active chats:',
 				activeChats.map(c => ({
 					chatId: c.chatId,
@@ -360,7 +371,7 @@ const processAccountMessages = async (accountId, userId, page) => {
 				return timeB - timeA; // DESC: новые первыми
 			});
 
-			console.log(
+			vlog(
 				'[🤖 AI AUTO] 📊 Sorted chats (newest first):',
 				sortedChats.slice(0, 5).map(c => ({
 					manName: c.manName,
@@ -402,7 +413,7 @@ const processAccountMessages = async (accountId, userId, page) => {
 					'AI Auto',
 					`Processing chat ${i + 1}/${sortedChats.length}: ${chat.manName}`,
 				);
-				console.log('[🤖 AI AUTO] 🎯 Processing chat:', {
+				vlog('[🤖 AI AUTO] 🎯 Processing chat:', {
 					chatId: chat.chatId,
 					manName: chat.manName,
 					position: `${i + 1} of ${sortedChats.length}`,
@@ -462,7 +473,7 @@ const processAccountMessages = async (accountId, userId, page) => {
 				);
 			}
 		} else if (!isActiveProfileExcluded) {
-			utils.log(
+			vlog(
 				'AI Auto',
 				`No chats on active profile ${activeProfile.username}`,
 			);
@@ -470,7 +481,7 @@ const processAccountMessages = async (accountId, userId, page) => {
 
 		// 3️⃣ Получить ДРУГИЕ профили с сообщениями
 		// Раздел newMessages выключен — пропускаем (уже залогировано выше)
-		utils.log('AI Auto', `🔍 Scanning other profiles...`);
+		vlog('AI Auto', `🔍 Scanning other profiles...`);
 		const allProfiles = secNewMessages
 			? await profileScanner.getAllProfilesWithMessages(page)
 			: [];
@@ -612,7 +623,7 @@ const processAccountMessages = async (accountId, userId, page) => {
 				}
 			}
 		} else {
-			utils.log('AI Auto', `No other profiles with messages`);
+			vlog('AI Auto', `No other profiles with messages`);
 		}
 
 		// ========== CATCH UP РЕЗЕРВ (только если НИ ОДИН ЧАТ не обработан) ==========
@@ -624,21 +635,21 @@ const processAccountMessages = async (accountId, userId, page) => {
 			});
 		}
 		if (!messageSent && secCatchUp) {
-			utils.log(
+			vlog(
 				'AI Auto',
 				'🔍 No chats found in main cycle, checking Catch Up...',
 			);
 
-			console.log('[🚦 NAVIGATION] ========== CHECKING CATCH UP ==========');
-			console.log('[🚦 NAVIGATION] Current URL:', page.url());
-			console.log('[🚦 NAVIGATION] Time:', new Date().toISOString());
+			vlog('[🚦 NAVIGATION] ========== CHECKING CATCH UP ==========');
+			vlog('[🚦 NAVIGATION] Current URL:', page.url());
+			vlog('[🚦 NAVIGATION] Time:', new Date().toISOString());
 
 			// ✅ СНАЧАЛА проверяем count БЕЗ открытия
 			const catchUpCount = await catchUpScanner.getCatchUpCount(page);
 			const lastCount = lastCatchUpCounts.get(accountId) || 0;
 
-			console.log('[🚦 NAVIGATION] Catch Up count:', catchUpCount);
-			console.log('[🚦 NAVIGATION] Last count:', lastCount);
+			vlog('[🚦 NAVIGATION] Catch Up count:', catchUpCount);
+			vlog('[🚦 NAVIGATION] Last count:', lastCount);
 
 		// 🔍 Определяем нужно ли заходить в Catch Up
 		// Заходим если: count изменился ИЛИ прошло 5+ минут с полного прохода.
@@ -680,9 +691,9 @@ const processAccountMessages = async (accountId, userId, page) => {
 		});
 
 			if (!shouldCheckCatchUp) {
-				utils.log('AI Auto', `⏭️  Skipping Catch Up: ${skipReason}`);
-				console.log('[🚦 NAVIGATION] ⏭️  SKIPPING CATCH UP:', skipReason);
-				console.log('[🚦 NAVIGATION] ✅ Staying at /chats/ (optimization)');
+				vlog('AI Auto', `⏭️  Skipping Catch Up: ${skipReason}`);
+				vlog('[🚦 NAVIGATION] ⏭️  SKIPPING CATCH UP:', skipReason);
+				vlog('[🚦 NAVIGATION] ✅ Staying at /chats/ (optimization)');
 			} else {
 				utils.log(
 					'AI Auto',
@@ -736,6 +747,7 @@ const processAccountMessages = async (accountId, userId, page) => {
 					profile_not_found: 0,
 					retry_wait: 0,
 					already_answered: 0,
+					unknown: 0,
 				};
 
 				// Нормализация lastActivity к мс (сайт может отдать секунды)
@@ -757,7 +769,7 @@ const processAccountMessages = async (accountId, userId, page) => {
 				// Если outer чата нет в карте — это чат НЕ текущей сессии
 				// (другая анкета аккаунта), резолвим через переключение.
 				const sessionMap = await catchUpScanner.dumpSessionProfileMap(page);
-				utils.log(
+				vlog(
 					'AI Auto',
 					`🗺️  Session profiles: ${sessionMap.dataKeys} inners, ${sessionMap.outerKeys} outers in global map`,
 				);
@@ -765,21 +777,83 @@ const processAccountMessages = async (accountId, userId, page) => {
 				const ownerSwitchBudget = { count: 0 };
 
 				for (const chat of catchUpChats) {
-					// 🆕 Отвечаем ТОЛЬКО на реально новые сообщения.
-					// unAnswered взят из getChats.list БЕЗ открытия чата —
-					// прочитанные (false) даже не трогаем: ни захода, ни read-receipt.
+					// Флаг unAnswered ВРЁТ (доказано продом: false без нашего ответа).
+					// Истина — в хвосте треда, уже извлечённом БЕЗ открытия чата
+					// (read-receipt не отправляем). Авторство — сравнением UID
+					// последнего с manUid (uType в коде противоречив, не используем
+					// его для решений, только как последний fallback для uType===2).
 					if (chat.unAnswered === false) {
+						const manUidStr =
+							chat.manUid !== null && chat.manUid !== undefined
+								? String(chat.manUid)
+								: null;
+						const lastUidStr =
+							chat.lastMsgUid !== null && chat.lastMsgUid !== undefined
+								? String(chat.lastMsgUid)
+								: null;
+					if (lastUidStr && manUidStr && lastUidStr === manUidStr) {
+						// Последнее от мужчины — флаг соврал. Идёт дальше
+						// по обычному пути (профиль → кеш → ready).
+						console.log('[✅ CATCH UP FILTER] Flag lied (unAnswered=false but last from man), processing:', chat.chatId);
+						console.log('   Tail check: lastMsgUid=' + lastUidStr + ' manUid=' + manUidStr + ' lastMsgUType=' + (chat.lastMsgUType ?? 'n/a') + ' unAnswered=' + chat.unAnswered + ' newestVia=' + (chat.newestVia || 'n/a'));
+						console.log('   Tail newest body:', chat.lastMsgBody || '(empty)');
+						if (chat.firstMsg) {
+							console.log('   Tail FIRST[0]: uid=' + (chat.firstMsg.uid ?? 'n/a') + ' uType=' + (chat.firstMsg.uType ?? 'n/a') + ' createdAt=' + (chat.firstMsg.createdAt ?? 'n/a') + ' body=' + (chat.firstMsg.body || '(empty)'));
+						}
+						if (chat.lastRaw) {
+							console.log('   Tail LAST-RAW[-1]: uid=' + (chat.lastRaw.uid ?? 'n/a') + ' uType=' + (chat.lastRaw.uType ?? 'n/a') + ' createdAt=' + (chat.lastRaw.createdAt ?? 'n/a') + ' body=' + (chat.lastRaw.body || '(empty)'));
+						}
+						if (chat.newestMsg) {
+							console.log('   Tail NEWEST keys:', JSON.stringify(chat.newestMsg.keys || []));
+						}
+					} else if (lastUidStr && manUidStr && lastUidStr !== manUidStr) {
+						// Оба UID известны и не совпали: последнее точно не
+						// от мужчины → наше → скип (считаем!).
 						console.log('[⏭️ CATCH UP FILTER] Already answered (skipping):');
 						console.log('   Chat ID:', chat.chatId);
-						filterStats.already_answered++;
-						cycleLogger.logEvent(accountId, 'catchup', 'chat_filtered', {
-							chatId: chat.chatId,
-							manName: chat.manName,
-							manUid: chat.manUid || null,
-							decision: 'already_answered',
-							reason: 'already_answered',
-						});
-						continue;
+						console.log('   Tail check: lastMsgUid=' + lastUidStr + ' manUid=' + manUidStr + ' lastMsgUType=' + (chat.lastMsgUType ?? 'n/a') + ' unAnswered=' + chat.unAnswered + ' newestVia=' + (chat.newestVia || 'n/a'));
+						console.log('   Tail newest body:', chat.lastMsgBody || '(empty)');
+						if (chat.firstMsg) {
+							console.log('   Tail FIRST[0]: uid=' + (chat.firstMsg.uid ?? 'n/a') + ' uType=' + (chat.firstMsg.uType ?? 'n/a') + ' createdAt=' + (chat.firstMsg.createdAt ?? 'n/a') + ' body=' + (chat.firstMsg.body || '(empty)'));
+						}
+						if (chat.lastRaw) {
+							console.log('   Tail LAST-RAW[-1]: uid=' + (chat.lastRaw.uid ?? 'n/a') + ' uType=' + (chat.lastRaw.uType ?? 'n/a') + ' createdAt=' + (chat.lastRaw.createdAt ?? 'n/a') + ' body=' + (chat.lastRaw.body || '(empty)'));
+						}
+						if (chat.newestMsg) {
+							console.log('   Tail NEWEST keys:', JSON.stringify(chat.newestMsg.keys || []));
+						}
+							filterStats.already_answered++;
+							cycleLogger.logEvent(accountId, 'catchup', 'chat_filtered', {
+								chatId: chat.chatId,
+								manName: chat.manName,
+								manUid: chat.manUid || null,
+								decision: 'already_answered',
+								reason: 'already_answered',
+							});
+							continue;
+						} else if (chat.hasMsgArray === true && chat.messageCount === 0) {
+							// Пустой тред — кандидат на FIRST MESSAGE (промпт уже
+							// есть в процессоре). Идёт дальше по обычному пути.
+							console.log('[📭 CATCH UP FILTER] Empty thread, first-message candidate:', chat.chatId);
+						} else if (chat.lastMsgUType === 2) {
+							// UID не резолвнулись, но тип unanimously мужской.
+							// Идёт дальше по обычному пути.
+							console.log('[✅ CATCH UP FILTER] Last from man by uType, processing:', chat.chatId);
+						} else {
+							// Хвоста нет / автор неопределим — безопасный скип
+							// в отдельный бакет (не молча!). Дубли исключены.
+							console.log('[❓ CATCH UP FILTER] Unknown last author (skipping):');
+							console.log('   Chat ID:', chat.chatId);
+							filterStats.unknown++;
+							cycleLogger.logEvent(accountId, 'catchup', 'chat_filtered', {
+								chatId: chat.chatId,
+								manName: chat.manName,
+								manUid: chat.manUid || null,
+								decision: 'unknown_last_author',
+								reason: 'unknown_last_author',
+							});
+							continue;
+						}
 					}
 					if (chat.unAnswered == null) {
 						console.log('[❓ CATCH UP FILTER] unAnswered unknown, will process:', chat.chatId);
@@ -934,10 +1008,12 @@ const processAccountMessages = async (accountId, userId, page) => {
 					excluded: filterStats.excluded,
 					profile_not_found: filterStats.profile_not_found,
 					retry_wait: filterStats.retry_wait,
+					already_answered: filterStats.already_answered,
+					unknown: filterStats.unknown,
 				}));
 				utils.log(
 					'AI Auto',
-					`📊 Catch Up filter: ready=${filterStats.ready}, cached=${filterStats.cached}, blacklisted=${filterStats.blacklisted}, excluded=${filterStats.excluded}, not_found=${filterStats.profile_not_found}, retry_wait=${filterStats.retry_wait}`,
+					`📊 Catch Up filter: ready=${filterStats.ready}, cached=${filterStats.cached}, blacklisted=${filterStats.blacklisted}, excluded=${filterStats.excluded}, not_found=${filterStats.profile_not_found}, retry_wait=${filterStats.retry_wait}, already_answered=${filterStats.already_answered}, unknown=${filterStats.unknown}`,
 				);
 				cycleLogger.logEvent(accountId, 'catchup', 'filter_results', {
 					total: catchUpChats.length,
@@ -1227,7 +1303,7 @@ const processAccountMessages = async (accountId, userId, page) => {
 				} else {
 					utils.log(
 						'AI Auto',
-						`✅ No Catch Up chats ready (cached=${filterStats.cached}, blacklisted=${filterStats.blacklisted}, excluded=${filterStats.excluded}, not_found=${filterStats.profile_not_found}, retry_wait=${filterStats.retry_wait})`,
+						`✅ No Catch Up chats ready (cached=${filterStats.cached}, blacklisted=${filterStats.blacklisted}, excluded=${filterStats.excluded}, not_found=${filterStats.profile_not_found}, retry_wait=${filterStats.retry_wait}, already_answered=${filterStats.already_answered}, unknown=${filterStats.unknown})`,
 					);
 
 					// 🔄 ОБНОВЛЯЕМ СТРАНИЦУ для выхода из Catch Up (все в кеше)
@@ -1259,13 +1335,13 @@ const processAccountMessages = async (accountId, userId, page) => {
 			});
 		}
 		if (!messageSent && secActivityCenter) {
-			utils.log('AI Auto', '🔔 Checking Activity Center...');
+			vlog('AI Auto', '🔔 Checking Activity Center...');
 
 			// Проверяем есть ли непрочитанные уведомления (класс has-new)
 			const hasUnread = await activityCenterScanner.getUnreadCount(page);
 
 			if (hasUnread > 0) {
-				utils.log(
+				vlog(
 					'AI Auto',
 					'📬 Found unread notifications in Activity Center',
 				);

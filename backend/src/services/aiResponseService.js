@@ -12,6 +12,7 @@ import aiService from './aiService/index.js';
 import aiBrowserContextService from './browser/aiBrowserContextService.js';
 import pageHelpers from './browser/pageHelpers.js';
 import chatMessagesExtractorService from './luxeeApi/chatMessagesExtractorService.js';
+import { vlog } from './verbose.js';
 
 // Нормализация для сравнения текстов: без смайлов/пунктуации/регистра/лишних
 // пробелов. Иначе несовпадение рендера (эмодзи-шрифты, кавычки, тире) даёт
@@ -421,7 +422,7 @@ const aiResponseService = {
 				};
 			} else {
 				// ========== PRODUCTION MODE: РЕАЛЬНАЯ ОТПРАВКА С ПРОВЕРКОЙ ДОСТАВКИ ==========
-				console.log('[AI Response Service] 📤 Starting message send with delivery verification...');
+				vlog('[AI Response Service] 📤 Starting message send with delivery verification...');
 				
 				// 🔄 КРИТИЧНО: Переключение профиля ДО page.evaluate через глобальный сервис
 				const profileSwitchService = (await import('./luxeeApi/profileSwitchService.js')).default;
@@ -444,7 +445,7 @@ const aiResponseService = {
 				
 				while (sendAttempt < MAX_SEND_ATTEMPTS && !messageSent) {
 					sendAttempt++;
-					console.log(`[AI Response Service] 🔄 Send attempt ${sendAttempt}/${MAX_SEND_ATTEMPTS}...`);
+					vlog(`[AI Response Service] 🔄 Send attempt ${sendAttempt}/${MAX_SEND_ATTEMPTS}...`);
 
 					// ⌨️ PRIMARY: сразу доверенный ручной ввод (без programmatic
 					// вставки): клик по видимому редактору → очистка →

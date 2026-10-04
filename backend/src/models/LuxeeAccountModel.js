@@ -12,6 +12,15 @@ const LuxeeAccountSchema = new Schema({
 	aiEnabled: { type: Boolean, default: false }, // AI для этого аккаунта (пользователь может выключить)
 	aiEnabledByAdmin: { type: Boolean, default: false }, // Разрешил ли админ использовать AI (по умолчанию выключен)
 	aiContext: { type: String }, // ID отдельного браузерного контекста для AI (для параллельной работы)
+	// Здоровье авторизации на Luxee: сессия может протухнуть (напр. админ сменил
+	// пароль на сайте). Проверяем реально (verify), перелогиниваемся до 3 раз,
+	// затем ПОМЕЧАЕМ (не удаляем — обратимо, видно в админке через сокет).
+	authStatus: {
+		state: { type: String, enum: ['ok', 'auth_failed'], default: 'ok' },
+		failCount: { type: Number, default: 0 },
+		lastError: { type: String, default: '' },
+		lastCheckAt: { type: Date, default: null },
+	},
 	// Ручная активность пользователя (не AI, не Spambot)
 	manualLastActivity: { type: Date, default: null }, // Последняя ручная активность
 	isManuallyOnline: { type: Boolean, default: false }, // Онлайн ли аккаунт (ручной режим)

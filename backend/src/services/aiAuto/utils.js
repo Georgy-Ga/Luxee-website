@@ -1,6 +1,8 @@
 // AI Auto Response - Utility Functions
 // Вспомогательные функции для AI автоответчика
 
+import { vlog } from '../verbose.js';
+
 // Все отметки времени AI-циклов — по Киеву (Europe/Kyiv), независимо от TZ сервера.
 // Формат: `2026-09-14 15:30:45.123`, ISO: `2026-09-14T15:30:45.123+03:00`.
 const KYIV_TIMEZONE = 'Europe/Kyiv';
@@ -113,7 +115,7 @@ const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
  */
 const randomDelay = async (min, max) => {
 	const delay = min + Math.random() * (max - min);
-	log('AI Auto', `⏱️  Waiting ${Math.round(delay / 1000)} seconds...`);
+	vlog('AI Auto', `⏱️  Waiting ${Math.round(delay / 1000)} seconds...`);
 	await sleep(delay);
 };
 

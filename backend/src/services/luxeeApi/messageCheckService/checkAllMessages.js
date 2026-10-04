@@ -3,6 +3,7 @@ import LuxeeAccountModel from '../../../models/LuxeeAccountModel.js';
 import UserModel from '../../../models/UserModel.js';
 import browserService from '../../browser/browserService.js';
 import pageHelpers from '../../browser/pageHelpers.js';
+import { vlog } from '../../verbose.js';
 import { extractAllProfilesData } from './profileDataExtractor.js';
 import messageCheckIntervalService from '../messageCheckIntervalService.js';
 
@@ -11,7 +12,7 @@ import messageCheckIntervalService from '../messageCheckIntervalService.js';
  */
 export const checkAllMessages = async ({ userId }) => {
 	try {
-		console.log(`[Message Check] Checking messages for user ${userId}`);
+		vlog(`[Message Check] Checking messages for user ${userId}`);
 
 		// ✅ ПРОВЕРКА: User существует?
 		const user = await UserModel.findById(userId);
@@ -114,7 +115,7 @@ export const checkAllMessages = async ({ userId }) => {
 					profilesCount: profilesData.length,
 				});
 
-				console.log(
+				vlog(
 					`[Message Check] Account ${account.luxeeEmail}: ${profilesData.length} profiles, ${accountUnread} unread, ${accountUnanswered} unanswered`,
 				);
 			} catch (error) {
@@ -133,7 +134,7 @@ export const checkAllMessages = async ({ userId }) => {
 			}
 		}
 
-		console.log(
+		vlog(
 			`[Message Check] Total: ${totalProfiles} profiles, ${totalUnread} unread messages`,
 		);
 

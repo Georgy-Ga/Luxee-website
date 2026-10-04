@@ -16,12 +16,20 @@ export const getLuxeeAccounts = async ({ userId }) => {
 	try {
 		const accounts = await LuxeeAccountModel.find({ user: userId });
 		return accounts.map(
-			({ _id, luxeeEmail, isActive, lastActivity, createdAt }) => ({
+			({ _id, luxeeEmail, isActive, lastActivity, createdAt, authStatus }) => ({
 				_id: _id.toString(), // Возвращаем _id вместо id для совместимости с фронтендом
 				luxeeEmail,
 				isActive,
 				lastActivity,
 				createdAt,
+				authStatus: authStatus
+					? {
+							state: authStatus.state || 'ok',
+							failCount: authStatus.failCount || 0,
+							lastError: authStatus.lastError || '',
+							lastCheckAt: authStatus.lastCheckAt || null,
+						}
+					: { state: 'ok', failCount: 0, lastError: '', lastCheckAt: null },
 			}),
 		);
 	} catch (error) {

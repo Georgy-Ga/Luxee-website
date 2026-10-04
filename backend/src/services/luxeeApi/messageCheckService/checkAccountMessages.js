@@ -3,6 +3,7 @@ import LuxeeAccountModel from '../../../models/LuxeeAccountModel.js';
 import browserService from '../../browser/browserService.js';
 import pageHelpers from '../../browser/pageHelpers.js';
 import answeredChatService from '../../answeredChatService.js';
+import { vlog } from '../../verbose.js';
 import { extractAccountProfilesData } from './profileDataExtractor.js';
 
 /**
@@ -10,7 +11,9 @@ import { extractAccountProfilesData } from './profileDataExtractor.js';
  */
 export const checkAccountMessages = async ({ userId, accountId }) => {
 	try {
-		console.log(`[Message Check] Checking messages for account ${accountId}`);
+		console.log(
+			`[Message Check] Checking messages for account ${accountId}`,
+		);
 
 		// Проверяем что аккаунт принадлежит пользователю
 		const account = await LuxeeAccountModel.findOne({
@@ -90,8 +93,8 @@ export const checkAccountMessages = async ({ userId, accountId }) => {
 			
 			// Вычитаем новые сообщения из unanswered
 			profile.unansweredMessages = Math.max(0, rawUnanswered - totalNewMessages);
-			
-			console.log(
+
+			vlog(
 				`[Message Check] Profile ${profile.profileUid}: raw unanswered=${rawUnanswered}, new=${totalNewMessages}, real unanswered=${profile.unansweredMessages}`
 			);
 		}
@@ -123,9 +126,9 @@ export const checkAccountMessages = async ({ userId, accountId }) => {
 	const accountUnread = profilesData.reduce((sum, p) => sum + p.newMessages, 0);
 	const accountUnanswered = profilesData.reduce((sum, p) => sum + p.unansweredMessages, 0);
 
-	console.log(
-		`[Message Check] Account ${account.luxeeEmail}: ${profilesData.length} profiles, ${accountUnread} unread, ${accountUnanswered} unanswered`,
-	);
+		vlog(
+			`[Message Check] Account ${account.luxeeEmail}: ${profilesData.length} profiles, ${accountUnread} unread, ${accountUnanswered} unanswered`,
+		);
 
 	return {
 		accountId: account._id,

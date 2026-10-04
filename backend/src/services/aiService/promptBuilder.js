@@ -3,6 +3,7 @@
 import { SYSTEM_PROMPT, ACTIVITY_CENTER_PROMPT } from './config.js';
 import { getSampleActivityExamples } from './activityCenterExamples.js';
 import { getProfilePrompt } from '../profilePromptService.js';
+import { vlog } from '../verbose.js';
 
 // Лимиты чтобы не раздувать prompt_tokens:
 // - кастомных правил максимум 5, каждое до 300 символов
@@ -41,7 +42,7 @@ export const buildProfileContext = (profile, customRules) => {
 			.join('\n');
 		profileContext += `\n\nAdditional rules for this profile:\n${rulesText}`;
 		if (customRules.length > MAX_CUSTOM_RULES) {
-			console.log(`  ⚠️ Custom rules truncated: ${customRules.length} → ${MAX_CUSTOM_RULES}`);
+			vlog(`  ⚠️ Custom rules truncated: ${customRules.length} → ${MAX_CUSTOM_RULES}`);
 		}
 	}
 
@@ -67,17 +68,17 @@ export const buildMessages = async ({
 	manName = '',
 	activityCenterData = null,
 }) => {
-	console.log('');
-	console.log('📝 [AI DEBUG] ===== BUILDING PROMPT FOR AI =====');
-	console.log('  👤 Profile:', profile?.username || profileName || 'N/A');
-	console.log('  🆔 Profile UID:', profile?.uid || 'N/A');
-	console.log('  👨 Man name:', manName || 'N/A');
-	console.log('  💬 Man message:', manMessage);
-	console.log('  📊 Message type:', messageType);
-	console.log('  📜 Conversation history length:', conversationHistory?.length || 0);
-	console.log('  📋 Custom rules count:', customRules?.length || 0);
-	console.log('  🆕 Using formatted history:', formattedHistory ? 'YES' : 'NO');
-	console.log('  🆕 Using type instructions:', typeInstructions ? 'YES' : 'NO');
+	vlog('');
+	vlog('📝 [AI DEBUG] ===== BUILDING PROMPT FOR AI =====');
+	vlog('  👤 Profile:', profile?.username || profileName || 'N/A');
+	vlog('  🆔 Profile UID:', profile?.uid || 'N/A');
+	vlog('  👨 Man name:', manName || 'N/A');
+	vlog('  💬 Man message:', manMessage);
+	vlog('  📊 Message type:', messageType);
+	vlog('  📜 Conversation history length:', conversationHistory?.length || 0);
+	vlog('  📋 Custom rules count:', customRules?.length || 0);
+	vlog('  🆕 Using formatted history:', formattedHistory ? 'YES' : 'NO');
+	vlog('  🆕 Using type instructions:', typeInstructions ? 'YES' : 'NO');
 	
 	const messages = [];
 	
@@ -85,7 +86,7 @@ export const buildMessages = async ({
 	const isActivityCenter = !manMessage && !typeInstructions && !formattedHistory;
 	
 	if (isActivityCenter) {
-		console.log('  🔔 ACTIVITY CENTER MODE DETECTED - using special prompt');
+		vlog('  🔔 ACTIVITY CENTER MODE DETECTED - using special prompt');
 
 		// Личность анкеты: ИИ должна знать, от чьего имени пишет первое сообщение
 		const profileContext = buildProfileContext(profile, customRules);
@@ -107,7 +108,7 @@ export const buildMessages = async ({
 		} else if (activityType === 'wink') {
 			activityLine = 'winked at you — this is a playful first move, be fun and flirty';
 		}
-		console.log('  🔔 Activity type:', activityType);
+		vlog('  🔔 Activity type:', activityType);
 
 		// Для Activity Center НЕ нужен возраст/город в явном виде, но имя анкеты —
 		// обязательно: без него ИИ не понимает, кто она.
@@ -118,6 +119,8 @@ export const buildMessages = async ({
 A man named ${manName || 'him'} just ${activityLine}.
 Write ONE engaging question to start a conversation with him. Make it unique, interesting, and thought-provoking. Keep it under 200 characters.
 
+FINAL REMINDER — reply with ONLY the question text. No greetings, no explanations, no commentary, no analysis, nothing else. Just the question.
+
 Style examples (do NOT copy, vary the topic):\n${sampleExamples}`;
 		
 		messages.push({
@@ -125,25 +128,25 @@ Style examples (do NOT copy, vary the topic):\n${sampleExamples}`;
 			content: userMessage,
 		});
 		
-		console.log('  📨 Total messages in array:', messages.length);
-		console.log('  📄 Messages structure:');
+		vlog('  📨 Total messages in array:', messages.length);
+		vlog('  📄 Messages structure:');
 		messages.forEach((msg, idx) => {
 			const preview = msg.content.substring(0, 100);
-			console.log(`    ${idx + 1}. [${msg.role}] ${preview}${msg.content.length > 100 ? '...' : ''}`);
+			vlog(`    ${idx + 1}. [${msg.role}] ${preview}${msg.content.length > 100 ? '...' : ''}`);
 		});
-		console.log('═'.repeat(80));
-		console.log('');
+		vlog('═'.repeat(80));
+		vlog('');
 		
 		return messages;
 	}
 	
 	// 📬 ОБЫЧНЫЙ ЧАТ: Используем стандартный промпт
 	const profileContext = buildProfileContext(profile, customRules);
-	console.log('  🎭 Profile context:', profileContext);
+	vlog('  🎭 Profile context:', profileContext);
 
 	// 🆕 НОВОЕ: Получаем промпт для конкретного профиля (кастомный или дефолтный)
 	const systemPrompt = await getProfilePrompt(profile?.uid);
-	console.log('  🎯 System prompt type:', systemPrompt === SYSTEM_PROMPT ? 'DEFAULT' : 'CUSTOM');
+	vlog('  🎯 System prompt type:', systemPrompt === SYSTEM_PROMPT ? 'DEFAULT' : 'CUSTOM');
 
 	// Добавляем system message (кастомный или дефолтный)
 	messages.push({
@@ -160,7 +163,7 @@ Style examples (do NOT copy, vary the topic):\n${sampleExamples}`;
 					formattedHistory.slice(-MAX_HISTORY_CHARS)
 				: formattedHistory;
 		if (formattedHistory.length > MAX_HISTORY_CHARS) {
-			console.log(`  ✂️ Formatted history truncated: ${formattedHistory.length} → ${truncatedHistory.length} chars`);
+			vlog(`  ✂️ Formatted history truncated: ${formattedHistory.length} → ${truncatedHistory.length} chars`);
 		}
 
 		// Добавляем историю как контекст
@@ -178,7 +181,7 @@ Style examples (do NOT copy, vary the topic):\n${sampleExamples}`;
 			});
 		});
 		if (conversationHistory.length > recent.length) {
-			console.log(`  ✂️ Fallback history truncated: ${conversationHistory.length} → ${recent.length} messages`);
+			vlog(`  ✂️ Fallback history truncated: ${conversationHistory.length} → ${recent.length} messages`);
 		}
 	}
 
@@ -188,25 +191,25 @@ Style examples (do NOT copy, vary the topic):\n${sampleExamples}`;
 	// НОВОЕ: Если есть typeInstructions - используем их
 	if (typeInstructions) {
 		messageContext = typeInstructions + '\n';
-		console.log('  🎯 Using type instructions from chatMessagesExtractorService');
-		console.log('  📏 Type instructions length:', typeInstructions.length, 'chars');
+		vlog('  🎯 Using type instructions from chatMessagesExtractorService');
+		vlog('  📏 Type instructions length:', typeInstructions.length, 'chars');
 		const preview = typeInstructions.substring(0, 150).replace(/\n/g, ' ');
-		console.log('  📝 Type instructions preview:', preview + '...');
+		vlog('  📝 Type instructions preview:', preview + '...');
 	} else {
 		// Пустые инструкции — норма для обычных текстовых ответов
 		// (typeInstructions есть только для wink/emoji/image/video/gift).
 		// История и системный промпт несут контекст и без них.
-		console.log('  ℹ️  No type instructions (plain reply, system prompt + history apply)');
+		vlog('  ℹ️  No type instructions (plain reply, system prompt + history apply)');
 		if (manMessage && manMessage.includes('[Emoji]')) {
 			// Fallback - старый метод для эмодзи
 			messageContext = '[The man sent you an emoji/sticker - respond warmly with emotion and ask a question]\n';
-			console.log('  😊 Detected emoji message - added emoji context (fallback)');
+			vlog('  😊 Detected emoji message - added emoji context (fallback)');
 		}
 	}
 
 	// Страховка от неограниченного роста инструкций (catch-up дописывает NOTE)
 	if (messageContext.length > 800) {
-		console.log(`  ✂️ Type instructions truncated: ${messageContext.length} → 800 chars`);
+		vlog(`  ✂️ Type instructions truncated: ${messageContext.length} → 800 chars`);
 		messageContext = messageContext.slice(-800);
 	}
 
@@ -216,21 +219,23 @@ Style examples (do NOT copy, vary the topic):\n${sampleExamples}`;
 
 ${messageContext}Man's message: "${manMessage}"
 
-Generate a natural, friendly response as ${userName}. Write a complete message (1-3 sentences, strictly under 200 characters total — the site rejects longer messages).`;
+Generate a natural, friendly response as ${userName}. Write a complete message (1-3 sentences, strictly under 200 characters total — the site rejects longer messages).
+
+FINAL REMINDER — output ONLY the message text itself. No analysis of him or his message, no labels like "Message:" or "Response:", no swipe talk (this site has no swipes), no character counts, no quoting these instructions. Just the message a real woman would send.`;
 
 	messages.push({
 		role: 'user',
 		content: userMessage,
 	});
 
-	console.log('  📨 Total messages in array:', messages.length);
-	console.log('  📄 Messages structure:');
+	vlog('  📨 Total messages in array:', messages.length);
+	vlog('  📄 Messages structure:');
 	messages.forEach((msg, idx) => {
 		const preview = msg.content.substring(0, 100);
-		console.log(`    ${idx + 1}. [${msg.role}] ${preview}${msg.content.length > 100 ? '...' : ''}`);
+		vlog(`    ${idx + 1}. [${msg.role}] ${preview}${msg.content.length > 100 ? '...' : ''}`);
 	});
-	console.log('═'.repeat(80));
-	console.log('');
+	vlog('═'.repeat(80));
+	vlog('');
 
 	return messages;
 };

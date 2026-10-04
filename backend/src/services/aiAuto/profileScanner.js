@@ -113,7 +113,8 @@ const getAllChatsForProfile = async (page, allUids) => {
 				hasUnAnswered++;
 
 				// ✅ ДОПОЛНИТЕЛЬНАЯ ПРОВЕРКА: Последнее сообщение через chat.message[]
-				// Проверяем uType последнего сообщения: 1 = profile sent, 2 = man sent
+				// Осторожно: маппинг uType спорный (в других местах: 10=мужчина, 2=девушка).
+				// Здесь проверяется только uType===1; НЕ расширять без дампа с сайта.
 				if (chat.message && chat.message.length > 0) {
 					const lastMessage = chat.message[chat.message.length - 1];
 					

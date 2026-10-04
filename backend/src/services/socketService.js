@@ -5,6 +5,7 @@
  */
 
 import { SOCKET_EVENTS } from '../config/socket.js';
+import { vlog } from './verbose.js';
 
 class SocketService {
 	constructor() {
@@ -87,7 +88,7 @@ class SocketService {
 		if (!this.ensureInitialized()) return;
 
 		this.io.emit(event, data);
-		console.log(`[Socket Service] Broadcast to all: ${event}`, data);
+		vlog(`[Socket Service] Broadcast to all: ${event}`, data);
 	}
 
 	/**
@@ -101,7 +102,7 @@ class SocketService {
 
 		const userSockets = this.connectedUsers.get(userId);
 		if (!userSockets || userSockets.size === 0) {
-			console.log(`[Socket Service] User ${userId} not connected, skipping emit: ${event}`);
+			vlog(`[Socket Service] User ${userId} not connected, skipping emit: ${event}`);
 			return;
 		}
 
@@ -109,7 +110,7 @@ class SocketService {
 			this.io.to(socketId).emit(event, data);
 		});
 
-		console.log(`[Socket Service] Emit to user ${userId} (${userSockets.size} connections): ${event}`, data);
+		vlog(`[Socket Service] Emit to user ${userId} (${userSockets.size} connections): ${event}`, data);
 	}
 
 	/**
@@ -122,43 +123,43 @@ class SocketService {
 	emitToUserAndAdmins(userId, event, data) {
 		if (!this.ensureInitialized()) return;
 
-		console.log(`🌟🌟🌟 [Socket Service] emitToUserAndAdmins called`);
-		console.log(`🌟 userId: ${userId}`);
-		console.log(`🌟 event: ${event}`);
-		console.log(`🌟 Total connected users: ${this.connectedUsers.size}`);
-		console.log(`🌟 All connected user IDs:`, Array.from(this.connectedUsers.keys()));
+		vlog(`🌟🌟🌟 [Socket Service] emitToUserAndAdmins called`);
+		vlog(`🌟 userId: ${userId}`);
+		vlog(`🌟 event: ${event}`);
+		vlog(`🌟 Total connected users: ${this.connectedUsers.size}`);
+		vlog(`🌟 All connected user IDs:`, Array.from(this.connectedUsers.keys()));
 
 		let sentToSockets = new Set();
 		let sentToUsers = 0;
 
 		// Отправить владельцу
 		const userSockets = this.connectedUsers.get(userId);
-		console.log(`🔍 User ${userId} sockets:`, userSockets ? Array.from(userSockets) : 'NOT FOUND');
+		vlog(`🔍 User ${userId} sockets:`, userSockets ? Array.from(userSockets) : 'NOT FOUND');
 		
 		if (userSockets && userSockets.size > 0) {
 			userSockets.forEach(socketId => {
 				this.io.to(socketId).emit(event, data);
 				sentToSockets.add(socketId);
-				console.log(`✅ Emitted to user socket: ${socketId}`);
+				vlog(`✅ Emitted to user socket: ${socketId}`);
 			});
 			sentToUsers++;
 		} else {
-			console.log(`❌ User ${userId} has NO sockets!`);
+			vlog(`❌ User ${userId} has NO sockets!`);
 		}
 
 		// Отправить всем админам
-		console.log(`🔍 Checking admins... Total sockets: ${this.io.sockets.sockets.size}`);
+		vlog(`🔍 Checking admins... Total sockets: ${this.io.sockets.sockets.size}`);
 		this.io.sockets.sockets.forEach((socket) => {
-			console.log(`  Socket ${socket.id}: userId=${socket.userId}, role=${socket.userRole}`);
+			vlog(`  Socket ${socket.id}: userId=${socket.userId}, role=${socket.userRole}`);
 			if (socket.userRole === 'admin' && !sentToSockets.has(socket.id)) {
 				socket.emit(event, data);
 				sentToSockets.add(socket.id);
 				sentToUsers++;
-				console.log(`✅ Emitted to admin socket: ${socket.id}`);
+				vlog(`✅ Emitted to admin socket: ${socket.id}`);
 			}
 		});
 
-		console.log(`📊 [Socket Service] Emit to user ${userId} + admins (${sentToSockets.size} connections, ${sentToUsers} users): ${event}`);
+		vlog(`📊 [Socket Service] Emit to user ${userId} + admins (${sentToSockets.size} connections, ${sentToUsers} users): ${event}`);
 	}
 
 	/**
@@ -282,6 +283,35 @@ emitAccountDeleted(userId, accountId) {
 	this.io.emit('luxee:account:deleted', eventData);
 
 	console.log(`[Socket Service] Emitted account deleted: userId=${userId}, accountId=${accountId}`);
+}
+
+/**
+ * Emit протухшей авторизации Luxee аккаунта (сессия мертва, перелогин не помог).
+ * Админка показывает «требует пересоздания». Ничего не удаляем — обратимо.
+ * @param {string} userId - ID пользователя
+ * @param {string} accountId - ID аккаунта
+ * @param {Object} detail - { failCount, lastError }
+ */
+emitAccountAuthFailed(userId, accountId, detail = {}) {
+	if (!this.io) {
+		console.error('[Socket Service] Socket.io not initialized');
+		return;
+	}
+
+	const eventData = {
+		userId,
+		accountId,
+		authFailed: true,
+		...detail,
+		timestamp: new Date().toISOString(),
+	};
+
+	console.log(`[Socket Service] Broadcast to all: luxee:account:auth-failed`, eventData);
+
+	// Broadcast всем подключенным клиентам
+	this.io.emit('luxee:account:auth-failed', eventData);
+
+	console.log(`[Socket Service] Emitted account auth-failed: userId=${userId}, accountId=${accountId}`);
 }
 
 /**

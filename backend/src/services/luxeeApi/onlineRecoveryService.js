@@ -242,9 +242,31 @@ export const reloginAllContexts = async accountId => {
 	}
 
 	resetFails(accountId);
-	await emitReloginStatus(accountId, 'relogin_done', { contexts: contexts.length });
-	console.log(`[Online Recovery] ✅ Relogin done for ${accountId}, fails reset`);
-	return true;
+	// Проверяем что после релогина сессия реально жива. Если мертва —
+	// свежий логин по stored creds (до 3 попыток), иначе метка auth_failed.
+	// Иначе битые контексты крутятся в relogin-лупе вечно (как было: тысячи/сутки).
+	let reloginHealthy = true;
+	try {
+		const { ensureSessionHealthy } = await import(
+			'./luxeeAuthService/sessionService.js'
+		);
+		const mainCtx = browserService.getContext(accountId);
+		const mainPage = mainCtx ? await pageHelpers.getOrCreatePage(mainCtx) : null;
+		const acc = await LuxeeAccount.findById(accountId);
+		reloginHealthy = await ensureSessionHealthy({
+			userId: acc ? acc.user.toString() : null,
+			accountId,
+			page: mainPage,
+		});
+	} catch (e) {
+		reloginHealthy = false;
+	}
+	await emitReloginStatus(accountId, 'relogin_done', {
+		contexts: contexts.length,
+		healthy: reloginHealthy,
+	});
+	console.log(`[Online Recovery] ✅ Relogin done for ${accountId}, fails reset, healthy=${reloginHealthy}`);
+	return reloginHealthy;
 };
 
 // После успешного AI-ответа онлайн НЕ выставляем: это делает onlineKeeper

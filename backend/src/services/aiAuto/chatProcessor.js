@@ -7,6 +7,7 @@ import chatMessagesExtractorService from '../luxeeApi/chatMessagesExtractorServi
 import profileScanner from './profileScanner.js';
 import cycleLogger from './cycleLogger.js';
 import utils from './utils.js';
+import { vlog } from '../verbose.js';
 
 // Кэш сгенерированных, но НЕ отправленных ответов.
 // Сгенерировали за токены, а отправка упала (сеть/таймаут/недоставка):
@@ -37,6 +38,71 @@ const storePendingReply = (chatId, manKey, text) => {
 const dropPendingReply = (chatId, manKey) => {
 	pendingReplies.delete(pendingReplyKey(chatId, manKey));
 };
+
+// Предохранитель от вечного цикла navigation_failed: один битый чат
+// (не открывается навигацией) не должен парализовать весь аккаунт.
+// После NAV_FAIL_MAX подряд идущих fails чат откладывается на NAV_BACKOFF_MS.
+const NAV_FAIL_MAX = 3;
+const NAV_BACKOFF_MS = 10 * 60 * 1000;
+const navFailures = new Map(); // key(`${accountId}||${chatId}`) -> { fails, skipUntil }
+const navFailKey = (accountId, chatId) => `${accountId}||${chatId}`;
+const recordNavFail = (accountId, chatId) => {
+	const key = navFailKey(accountId, chatId);
+	const prev = navFailures.get(key) || { fails: 0, skipUntil: 0 };
+	prev.fails += 1;
+	if (prev.fails >= NAV_FAIL_MAX) {
+		prev.skipUntil = Date.now() + NAV_BACKOFF_MS;
+	}
+	navFailures.set(key, prev);
+	return prev;
+};
+const clearNavFail = (accountId, chatId) => {
+	navFailures.delete(navFailKey(accountId, chatId));
+};
+
+// Собеседник заблокировал анкету: отвечать невозможно, разбан
+// маловероятен — откладываем чат на BLOCKED_BACKOFF_MS (1.5 суток),
+// чтобы не жечь по ~4с каждый цикл на заведомо мёртвый чат.
+// Проверка баннера требует открытого чата, поэтому первая проверка
+// после рестарта всё равно делает один заход, дальше — пропуск без goto.
+const BLOCKED_BACKOFF_MS = 36 * 60 * 60 * 1000;
+const blockedChats = new Map(); // key(`${accountId}||${chatId}`) -> skipUntil ts
+const blockedKey = (accountId, chatId) => `${accountId}||${chatId}`;
+
+// Часть chatId, принадлежащая анкете. Порядок частей НЕ фиксирован
+// (profile_man и man_profile), поэтому позиция НЕ используется —
+// только точное знание, по приоритетам:
+// 1) chat.profileUidOuter (выставляет CatchUp-сканер),
+// 2) часть, НЕ равная manUid (manUid — из members сайта, авторитетен),
+// 3) часть, входящая в allUids профиля,
+// 4) fallback — первая часть (старое поведение) + warn в лог.
+const resolveProfileUidOuter = (chat, profile) => {
+	const [splitA, splitB] = String(chat.chatId || '').split('_');
+	if (chat.profileUidOuter) {
+		return { profileUidOuter: String(chat.profileUidOuter), way: 'catchup' };
+	}
+	if (chat.manUid) {
+		const other = [splitA, splitB].find(
+			p => p && String(p) !== String(chat.manUid),
+		);
+		if (other) {
+			return { profileUidOuter: String(other), way: 'manUid' };
+		}
+	}
+	const allUidsStr = (profile.allUids || [profile.uid]).map(String);
+	const hit = [splitA, splitB].find(p => p && allUidsStr.includes(String(p)));
+	if (hit) {
+		return { profileUidOuter: String(hit), way: 'allUids' };
+	}
+	return { profileUidOuter: String(splitA || ''), way: 'fallback' };
+};
+
+// Сравнение chatId без учёта порядка частей (profile_man == man_profile).
+const normalizeChatId = id =>
+	String(id || '')
+		.split('_')
+		.sort()
+		.join('_');
 
 // Флаг unAnswered врёт в обе стороны (false без нашего сообщения; true при
 // фантомном посте). При false перепроверяем по истории: если последнее от
@@ -92,41 +158,82 @@ const processSingleChat = async ({
 		allUids: profile.allUids,
 	});
 
+	// Предохранитель: чат в backoff после серии navigation_failed —
+	// пропускаем сразу, без goto, чтобы не жечь цикл каждые 5 секунд.
+	const navState = navFailures.get(navFailKey(accountId, chat.chatId));
+	if (navState && Date.now() < navState.skipUntil) {
+		utils.log(
+			'Chat Processor',
+			`⏸️  Chat ${chat.chatId} in nav-backoff (${navState.fails} fails), skipping`,
+		);
+		return { sent: false, reason: 'nav_backoff' };
+	}
+
+	// Предохранитель: чат заблокирован собеседником — пропускаем сразу,
+	// без goto. Просроченные записи чистим лениво.
+	const blockedUntil = blockedChats.get(blockedKey(accountId, chat.chatId));
+	if (blockedUntil) {
+		if (Date.now() < blockedUntil) {
+			utils.log(
+				'Chat Processor',
+				`⛔ Chat ${chat.chatId} blocked by user (backoff), skipping`,
+			);
+			return { sent: false, reason: 'user_blocked_backoff' };
+		}
+		blockedChats.delete(blockedKey(accountId, chat.chatId));
+	}
+
 	try {
 		// ========== НАВИГАЦИЯ К ЧАТУ ==========
-		// Роли берём из объекта (members), НЕ из позиции в chatId:
-		// порядок частей не фиксирован (profile_man и man_profile).
-		const [splitA, splitB] = chat.chatId.split('_');
-		const profileUidOuter = chat.profileUidOuter || splitA;
-		const userUid = chat.manUid || splitB;
+		const { profileUidOuter, way } = resolveProfileUidOuter(chat, profile);
+		if (way === 'fallback') {
+			utils.log(
+				'Chat Processor',
+				`⚠️  Could not resolve profile part of ${chat.chatId}, using first part`,
+			);
+		}
+		const [splitA, splitB] = String(chat.chatId || '').split('_');
+		const userUid =
+			chat.manUid ||
+			[splitA, splitB].find(
+				p => p && String(p) !== String(profileUidOuter),
+			) ||
+			splitB;
 		const url = `https://luxee.io/chats/?ownerUid=${profile.uid}&profileUid=${profileUidOuter}&userUid=${userUid}`;
 
 		console.log('[🚦 CHAT PROCESSOR] ========================================');
 		console.log('[🚦 CHAT PROCESSOR] 🌐 NAVIGATION START');
-		console.log('[🚦 CHAT PROCESSOR] From URL:', page.url());
-		console.log('[🚦 CHAT PROCESSOR] To URL:', url);
-		console.log('[🚦 CHAT PROCESSOR] Chat ID:', chat.chatId);
-		console.log('[🚦 CHAT PROCESSOR] Profile:', profile.username, `(${profile.uid})`);
-		console.log('[🚦 CHAT PROCESSOR] Man:', chat.manName);
-		console.log('[🚦 CHAT PROCESSOR] isCatchUp:', isCatchUp);
-		console.log('[🚦 CHAT PROCESSOR] Time:', new Date().toISOString());
+		vlog('[🚦 CHAT PROCESSOR] From URL:', page.url());
+		vlog('[🚦 CHAT PROCESSOR] To URL:', url);
+		vlog('[🚦 CHAT PROCESSOR] Chat ID:', chat.chatId);
+		vlog('[🚦 CHAT PROCESSOR] Profile:', profile.username, `(${profile.uid})`);
+		vlog('[🚦 CHAT PROCESSOR] Man:', chat.manName);
+		vlog('[🚦 CHAT PROCESSOR] isCatchUp:', isCatchUp);
+		vlog('[🚦 CHAT PROCESSOR] Time:', new Date().toISOString());
 
 		utils.log('Chat Processor', `🌐 Navigating to: ${url}`);
-		console.log('[🔧 PROCESSOR] Navigation URL:', url);
+		vlog('[🔧 PROCESSOR] Navigation URL:', url);
 
 		try {
-			console.log('[🚦 CHAT PROCESSOR] ⏳ Executing page.goto()...');
+			vlog('[🚦 CHAT PROCESSOR] ⏳ Executing page.goto()...');
 			await page.goto(url, {
 				waitUntil: 'domcontentloaded',
 				timeout: 10000,
 			});
-			console.log('[🚦 CHAT PROCESSOR] ✅ page.goto() completed');
+			vlog('[🚦 CHAT PROCESSOR] ✅ page.goto() completed');
 	} catch (navError) {
 		console.log('[🚦 CHAT PROCESSOR] ❌ page.goto() FAILED:', navError.message);
 		utils.logError(
 			'Chat Processor',
 			`❌ Navigation error: ${navError.message}`,
 		);
+		const st = recordNavFail(accountId, chat.chatId);
+		if (st.fails >= NAV_FAIL_MAX) {
+			utils.log(
+				'Chat Processor',
+				`⏸️  ${chat.chatId}: ${st.fails} nav fails in a row — backoff 10 min`,
+			);
+		}
 		cycleLogger.logEvent(accountId, 'chat', 'nav_failed', {
 			chatId: chat.chatId,
 			manName: chat.manName,
@@ -138,21 +245,28 @@ const processSingleChat = async ({
 		return { sent: false, reason: 'navigation_timeout' };
 	}
 
-		console.log('[🚦 CHAT PROCESSOR] ⏳ Sleeping 3 seconds...');
+		vlog('[🚦 CHAT PROCESSOR] ⏳ Sleeping 3 seconds...');
 		await utils.sleep(3000);
-		console.log('[🚦 CHAT PROCESSOR] ✅ Sleep completed');
-		console.log('[🚦 CHAT PROCESSOR] Current URL after navigation:', page.url());
+		vlog('[🚦 CHAT PROCESSOR] ✅ Sleep completed');
+		vlog('[🚦 CHAT PROCESSOR] Current URL after navigation:', page.url());
 
 		// Проверка успешности навигации
 		const activeChatId = await page.evaluate(() => {
 			return window.modelsChat?.getChats?.active?.identity;
 		});
 
-	if (activeChatId !== chat.chatId) {
+	if (normalizeChatId(activeChatId) !== normalizeChatId(chat.chatId)) {
 		utils.logError(
 			'Chat Processor',
 			`❌ Navigation failed: expected ${chat.chatId}, got ${activeChatId}`,
 		);
+		const st = recordNavFail(accountId, chat.chatId);
+		if (st.fails >= NAV_FAIL_MAX) {
+			utils.log(
+				'Chat Processor',
+				`⏸️  ${chat.chatId}: ${st.fails} nav fails in a row — backoff 10 min`,
+			);
+		}
 		cycleLogger.logEvent(accountId, 'chat', 'nav_failed', {
 			chatId: chat.chatId,
 			manName: chat.manName,
@@ -166,6 +280,7 @@ const processSingleChat = async ({
 	}
 
 		utils.log('Chat Processor', `✅ Navigated successfully`);
+		clearNavFail(accountId, chat.chatId);
 
 		// ========== ПРОВЕРКА БЛОКИРОВКИ (заблокировавший нас юзер) ==========
 		// Если собеседник заблокировал анкету — сайт молча глотает отправку
@@ -195,9 +310,13 @@ const processSingleChat = async ({
 			.catch(() => ({ blocked: false, text: '' }));
 
 		if (blockCheck.blocked) {
+			blockedChats.set(
+				blockedKey(accountId, chat.chatId),
+				Date.now() + BLOCKED_BACKOFF_MS,
+			);
 			utils.log(
 				'Chat Processor',
-				`⛔ Chat blocked by user ("${blockCheck.text}") — skipping, consider blacklist for ${chat.manName} (${chat.manUid})`,
+				`⛔ Chat blocked by user ("${blockCheck.text}") — backoff 36h for ${chat.manName} (${chat.manUid})`,
 			);
 			cycleLogger.logEvent(accountId, 'chat', 'skipped', {
 				chatId: chat.chatId,
@@ -358,19 +477,40 @@ const processSingleChat = async ({
 					history.lastMessage.messageType,
 				);
 
-			// Если последнее от девушки → добавляем короткую подсказку
-			if (history.lastMessage.isFromProfile) {
-				typeInstructions += `\n\nNOTE: The man saw your last message but didn't reply. Re-engage him with a fresh question based on chat history.`;
-				utils.log(
-					'Chat Processor',
-					'💬 Catch Up: last from profile, added re-engagement note',
-				);
-			} else {
-				utils.log(
-					'Chat Processor',
-					'📬 Catch Up: last from man, standard reply',
-				);
-			}
+		// Если последнее от девушки → добавляем короткую подсказку
+		if (history.lastMessage.isFromProfile) {
+			typeInstructions += `\n\nNOTE: The man saw your last message but didn't reply. Re-engage him with a fresh question based on chat history.`;
+			utils.log(
+				'Chat Processor',
+				'💬 Catch Up: last from profile, added re-engagement note',
+			);
+			// СВЕРКА С ФИЛЬТРОМ: фильтр решает по хвосту list.message БЕЗ открытия
+			// чата, процессор — по DOM открытой страницы. Расхождение этих двух
+			// вердиктов = признак инвертированного порядка массива list.message.
+			console.log('[🔍 PROCESSOR VS FILTER] Catch Up authorship (DOM truth):', {
+				chatId: chat.chatId,
+				lastAuthor: history.lastMessage.author,
+				isFromProfile: history.lastMessage.isFromProfile,
+				isFromMan: history.lastMessage.isFromMan,
+				filterTailUid: chat.lastMsgUid ?? 'n/a',
+				filterTailUType: chat.lastMsgUType ?? 'n/a',
+				filterManUid: chat.manUid ?? 'n/a',
+			});
+		} else {
+			utils.log(
+				'Chat Processor',
+				'📬 Catch Up: last from man, standard reply',
+			);
+			console.log('[🔍 PROCESSOR VS FILTER] Catch Up authorship (DOM truth):', {
+				chatId: chat.chatId,
+				lastAuthor: history.lastMessage.author,
+				isFromProfile: history.lastMessage.isFromProfile,
+				isFromMan: history.lastMessage.isFromMan,
+				filterTailUid: chat.lastMsgUid ?? 'n/a',
+				filterTailUType: chat.lastMsgUType ?? 'n/a',
+				filterManUid: chat.manUid ?? 'n/a',
+			});
+		}
 		}
 	} else {
 			// 📋 ОБЫЧНЫЙ ЧАТ: проверяем shouldReply
@@ -378,7 +518,7 @@ const processSingleChat = async ({
 				history.lastMessage,
 			);
 
-			console.log('[🔧 PROCESSOR] Should reply check:', {
+			vlog('[🔧 PROCESSOR] Should reply check:', {
 				shouldReply: shouldReply.shouldReply,
 				reason: shouldReply.reason,
 				lastMessageAuthor: history.lastMessage?.author,
@@ -405,7 +545,7 @@ const processSingleChat = async ({
 				);
 		}
 
-		console.log('[🔧 PROCESSOR] ✅ Will generate AI response');
+		vlog('[🔧 PROCESSOR] ✅ Will generate AI response');
 
 		// Форматирование истории для AI
 		const formattedHistory = chatMessagesExtractorService.formatHistoryForAI(
@@ -415,18 +555,18 @@ const processSingleChat = async ({
 		);
 
 		// 📊 ЛОГИРОВАНИЕ ПРОМТА
-		utils.log(
+		vlog(
 			'Chat Processor',
 			`📋 Type instructions length: ${typeInstructions.length} chars`,
 		);
 		if (typeInstructions) {
 			const preview = typeInstructions.substring(0, 100).replace(/\n/g, ' ');
-			utils.log(
+			vlog(
 				'Chat Processor',
 				`📄 Type instructions preview: ${preview}...`,
 			);
 		} else {
-			utils.log('Chat Processor', `⚠️  NO type instructions provided!`);
+			vlog('Chat Processor', `⚠️  NO type instructions provided!`);
 		}
 
 		const messageType = history.lastMessage?.messageType || 'text';
@@ -465,24 +605,24 @@ const processSingleChat = async ({
 		if (elapsed >= URGENT_THRESHOLD) {
 			// СРОЧНО: Сообщение висит 45+ секунд - отвечаем максимально быстро
 			typingDelay = MIN_TECHNICAL_DELAY;
-			console.log('[🚦 ADAPTIVE DELAY] ⚠️  URGENT MODE: Message is 45+ seconds old');
+			vlog('[🚦 ADAPTIVE DELAY] ⚠️  URGENT MODE: Message is 45+ seconds old');
 			} else if (projectedResponseTime < MIN_REALISTIC_TIME) {
 				// Если ответим слишком быстро - ждём до 25 секунд
 				const additionalWait = MIN_REALISTIC_TIME - elapsed;
 				typingDelay = Math.max(MIN_TECHNICAL_DELAY, additionalWait);
-				console.log('[🚦 ADAPTIVE DELAY] ⏱️  Extending delay to meet 25s minimum');
+				vlog('[🚦 ADAPTIVE DELAY] ⏱️  Extending delay to meet 25s minimum');
 			} else {
 				// Используем вычисленную задержку
 				typingDelay = Math.max(MIN_TECHNICAL_DELAY, calculatedDelay);
 			}
-			
-			console.log(`[🚦 ADAPTIVE DELAY] Message age: ${Math.round(elapsed / 1000)}s`);
-			console.log(`[🚦 ADAPTIVE DELAY] Target delay range: ${MIN_DELAY / 1000}-${MAX_DELAY / 1000}s`);
-			console.log(`[🚦 ADAPTIVE DELAY] Random target: ${Math.round(targetDelay / 1000)}s`);
-			console.log(`[🚦 ADAPTIVE DELAY] Calculated delay: ${Math.round(calculatedDelay / 1000)}s`);
-			console.log(`[🚦 ADAPTIVE DELAY] Actual delay: ${Math.round(typingDelay / 1000)}s`);
-			console.log(`[🚦 ADAPTIVE DELAY] Projected response time: ${Math.round((elapsed + typingDelay) / 1000)}s from message`);
-			
+
+			vlog(`[🚦 ADAPTIVE DELAY] Message age: ${Math.round(elapsed / 1000)}s`);
+			vlog(`[🚦 ADAPTIVE DELAY] Target delay range: ${MIN_DELAY / 1000}-${MAX_DELAY / 1000}s`);
+			vlog(`[🚦 ADAPTIVE DELAY] Random target: ${Math.round(targetDelay / 1000)}s`);
+			vlog(`[🚦 ADAPTIVE DELAY] Calculated delay: ${Math.round(calculatedDelay / 1000)}s`);
+			vlog(`[🚦 ADAPTIVE DELAY] Actual delay: ${Math.round(typingDelay / 1000)}s`);
+			vlog(`[🚦 ADAPTIVE DELAY] Projected response time: ${Math.round((elapsed + typingDelay) / 1000)}s from message`);
+
 			utils.log(
 				'Chat Processor',
 				`⏱️  Adaptive typing delay: ${Math.round(typingDelay / 1000)}s (message age: ${Math.round(elapsed / 1000)}s)`,
@@ -490,11 +630,11 @@ const processSingleChat = async ({
 		} else {
 			// CATCH UP: обычная случайная задержка (БЕЗ адаптивной логики)
 			typingDelay = MIN_DELAY + Math.random() * (MAX_DELAY - MIN_DELAY);
-			
-			console.log('[🚦 CATCH UP DELAY] Using standard random delay');
-			console.log(`[🚦 CATCH UP DELAY] Range: ${MIN_DELAY / 1000}-${MAX_DELAY / 1000}s`);
-			console.log(`[🚦 CATCH UP DELAY] Actual delay: ${Math.round(typingDelay / 1000)}s`);
-			
+
+			vlog('[🚦 CATCH UP DELAY] Using standard random delay');
+			vlog(`[🚦 CATCH UP DELAY] Range: ${MIN_DELAY / 1000}-${MAX_DELAY / 1000}s`);
+			vlog(`[🚦 CATCH UP DELAY] Actual delay: ${Math.round(typingDelay / 1000)}s`);
+
 			utils.log(
 				'Chat Processor',
 				`⏱️  Catch Up typing delay: ${Math.round(typingDelay / 1000)}s`,
@@ -520,15 +660,16 @@ const processSingleChat = async ({
 			replyText = cachedReply;
 		} else {
 			// ========== ГЕНЕРАЦИЯ ОТВЕТА (внутри окна задержки) ==========
-			console.log('[🚦 CHAT PROCESSOR] ========================================');
-			console.log('[🚦 CHAT PROCESSOR] 🤖 AI GENERATION START');
-			console.log('[🚦 CHAT PROCESSOR] Current URL:', page.url());
-			console.log('[🚦 CHAT PROCESSOR] Chat ID:', chat.chatId);
-			console.log('[🚦 CHAT PROCESSOR] Time:', new Date().toISOString());
+			vlog('[🚦 CHAT PROCESSOR] ========================================');
+			vlog('[🚦 CHAT PROCESSOR] 🤖 AI GENERATION START');
+			vlog('[🚦 CHAT PROCESSOR] Current URL:', page.url());
+		vlog('[🚦 CHAT PROCESSOR] Chat ID:', chat.chatId);
+		vlog('[🚦 CHAT PROCESSOR] Profile part:', profileUidOuter, `(via ${way})`);
+			vlog('[🚦 CHAT PROCESSOR] Time:', new Date().toISOString());
 
 			utils.log('Chat Processor', `🤖 Generating AI response (type: ${messageType})...`);
 
-			console.log('[🚦 CHAT PROCESSOR] ⏳ Calling aiResponseService.generateResponse()...');
+			vlog('[🚦 CHAT PROCESSOR] ⏳ Calling aiResponseService.generateResponse()...');
 			const genResult = await aiResponseService.generateResponse({
 				userId,
 				accountId,
@@ -556,12 +697,12 @@ const processSingleChat = async ({
 		// долгой — она уже покрыла окно (ответ и так не моментальный).
 		const remainDelay = delayDeadline - Date.now();
 		if (remainDelay > 0) {
-			console.log(`[🚦 CHAT PROCESSOR] 💭 Sleeping remaining ${Math.round(remainDelay / 1000)}s of typing delay`);
+			vlog(`[🚦 CHAT PROCESSOR] 💭 Sleeping remaining ${Math.round(remainDelay / 1000)}s of typing delay`);
 			await utils.sleep(remainDelay);
 		} else {
-			console.log('[🚦 CHAT PROCESSOR] ✅ Generation covered typing delay, no extra sleep');
+			vlog('[🚦 CHAT PROCESSOR] ✅ Generation covered typing delay, no extra sleep');
 		}
-		console.log('[🚦 CHAT PROCESSOR] ✅ Typing delay completed');
+		vlog('[🚦 CHAT PROCESSOR] ✅ Typing delay completed');
 
 		// Повторная проверка unAnswered ПОСЛЕ задержки (только обычные чаты).
 		// Зачем: задержка 7-25с — за это время в чат могли уже ответить
@@ -615,15 +756,15 @@ const processSingleChat = async ({
 			});
 			return { sent: false, reason: 'generation_failed' };
 		}
-		console.log('[🚦 CHAT PROCESSOR] ========================================');
-		console.log('[🚦 CHAT PROCESSOR] 📤 AI SEND START (text ready, no regeneration)');
-		console.log('[🚦 CHAT PROCESSOR] Current URL:', page.url());
-		console.log('[🚦 CHAT PROCESSOR] Chat ID:', chat.chatId);
-		console.log('[🚦 CHAT PROCESSOR] Time:', new Date().toISOString());
+		vlog('[🚦 CHAT PROCESSOR] ========================================');
+		vlog('[🚦 CHAT PROCESSOR] 📤 AI SEND START (text ready, no regeneration)');
+		vlog('[🚦 CHAT PROCESSOR] Current URL:', page.url());
+		vlog('[🚦 CHAT PROCESSOR] Chat ID:', chat.chatId);
+		vlog('[🚦 CHAT PROCESSOR] Time:', new Date().toISOString());
 
 		utils.log('Chat Processor', `📤 Sending AI response...`);
 
-		console.log('[🚦 CHAT PROCESSOR] ⏳ Calling aiResponseService.sendResponse()...');
+		vlog('[🚦 CHAT PROCESSOR] ⏳ Calling aiResponseService.sendResponse()...');
 		const sendResult = await aiResponseService.sendResponse({
 			userId,
 			accountId,
@@ -633,8 +774,8 @@ const processSingleChat = async ({
 		});
 
 		// ========== ПРОВЕРКА РЕЗУЛЬТАТА ==========
-		console.log('[🔧 PROCESSOR] ========== AI RESPONSE RESULT ==========');
-		console.log('[🔧 PROCESSOR] Response structure:', {
+		vlog('[🔧 PROCESSOR] ========== AI RESPONSE RESULT ==========');
+		vlog('[🔧 PROCESSOR] Response structure:', {
 			hasResponse: !!replyText,
 			generatedText: String(replyText || '').substring(0, 50),
 			hasSendResult: !!sendResult,
@@ -679,27 +820,21 @@ const processSingleChat = async ({
 		utils.log('Chat Processor', `✅ Message delivered at ${sendTime}`);
 
 		console.log('[🔧 PROCESSOR] ✅ MESSAGE SENT SUCCESSFULLY');
-		console.log(
+		vlog(
 			'[🔧 PROCESSOR] Generated text:',
 			generatedText.substring(0, 100),
 		);
-		console.log(
+		vlog(
 			'[🔧 PROCESSOR] Send timestamp:',
 			sendResult.timestamp,
 		);
 
 		// ✅ Сообщение УЖЕ отправлено - возвращаем успех
 		const elapsed = Date.now() - startTime;
-		
-		console.log('[🚦 CHAT PROCESSOR] ========================================');
+
 		console.log('[🚦 CHAT PROCESSOR] ✅ MESSAGE SENT SUCCESSFULLY');
 		console.log('[🚦 CHAT PROCESSOR] Chat ID:', chat.chatId);
-		console.log('[🚦 CHAT PROCESSOR] Man:', chat.manName);
-		console.log('[🚦 CHAT PROCESSOR] Profile:', profile.username);
 		console.log('[🚦 CHAT PROCESSOR] Duration:', Math.round(elapsed / 1000), 'seconds');
-		console.log('[🚦 CHAT PROCESSOR] Current URL after send:', page.url());
-		console.log('[🚦 CHAT PROCESSOR] Time:', new Date().toISOString());
-		console.log('[🚦 CHAT PROCESSOR] ========================================');
 		
 	utils.log(
 		'Chat Processor',

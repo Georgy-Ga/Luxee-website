@@ -10,6 +10,7 @@ import LuxeeAccountModel from '../models/LuxeeAccountModel.js';
 import SpambotService from './spambotService.js';
 import socketService from './socketService.js';
 import spambotQueueService from './SpambotQueueService.js';
+import { vlog } from './verbose.js';
 
 class SpambotPollingService {
 	constructor() {
@@ -23,7 +24,7 @@ class SpambotPollingService {
 	 */
 	async recoverLostUpdates() {
 		try {
-			console.log('[Spambot Polling] 🔄 Checking for lost updates...');
+			vlog('[Spambot Polling] 🔄 Checking for lost updates...');
 			
 			// Найти все рассылки со статусом running в MongoDB
 			const runningDistributions = await SpambotDistributionModel.find({

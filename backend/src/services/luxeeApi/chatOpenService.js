@@ -79,11 +79,12 @@ const chatOpenService = {
 					// unAnswered === true → последнее от мужчины (uType: 2)
 					// unAnswered === false → последнее от девушки (uType: 10)
 					const lastMessageFrom = activeChat.unAnswered ? 'man' : 'woman';
-					
+
 					console.log('[Chat Open Browser] lastMessageFrom:', lastMessageFrom);
-					
+
 					// Находим последнее сообщение от нужного отправителя
-					// uType: 10 = девушка (модель), uType: 2 = мужчина
+					// members.type: 10 = мужчина, 2 = девушка (как везде: catchUpScanner,
+					// aiResponseService; было инвертировано — фронт показывал не тех).
 					const targetUType = activeChat.unAnswered ? 2 : 10;
 					let lastMessage = null;
 					
@@ -103,7 +104,7 @@ const chatOpenService = {
 					}
 
 					// Находим данные мужчины и девушки
-					// type: 10 = девушка (модель), type: 2 = мужчина
+					// members.type: 10 = мужчина, 2 = девушка (едино с остальным кодом)
 					console.log('[Chat Open Browser] Members:', activeChat.members?.map(m => ({
 						uid: m.uid,
 						type: m.type,
@@ -111,8 +112,8 @@ const chatOpenService = {
 						avatar: m.avatar?.thumbnail || m.avatar?.preview || m.avatar?.src,
 					})));
 					
-					const manMember = activeChat.members?.find(m => m.type === 2);
-					const womanMember = activeChat.members?.find(m => m.type === 10);
+					const manMember = activeChat.members?.find(m => m.type === 10);
+					const womanMember = activeChat.members?.find(m => m.type === 2);
 					
 					console.log('[Chat Open Browser] Man member:', manMember?.uid);
 					console.log('[Chat Open Browser] Woman member:', womanMember?.uid);
@@ -153,7 +154,7 @@ const chatOpenService = {
 					} : null,
 						
 						// Все сообщения (последние 10)
-						// uType: 10 = девушка (модель), uType: 2 = мужчина
+						// uType: 10 = мужчина, 2 = девушка (едино с остальным кодом)
 						messages: messages.slice(-10).map(msg => {
 							// Определяем текст сообщения
 							let messageBody = msg.body || '';
@@ -181,7 +182,7 @@ const chatOpenService = {
 								media: msg.media || [],
 								createdAt: msg.createdAt,
 								index: msg.index,
-								from: msg.uType === 10 ? 'woman' : 'man',
+								from: msg.uType === 2 ? 'woman' : 'man',
 							};
 						}),
 					};

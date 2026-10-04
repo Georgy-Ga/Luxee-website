@@ -5,6 +5,7 @@
 import LuxeeAccount from '../models/LuxeeAccountModel.js';
 import User from '../models/UserModel.js';
 import socketService from './socketService.js';
+import { vlog } from './verbose.js';
 
 const MANUAL_ACTIVITY_TIMEOUT = 15 * 60 * 1000; // 15 минут
 const MONITOR_INTERVAL = 30 * 1000; // 30 секунд
@@ -21,11 +22,11 @@ const luxeeAccountOnlineService = {
 	 */
 	trackManualActivity: async (userId, accountId = null) => {
 		try {
-			console.log(`[Luxee Online] 📍 Tracking manual activity for user ${userId}, account ${accountId}`);
+			vlog(`[Luxee Online] 📍 Tracking manual activity for user ${userId}, account ${accountId}`);
 
 			// 🛡️ ЗАЩИТА: Если это AI контекст - игнорируем
 			if (accountId && accountId.toString().endsWith('_ai')) {
-				console.log(`[Luxee Online] ⚠️ Ignoring AI context ${accountId}`);
+				vlog(`[Luxee Online] ⚠️ Ignoring AI context ${accountId}`);
 				return;
 			}
 
@@ -37,7 +38,7 @@ const luxeeAccountOnlineService = {
 				});
 
 				if (!account) {
-					console.log(`[Luxee Online] ⚠️ Account ${accountId} not found or doesn't belong to user ${userId}`);
+					vlog(`[Luxee Online] ⚠️ Account ${accountId} not found or doesn't belong to user ${userId}`);
 					return;
 				}
 			}
@@ -55,7 +56,7 @@ const luxeeAccountOnlineService = {
 				}
 			);
 
-			console.log(`[Luxee Online] ✅ Updated ${result.modifiedCount} accounts for user ${userId} → online`);
+			vlog(`[Luxee Online] ✅ Updated ${result.modifiedCount} accounts for user ${userId} → online`);
 
 			// Обновляем пользователя
 			await User.findByIdAndUpdate(userId, {
@@ -124,7 +125,7 @@ const luxeeAccountOnlineService = {
 
 		monitorIntervalId = setInterval(async () => {
 			try {
-				console.log('[Luxee Online Monitor] 🔍 Checking inactive users...');
+				vlog('[Luxee Online Monitor] 🔍 Checking inactive users...');
 
 				// Находим всех пользователей у кого есть ручная активность
 				const users = await User.find({
@@ -132,11 +133,11 @@ const luxeeAccountOnlineService = {
 				}).select('_id email luxeeAccountsManualActivity');
 
 				if (users.length === 0) {
-					console.log('[Luxee Online Monitor] No users with manual activity');
+					vlog('[Luxee Online Monitor] No users with manual activity');
 					return;
 				}
 
-				console.log(`[Luxee Online Monitor] Found ${users.length} users to check`);
+				vlog(`[Luxee Online Monitor] Found ${users.length} users to check`);
 
 				for (const user of users) {
 					const timeSinceActivity = Date.now() - user.luxeeAccountsManualActivity.getTime();
@@ -144,7 +145,7 @@ const luxeeAccountOnlineService = {
 
 					// Если прошло 15+ минут - переводим в offline
 					if (timeSinceActivity > MANUAL_ACTIVITY_TIMEOUT) {
-						console.log(
+						vlog(
 							`[Luxee Online Monitor] ⏸️  User ${user.email} inactive for ${inactivityMinutes} min → offline`
 						);
 
@@ -158,7 +159,7 @@ const luxeeAccountOnlineService = {
 							}
 						);
 
-						console.log(
+						vlog(
 							`[Luxee Online Monitor] 🛑 Set offline for ${result.modifiedCount} accounts of user ${user.email}`
 						);
 
@@ -167,13 +168,13 @@ const luxeeAccountOnlineService = {
 					} else {
 						// Еще не прошло 15 минут - пользователь активен
 						const remainingMinutes = 15 - inactivityMinutes;
-						console.log(
+						vlog(
 							`[Luxee Online Monitor] ✅ User ${user.email} still online (${remainingMinutes} min remaining)`
 						);
 					}
 				}
 
-				console.log('[Luxee Online Monitor] ✓ Check completed');
+				vlog('[Luxee Online Monitor] ✓ Check completed');
 			} catch (error) {
 				console.error('[Luxee Online Monitor] ❌ Error in monitoring:', error);
 			}

@@ -3,6 +3,7 @@
 
 import utils from './utils.js';
 import cycleLogger from './cycleLogger.js';
+import { vlog } from '../verbose.js';
 
 // Глобальный кеш обработанных Catch Up чатов
 // Формат ключа: `${accountId}_${profileUid}_${manUid}`
@@ -15,6 +16,72 @@ const MAX_OWNER_SWITCHES_PER_PASS = 6;
 // Сессионный кеш outer UID → inner UID (accountId → Map)
 // Пополняется при успешном резолве через переключение, живёт до рестарта бэкенда
 const outerToInnerSessionCache = new Map();
+
+/**
+ * Выбрать НОВЕЙШЕЕ сообщение из выборки хвоста.
+ * Порядок массива list.message НЕ гарантирован (доказано F12-дампом
+ * 2026-10-03, чат 2542263_2863050: массив newest-first, [0] новее
+ * последнего элемента). Поэтому позицию НЕ используем — только время:
+ * 1) максимум createdAt (если есть у всех),
+ * 2) иначе максимум поля index (монотонно внутри чата),
+ * 3) иначе [0] (наблюдаемый newest-first).
+ * Чистая функция (нет зависимостей) — покрыта тестом на реальном дампе.
+ * @param {Array} sample - сводки сообщений {uid,uType,body,createdAt,index}
+ * @returns {{msg: Object|null, via: string}}
+ */
+export const pickNewestMessage = sample => {
+	if (!Array.isArray(sample) || sample.length === 0) {
+		return { msg: null, via: 'empty' };
+	}
+	const ts = m => {
+		const t = Number(m && m.createdAt);
+		return Number.isFinite(t) && t > 0 ? t : null;
+	};
+	if (sample.every(m => ts(m) !== null)) {
+		let best = sample[0];
+		for (const m of sample) {
+			if (ts(m) > ts(best)) best = m;
+		}
+		return { msg: best, via: 'createdAt' };
+	}
+	const ix = m => {
+		const i = Number(m && m.index);
+		return Number.isFinite(i) ? i : null;
+	};
+	if (sample.every(m => ix(m) !== null)) {
+		let best = sample[0];
+		for (const m of sample) {
+			if (ix(m) > ix(best)) best = m;
+		}
+		return { msg: best, via: 'index' };
+	}
+	return { msg: sample[0], via: 'fallback-first' };
+};
+
+/**
+ * Node-постобработка извлечённых чатов: новейшее сообщение выбираем ЗДЕСЬ
+ * (pickNewestMessage выше), а не позицией в браузере.
+ * lastMsg* дальше использует фильтр в index.js.
+ * Чистая функция от данных (без page) — покрыта тестом.
+ */
+export const postProcessCatchUpChats = chats => {
+	for (const chat of chats) {
+		if (chat.hasMsgArray) {
+			const { msg, via } = pickNewestMessage(chat.tailSample || []);
+			chat.newestVia = via;
+			chat.newestMsg = msg;
+			chat.lastMsgUid = msg?.uid ?? null;
+			chat.lastMsgUType = msg?.uType ?? null;
+			chat.lastMsgBody = String(msg?.body || '').slice(0, 120);
+			// Сэмпл больше не нужен — объекты чатов идут в логи.
+			delete chat.tailSample;
+		} else {
+			chat.newestVia = 'empty';
+			chat.newestMsg = null;
+		}
+	}
+	return chats;
+};
 
 // Курсор свипа по кандидатам (accountId_outerUid → сколько кандидатов уже перебрано).
 // Бюджет свипов на проход ограничен (MAX_OWNER_SWITCHES_PER_PASS), поэтому
@@ -197,20 +264,35 @@ const getAllCatchUpChats = async (page, accountId = null) => {
 							members.find(m => m.gender === 1) ||
 							null;
 
-						let manUid = manUidAttr || null;
-						let profileUidOuter = partA;
-						let identityVia = 'positional-legacy';
-						if (manMember && manMember.uid !== undefined && manMember.uid !== null) {
-							manUid = String(manMember.uid);
-							const other = [partA, partB].find(p => String(p) !== manUid);
-							if (other !== undefined) {
-								profileUidOuter = other;
-								identityVia = 'members';
-							}
+					// Роли определяем по приоритетам (позиция — только последний шанс):
+					// 1) members (type 10 = мужчина) — самый надёжный источник;
+					// 2) data-member-uid из DOM — авторитетный UID мужчины с сайта;
+					//    часть анкеты = ДРУГАЯ часть chatId (порядок не фиксирован!).
+					//    Кейс Eduardo (2026-10-03, 2305786_2544973): members пуст,
+					//    старый код брал partA=2305786 (мужчина!) за анкету →
+					//    6 холостых переключений + вечный retry. Правильно: анкета
+					//    2544973 (другая часть), мужчина 2305786 из атрибута.
+					// 3) positional-legacy (partA) — только если мужчины нет нигде.
+					let manUid = manUidAttr || null;
+					let profileUidOuter = partA;
+					let identityVia = 'positional-legacy';
+					if (manMember && manMember.uid !== undefined && manMember.uid !== null) {
+						manUid = String(manMember.uid);
+						identityVia = 'members';
+					} else if (manUid) {
+						identityVia = 'member-uid-attr';
+					}
+					if (manUid) {
+						const other = [partA, partB].find(
+							p => p && String(p) !== String(manUid),
+						);
+						if (other !== undefined) {
+							profileUidOuter = other;
 						}
-						if (!manUid) {
-							manUid = manUidAttr || partB || null;
-						}
+					}
+					if (!manUid) {
+						manUid = partB || null;
+					}
 
 						const chat = {
 							chatId: chatId,
@@ -225,6 +307,51 @@ const getAllCatchUpChats = async (page, accountId = null) => {
 							messageCount: Array.isArray(listEntry.message)
 								? listEntry.message.length
 								: null,
+					// Хвост треда из того же list (навигации нет!):
+					// фильтр проверяет автора НОВЕЙШЕГО вместо лживого флага.
+					// lastMsgUid сравниваем с manUid (UID-способ, не uType).
+					// ПОРЯДОК (доказано F12-дампом 2026-10-03): массив
+					// newest-first, брать arr[arr.length-1] как "последнее"
+					// НЕЛЬЗЯ (это старейшее → голодание чатов). Поэтому в Node
+					// уходит сэмпл (голова+хвост), а новейшее выбирает
+					// pickNewestMessage() по createdAt (см. верх файла).
+					// uType В ЭТОМ массиве: 10 = мужчина, 2 = сторона профиля.
+					...(Array.isArray(listEntry.message)
+						? (() => {
+							const arr = listEntry.message;
+							const K = 50;
+							const head = arr.slice(0, K);
+							const tail = arr.length > K ? arr.slice(-K) : [];
+							// Короткий слепок: авторство + время + все поля.
+							const short = m => {
+								if (!m) return null;
+								return {
+									uid: m.uid ?? null,
+									uType: m.uType ?? null,
+									body: String(m.body || '').slice(0, 120),
+									createdAt: m.createdAt ?? null,
+									index: m.index ?? null,
+									type: m.type ?? null,
+									keys: Object.keys(m),
+								};
+							};
+							return {
+								hasMsgArray: true,
+								firstMsg: short(head[0] || null),
+								lastRaw: short(arr.length > 0 ? arr[arr.length - 1] : null),
+								tailSample: [...head, ...tail].map(short),
+							};
+							})()
+						: {
+								hasMsgArray: false,
+								firstMsg: null,
+								lastRaw: null,
+								tailSample: [],
+								lastMsgUid: null,
+								lastMsgUType: null,
+								lastMsgBody: '',
+								newestVia: 'empty',
+							}),
 						};
 
 						console.log(`[Catch Up] Chat ${index + 1}:`, chat);
@@ -232,17 +359,22 @@ const getAllCatchUpChats = async (page, accountId = null) => {
 					}
 				});
 
-				console.log('[Catch Up] Total chats extracted:', result.length);
-				return result;
-			});
-		
-		console.log('[🚦 CATCH UP SCANNER] ========================================');
-		console.log('[🚦 CATCH UP SCANNER] ✅ EXTRACTION COMPLETE');
-		console.log('[🚦 CATCH UP SCANNER] Total chats found:', chats.length);
-		console.log('[🚦 CATCH UP SCANNER] Current URL:', page.url());
-		console.log('[🚦 CATCH UP SCANNER] Time:', new Date().toISOString());
+			console.log('[Catch Up] Total chats extracted:', result.length);
+			return result;
+		});
+
+		// Node-постобработка: новейшее сообщение выбираем тестируемой
+		// функцией postProcessCatchUpChats (верх файла), фильтр дальше
+		// использует lastMsg* как автора НОВЕЙШЕГО сообщения.
+		postProcessCatchUpChats(chats);
+	
+		vlog('[🚦 CATCH UP SCANNER] ========================================');
+		vlog('[🚦 CATCH UP SCANNER] ✅ EXTRACTION COMPLETE');
+		vlog('[🚦 CATCH UP SCANNER] Total chats found:', chats.length);
+		vlog('[🚦 CATCH UP SCANNER] Current URL:', page.url());
+		vlog('[🚦 CATCH UP SCANNER] Time:', new Date().toISOString());
 		if (chats.length > 0) {
-			console.log('[🚦 CATCH UP SCANNER] First 3 chats:', chats.slice(0, 3).map(c => ({
+			vlog('[🚦 CATCH UP SCANNER] First 3 chats:', chats.slice(0, 3).map(c => ({
 				chatId: c.chatId,
 				manName: c.manName,
 				profileUidOuter: c.profileUidOuter,
@@ -503,7 +635,7 @@ const resolveOwnerProfile = async (page, accountId, outerUid, options = {}) => {
 	for (const innerUid of orderedCandidates) {
 		if (switchesUsed.count >= maxSwitches) {
 			ownerSweepCursor.set(cursorKey, cursorStart + triedThisPass);
-			utils.log(
+			vlog(
 				'Catch Up Scanner',
 				`⏸️  Owner sweep capped at ${maxSwitches} switches for this pass (${orderedCandidates.length - triedThisPass} candidates left for next passes)`,
 			);

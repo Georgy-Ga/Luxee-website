@@ -17,6 +17,7 @@ import pageHelpers from './browser/pageHelpers.js';
 import chatNavigationService from './luxeeApi/chatNavigationService.js';
 import keepAliveService from './luxeeApi/keepAliveService.js';
 import onlineKeeperService from './onlineKeeperService.js';
+import { vlog } from './verbose.js';
 import { setAllOfflineViaNewContext } from './luxeeApi/onlineRecoveryService.js';
 
 // Хранилище активных процессов автоответов
@@ -90,9 +91,9 @@ const aiAutoResponseService = {
 			const processMessages = async () => {
 				const state = activeAutoResponders.get(accountId);
 
-				// Если уже обрабатываем - пропускаем
+				// Если уже обрабатываем - пропускаем (тихий скип: тикает каждые 5с)
 				if (state?.isProcessing) {
-					console.log(
+					vlog(
 						`[AI Auto Response] Account ${accountId} is already processing, skipping...`,
 					);
 					return;

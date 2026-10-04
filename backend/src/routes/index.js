@@ -11,6 +11,11 @@ import roleMiddleware from '../middleware/roleMiddleware.js';
 import spambotRoutes from './spambotRoutes.js';
 const router = new Router();
 
+// Healthcheck для Docker (без авторизации): GET /api/health → { ok: true }
+router.get('/health', (req, res) => {
+	res.json({ ok: true, ts: new Date().toISOString() });
+});
+
 router.post(
 	'/registration',
 	body('password').isLength({ min: 3, max: 32 }),

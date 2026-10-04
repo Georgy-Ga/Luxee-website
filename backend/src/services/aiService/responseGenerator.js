@@ -6,12 +6,14 @@ import { buildMessages } from './promptBuilder.js';
 import {
 	cleanResponse,
 	containsForbiddenPhrases,
+	containsMetaLeak,
 	MAX_REPLY_CHARS,
 	replyLength,
 } from './responseValidator.js';
 
-// Ретраи только для forbidden-phrases. Было 3: каждая попытка слала ВЕСЬ
-// контекст заново +2 сообщения → до 3x prompt_tokens за 1 ответ юзера.
+// Ретраи для forbidden-phrases И meta-мусора (анализ/свайпы/счётчики в ответе).
+// Было 3: каждая попытка слала ВЕСЬ контекст заново +2 сообщения →
+// до 3x prompt_tokens за 1 ответ юзера.
 // Стало 2, плохой ответ храним обрезанным (достаточно для коррекции).
 const MAX_RETRIES = 2;
 const MAX_BAD_RESPONSE_CHARS = 200;
@@ -76,15 +78,20 @@ export const generateResponse = async ({
 			// Отправляем запрос к AI
 			aiResponse = await sendAIRequest(messages, retryCount);
 
-			// Проверяем на запрещенные фразы
+			// Проверяем на запрещенные фразы и мета-мусор
 			const hasForbidden = containsForbiddenPhrases(aiResponse);
+			const hasMetaLeak = !hasForbidden && containsMetaLeak(aiResponse);
 
-			if (hasForbidden) {
+			if (hasForbidden || hasMetaLeak) {
 				console.log('');
 				console.log(
-					`⚠️ [AI DEBUG] ===== RETRY ${retryCount + 1}/${MAX_RETRIES} - Forbidden Phrases Detected =====`,
+					`⚠️ [AI DEBUG] ===== RETRY ${retryCount + 1}/${MAX_RETRIES} - ${hasForbidden ? 'Forbidden Phrases' : 'Meta Leak'} Detected =====`,
 				);
-				console.log('  🚫 Response contains forbidden phrases!');
+				console.log(
+					hasForbidden
+						? '  🚫 Response contains forbidden phrases!'
+						: '  🚫 Response contains meta commentary (analysis/labels/swipes/char counts)!',
+				);
 				console.log('  📝 Bad response:', aiResponse);
 				console.log('  🔄 Adding correction message and retrying...');
 
@@ -96,8 +103,9 @@ export const generateResponse = async ({
 				});
 				messages.push({
 					role: 'user',
-					content:
-						'You revealed you are AI. Never do that — always stay in character as a real woman. Rewrite the reply naturally.',
+					content: hasForbidden
+						? 'You revealed you are AI. Never do that — always stay in character as a real woman. Rewrite the reply naturally.'
+						: 'That reply contained meta commentary (analysis, labels, swipe talk or character counts) instead of just the message. Rewrite with ONLY the message text — no analysis, no labels, nothing except what a real woman would send.',
 				});
 
 				retryCount++;
@@ -111,8 +119,8 @@ export const generateResponse = async ({
 			break;
 		}
 
-		// Если после всех попыток все еще содержит запрещенные фразы
-		if (containsForbiddenPhrases(aiResponse)) {
+		// Если после всех попыток все еще содержит запрещенные фразы или мусор
+		if (containsForbiddenPhrases(aiResponse) || containsMetaLeak(aiResponse)) {
 			console.log('');
 			console.error('❌ [AI DEBUG] ===== FATAL ERROR =====');
 			console.error(
@@ -156,7 +164,11 @@ export const generateResponse = async ({
 			try {
 				const retryRaw = await sendAIRequest(messages, retryCount);
 				const retryCleaned = cleanResponse(retryRaw);
-				if (retryCleaned && !containsForbiddenPhrases(retryCleaned)) {
+				if (
+					retryCleaned &&
+					!containsForbiddenPhrases(retryCleaned) &&
+					!containsMetaLeak(retryCleaned)
+				) {
 					aiResponse = retryRaw;
 					cleanedResponse = retryCleaned;
 					console.log(

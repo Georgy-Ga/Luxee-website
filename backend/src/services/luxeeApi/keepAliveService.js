@@ -2,6 +2,7 @@
 // Проверяет alert окна и закрывает их нажатием OK
 
 import LuxeeAccount from '../../models/LuxeeAccountModel.js';
+import { vlog } from '../verbose.js';
 import aiAuto from '../aiAuto/index.js';
 
 const MANUAL_ACTIVITY_TIMEOUT = 15 * 60 * 1000; // 15 минут
@@ -184,7 +185,7 @@ const keepAliveService = {
 					);
 				}
 
-				console.log(`[Keep-Alive] Check completed for account ${accountId}`);
+				vlog(`[Keep-Alive] Check completed for account ${accountId}`);
 			} catch (error) {
 				console.error(
 					`[Keep-Alive] Error for account ${accountId}:`,

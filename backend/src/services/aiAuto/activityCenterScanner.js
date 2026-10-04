@@ -210,9 +210,34 @@ async function clickNotification(page, notification, ownerUid) {
 		await utils.sleep(3000);
 		
 		// Проверяем что чат открылся
-		const activeChatId = await page.evaluate(() => {
+		let activeChatId = await page.evaluate(() => {
 			return window.modelsChat?.getChats?.active?.identity;
-		});
+		}).catch(() => null);
+
+		// Иногда сайт тормозит: даём ещё 3с и перепроверяем ДО повторного клика
+		if (!activeChatId) {
+			utils.log('Activity Center', '⏳ No active chat yet, waiting 3s more...');
+			await utils.sleep(3000);
+			activeChatId = await page.evaluate(() => {
+				return window.modelsChat?.getChats?.active?.identity;
+			}).catch(() => null);
+		}
+
+		// Последняя попытка: клик ещё раз (элемент мог не сработать с первого раза),
+		// иначе нотификация сгорит впустую — чат не открыт, сообщение не отправлено,
+		// а из unread-списка она уже пропадёт.
+		if (!activeChatId) {
+			utils.log('Activity Center', '🔁 Retrying notification click once...');
+			try {
+				await notification.element.click({ timeout: 5000 });
+				await utils.sleep(3000);
+				activeChatId = await page.evaluate(() => {
+					return window.modelsChat?.getChats?.active?.identity;
+				}).catch(() => null);
+			} catch (retryError) {
+				utils.log('Activity Center', `❌ Retry click failed (element detached?): ${retryError.message}`);
+			}
+		}
 		
 		if (!activeChatId) {
 			utils.log('Activity Center', `❌ No active chat after click`);

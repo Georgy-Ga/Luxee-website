@@ -1,7 +1,86 @@
 // Модуль для работы с AI API
 
 import axios from 'axios';
+import { vlog } from '../verbose.js';
 import { AI_API_KEY, AI_API_URL, AI_MODEL, AI_PROVIDER } from './config.js';
+
+// TEMP (NVIDIA stalls, 2026-09): таймаут поднят 45→60с. Вернуть 30000 при
+// переезде обратно на deepseek (см. docs/AI_PROVIDER_SWITCH.md).
+const AI_REQUEST_TIMEOUT_MS = 60000;
+
+// Глобальный семафор параллельных ИИ-запросов (на процесс; бэкенд у нас
+// один инстанс и локально, и в докере). Endpoint не отвечает 429, а молча
+// складывает лишние запросы — и они гниют до таймаута. Поэтому режем
+// конкурентность: не больше AI_MAX_CONCURRENT одновременно, остальные ждут
+// локально (дешевле висящего 60с запроса). Deadlock исключён: слот всегда
+// освобождается в finally, передача строго FIFO.
+const AI_MAX_CONCURRENT = 4;
+let aiActiveSlots = 0;
+const aiWaiters = [];
+const acquireAiSlot = () => {
+	if (aiActiveSlots < AI_MAX_CONCURRENT) {
+		aiActiveSlots++;
+		return Promise.resolve();
+	}
+	return new Promise(resolve => aiWaiters.push(resolve));
+};
+const releaseAiSlot = () => {
+	if (aiWaiters.length > 0) {
+		aiWaiters.shift()(); // слот переходит ждущему напрямую
+	} else {
+		aiActiveSlots = Math.max(0, aiActiveSlots - 1);
+	}
+};
+const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
+
+// Сетевой сбой (таймаут/DNS/обрыв) без HTTP-ответа? Да — ретраить можно.
+// HTTP-статус (4xx/5xx) — нет, это отказ, а не глитч.
+const isTimeoutLikeError = e =>
+	!e.response &&
+	(e.code === 'ECONNABORTED' ||
+		/timeout|etimedout|econnreset|socket hang up|enotfound|eai_again/i.test(
+			e.message || '',
+		));
+
+// Один POST со слотом семафора и максимум ОДНИМ повтором при сетевом
+// таймауте (bounded: шторм дауна не раздуваем).
+const postToAI = async requestBody => {
+	const queuedAt = Date.now();
+	await acquireAiSlot();
+	try {
+		const queuedMs = Date.now() - queuedAt;
+		if (queuedMs > 2000) {
+			console.log(`  ⏳ Waited ${queuedMs}ms for AI slot (${aiActiveSlots}/${AI_MAX_CONCURRENT} busy)...`);
+		}
+		let lastError = null;
+		for (let attempt = 0; attempt <= 1; attempt++) {
+			try {
+				return await axios.post(
+					`${AI_API_URL}/chat/completions`,
+					requestBody,
+					{
+						headers: {
+							'Content-Type': 'application/json',
+							Authorization: `Bearer ${AI_API_KEY}`,
+						},
+						timeout: AI_REQUEST_TIMEOUT_MS,
+					},
+				);
+			} catch (e) {
+				lastError = e;
+				if (attempt === 0 && isTimeoutLikeError(e)) {
+					console.log('  ⏳ AI network timeout, single bounded retry in 5s...');
+					await sleep(5000);
+					continue;
+				}
+				throw e;
+			}
+		}
+		throw lastError;
+	} finally {
+		releaseAiSlot();
+	}
+};
 
 /**
  * Отправить запрос к AI API
@@ -10,13 +89,13 @@ import { AI_API_KEY, AI_API_URL, AI_MODEL, AI_PROVIDER } from './config.js';
  */
 export const sendAIRequest = async (messages, retryCount = 0) => {
 	try {
-		console.log('');
-		console.log('🤖 [AI DEBUG] ===== SENDING REQUEST TO AI API =====');
-		console.log(`  🔄 Attempt: ${retryCount + 1}`);
-		console.log('  🔌 Provider:', AI_PROVIDER);
-		console.log('  🌐 API URL:', AI_API_URL);
-		console.log('  🎯 Model:', AI_MODEL);
-		console.log('  📨 Messages count:', messages.length);
+		vlog('');
+		vlog('🤖 [AI DEBUG] ===== SENDING REQUEST TO AI API =====');
+		vlog(`  🔄 Attempt: ${retryCount + 1}`);
+		vlog('  🔌 Provider:', AI_PROVIDER);
+		vlog('  🌐 API URL:', AI_API_URL);
+		vlog('  🎯 Model:', AI_MODEL);
+		vlog('  📨 Messages count:', messages.length);
 		// Параметры зависят от провайдера: DeepSeek reasoning жрёт токены, ему нужен
 		// запас 800; NVIDIA с выключенным thinking хватает 250 (см. историю Oski).
 		const isDeepSeek = AI_PROVIDER === 'deepseek';
@@ -24,12 +103,12 @@ export const sendAIRequest = async (messages, retryCount = 0) => {
 		const temperature = isDeepSeek ? 1.1 : 0.9;
 
 		console.log('  ⚙️ Parameters:');
-		console.log(`    - Temperature: ${temperature} ${isDeepSeek ? '(deepseek high variety)' : '(nvidia coherent)'}`);
-		console.log(`    - Max tokens: ${maxTokens} ${isDeepSeek ? '(deepseek: reasoning buffer)' : '(nvidia: no thinking)'}`);
-		console.log('    - Top P: 0.95 (more diverse)');
-		console.log('    - Frequency penalty: 0.7 (avoid repetition)');
-		console.log('    - Presence penalty: 0.6 (encourage new topics)');
-		console.log('    - Timeout: 45000ms');
+		vlog(`    - Temperature: ${temperature} ${isDeepSeek ? '(deepseek high variety)' : '(nvidia coherent)'}`);
+		vlog(`    - Max tokens: ${maxTokens} ${isDeepSeek ? '(deepseek: reasoning buffer)' : '(nvidia: no thinking)'}`);
+		vlog('    - Top P: 0.95 (more diverse)');
+		vlog('    - Frequency penalty: 0.7 (avoid repetition)');
+		vlog('    - Presence penalty: 0.6 (encourage new topics)');
+		vlog('    - Timeout: 60000ms (TEMP, see top of file)');
 
 		const requestBody = {
 			model: AI_MODEL,
@@ -54,21 +133,11 @@ export const sendAIRequest = async (messages, retryCount = 0) => {
 			(sum, m) => sum + (m.content?.length || 0),
 			0,
 		);
-		console.log(`  📦 Request summary: ${messages.length} messages, ~${promptChars} chars (full body NOT logged)`);
-		console.log('  ⏳ Sending request...');
+		vlog(`  📦 Request summary: ${messages.length} messages, ~${promptChars} chars (full body NOT logged)`);
+		vlog('  ⏳ Sending request...');
 
 		const startTime = Date.now();
-		const response = await axios.post(
-			`${AI_API_URL}/chat/completions`,
-			requestBody,
-			{
-				headers: {
-					'Content-Type': 'application/json',
-					Authorization: `Bearer ${AI_API_KEY}`,
-				},
-				timeout: 45000, // 45 секунд таймаут (было 30: NVIDIA на длинных промптах отвечала 28с+)
-			},
-		);
+		const response = await postToAI(requestBody);
 		const duration = Date.now() - startTime;
 
 		const choice = response.data.choices?.[0] || {};
@@ -129,21 +198,21 @@ export const sendAIRequest = async (messages, retryCount = 0) => {
 		console.log('  ✅ Response received in', duration, 'ms');
 		console.log('  📥 Raw AI response:', aiResponse);
 		console.log('  📊 Response length:', aiResponse.length, 'characters');
-		console.log('  🔍 Response stats:');
-		console.log(
+		vlog('  🔍 Response stats:');
+		vlog(
 			'    - Tokens used (prompt):',
 			response.data.usage?.prompt_tokens || 'N/A',
 		);
-		console.log(
+		vlog(
 			'    - Tokens used (completion):',
 			response.data.usage?.completion_tokens || 'N/A',
 		);
-		console.log(
+		vlog(
 			'    - Tokens used (total):',
 			response.data.usage?.total_tokens || 'N/A',
 		);
-		console.log('═'.repeat(80));
-		console.log('');
+		vlog('═'.repeat(80));
+		vlog('');
 
 		return aiResponse;
 	} catch (error) {

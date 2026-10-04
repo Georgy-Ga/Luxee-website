@@ -210,9 +210,8 @@ class SpambotQueueService {
 				}
 			}
 
-			console.log(`[Queue Service] 🔧 DEBUG: account =`, account);
 			console.log(`[Queue Service] 🔧 DEBUG: account.luxeeEmail =`, account.luxeeEmail);
-			console.log(`[Queue Service] 🔧 DEBUG: account.luxeePassword =`, account.luxeePassword);
+			// Пароль и полный объект аккаунта НЕ логируем (секреты + sessionData в логах недопустимы)
 			console.log(`[Queue Service] 🔧 DEBUG: config.distributionType = ${config.distributionType}`);
 			console.log(`[Queue Service] 🔧 DEBUG: config.mailMessage =`, config.mailMessage);
 			console.log(`[Queue Service] 🔧 DEBUG: config.messages =`, config.messages);

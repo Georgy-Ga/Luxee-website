@@ -1,4 +1,5 @@
 import LuxeeProfileModel from '../../models/LuxeeProfileModel.js';
+import { vlog } from '../verbose.js';
 
 /**
  * Сервис для работы с кешем профилей Luxee
@@ -8,6 +9,11 @@ import LuxeeProfileModel from '../../models/LuxeeProfileModel.js';
 
 // TTL кеша в днях
 const CACHE_TTL_DAYS = 2;
+
+// Троттлинг STALE-предупреждений: один и тот же профиль не чаще раза в час,
+// иначе каждые 5с тик спамит одно и то же.
+const staleWarnedAt = new Map();
+const STALE_WARN_TTL_MS = 60 * 60 * 1000;
 
 const profileCacheService = {
 	/**
@@ -26,22 +32,32 @@ const profileCacheService = {
 			});
 
 			if (!cached) {
-				console.log(
+				vlog(
 					`[Profile Cache] ❌ Cache MISS for profile ${profileUid}`,
 				);
 				return null;
 			}
 
 			if (cached.isFresh(CACHE_TTL_DAYS)) {
-				console.log(
+				vlog(
 					`[Profile Cache] ✅ Cache HIT for profile ${profileUid} (age: ${Math.floor((Date.now() - cached.lastFetchedAt) / (1000 * 60 * 60))}h)`,
 				);
 				return cached.toObject();
 			}
 
-			console.log(
-				`[Profile Cache] ⚠️  Cache STALE for profile ${profileUid} (age: ${Math.floor((Date.now() - cached.lastFetchedAt) / (1000 * 60 * 60))}h)`,
-			);
+			// STALE троттлим: один и тот же профиль не чаще раза в час
+			const ageH = Math.floor((Date.now() - cached.lastFetchedAt) / (1000 * 60 * 60));
+			const lastWarn = staleWarnedAt.get(profileUid) || 0;
+			if (Date.now() - lastWarn > STALE_WARN_TTL_MS) {
+				staleWarnedAt.set(profileUid, Date.now());
+				console.log(
+					`[Profile Cache] ⚠️  Cache STALE for profile ${profileUid} (age: ${ageH}h)`,
+				);
+			} else {
+				vlog(
+					`[Profile Cache] ⚠️  Cache STALE for profile ${profileUid} (age: ${ageH}h)`,
+				);
+			}
 			return cached.toObject(); // Возвращаем даже устаревший кеш
 		} catch (error) {
 			console.error(

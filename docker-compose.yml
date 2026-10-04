@@ -68,15 +68,9 @@ services:
       # 🆕 Монтируем папку с промптами профилей
       - ./backend/prompts:/app/prompts
     healthcheck:
-      test:
-        [
-          'CMD',
-          'wget',
-          '--quiet',
-          '--tries=1',
-          '--spider',
-          'http://localhost:5000/api/health || exit 1',
-        ]
+      # CMD-SHELL: в CMD-массиве shell-операторы (||) не работают, wget дёргал
+      # мусорный URL и контейнер вечно был unhealthy. Проверяем реальный роут.
+      test: ['CMD-SHELL', 'wget --quiet --tries=1 --spider http://localhost:5000/api/health || exit 1']
       interval: 30s
       timeout: 10s
       retries: 3
@@ -127,15 +121,8 @@ services:
     networks:
       - luxee-network
     healthcheck:
-      test:
-        [
-          'CMD',
-          'wget',
-          '--quiet',
-          '--tries=1',
-          '--spider',
-          'http://localhost:80 || exit 1',
-        ]
+      # CMD-SHELL: в CMD-массиве shell-операторы (||) не работают.
+      test: ['CMD-SHELL', 'wget --quiet --tries=1 --spider http://localhost:80 || exit 1']
       interval: 30s
       timeout: 10s
       retries: 3
