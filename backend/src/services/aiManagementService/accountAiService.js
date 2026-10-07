@@ -5,6 +5,28 @@ import aiBrowserContextService from '../browser/aiBrowserContextService.js';
 import aiAutoResponseService from '../aiAutoResponseService.js';
 import socketService from '../socketService.js';
 
+// Сериализация переключений одного аккаунта: одновременные клики админа
+// и оператора (read-modify-write) иначе дают last-writer-wins + рассинхрон
+// "движок работает, а кнопки OFF" (или наоборот). Очередь на аккаунт,
+// разные аккаунты идут параллельно. Блокировок наружу нет — только цепочка.
+const toggleLocks = new Map(); // accountId -> Promise (хвост очереди)
+const withAccountLock = async (accountId, fn) => {
+	const key = String(accountId);
+	const prev = toggleLocks.get(key) || Promise.resolve();
+	let releaseNext;
+	const next = new Promise(res => {
+		releaseNext = res;
+	});
+	toggleLocks.set(key, next);
+	await prev.catch(() => {});
+	try {
+		return await fn();
+	} finally {
+		releaseNext();
+		if (toggleLocks.get(key) === next) toggleLocks.delete(key);
+	}
+};
+
 export const getAllAccountsAiStatus = async () => {
 	try {
 		const accounts = await LuxeeAccountModel.find()
@@ -48,6 +70,7 @@ export const getAccountAiStatus = async (userId, accountId) => {
 };
 
 export const setAccountAiByAdmin = async (accountId, enabled) => {
+	return withAccountLock(accountId, async () => {
 	try {
 		// ВАЖНО: Когда админ разрешает AI, он автоматически включается (aiEnabled = true)
 		// Концепция: админ разрешил = сразу включено, пользователь НЕ может сам включить
@@ -70,15 +93,6 @@ export const setAccountAiByAdmin = async (accountId, enabled) => {
 	);
 
 	// Админ управляет только аккаунтом, user управляется отдельно через userAiService
-
-	// Emit Socket.io событие для синхронизации
-		socketService.emitAccountAIChanged(
-			accountId,
-			account.user.toString(),
-			enabled,
-			enabled,
-			'admin'
-		);
 
 		if (enabled) {
 			// Создаём AI контекст и запускаем автоответы при включении
@@ -103,14 +117,32 @@ export const setAccountAiByAdmin = async (accountId, enabled) => {
 			console.log(`[AI Management Service] ✓ AI context closed for account ${accountId}`);
 		}
 
-		return account;
+		// Emit Socket.io событие для синхронизации — СТРОГО ПОСЛЕ действия:
+		// раньше слали намерение до старта движка; упал старт — UI врал ON
+		// при мёртвом движке. Теперь перечитываем БД и шлём ФАКТ.
+		const fresh = await LuxeeAccountModel.findById(accountId).select(
+			'luxeeEmail aiEnabled aiEnabledByAdmin user',
+		);
+		if (fresh) {
+			socketService.emitAccountAIChanged(
+				accountId,
+				fresh.user.toString(),
+				fresh.aiEnabled,
+				fresh.aiEnabledByAdmin,
+				'admin',
+			);
+		}
+
+		return fresh || account;
 	} catch (error) {
 		console.error('[AI Management Service] Error setting account AI by admin:', error);
 		throw error;
 	}
+	});
 };
 
 export const toggleAccountAi = async (userId, accountId) => {
+	return withAccountLock(accountId, async () => {
 	try {
 		const account = await LuxeeAccountModel.findOne({
 			_id: accountId,
@@ -136,15 +168,6 @@ export const toggleAccountAi = async (userId, accountId) => {
 			`aiEnabled=${newStatus}, aiEnabledByAdmin=${account.aiEnabledByAdmin}`
 		);
 
-		// Emit Socket.io событие для синхронизации
-		socketService.emitAccountAIChanged(
-			accountId,
-			userId,
-			account.aiEnabled,
-			account.aiEnabledByAdmin,
-			'user'
-		);
-
 		if (account.aiEnabled && account.aiEnabledByAdmin) {
 			// Запускаем автоответы если AI включен и админ разрешил
 			try {
@@ -164,11 +187,28 @@ export const toggleAccountAi = async (userId, accountId) => {
 			console.log(`[AI Management Service] ✓ Auto-response stopped for account ${accountId}`);
 		}
 
-		return account;
+		// Emit Socket.io событие для синхронизации — СТРОГО ПОСЛЕ действия,
+		// с фактическими значениями из БД (а не с намерением до старта движка).
+		const fresh = await LuxeeAccountModel.findOne({
+			_id: accountId,
+			user: userId,
+		}).select('aiEnabled aiEnabledByAdmin');
+		if (fresh) {
+			socketService.emitAccountAIChanged(
+				accountId,
+				userId,
+				fresh.aiEnabled,
+				fresh.aiEnabledByAdmin,
+				'user',
+			);
+		}
+
+		return fresh || account;
 	} catch (error) {
 		console.error('[AI Management Service] Error toggling account AI:', error);
 		throw error;
 	}
+	});
 };
 
 export const canAccountUseAi = async (userId, accountId) => {

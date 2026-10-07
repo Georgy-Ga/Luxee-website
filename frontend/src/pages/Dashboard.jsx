@@ -1,11 +1,9 @@
-import { useEffect } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { luxeeApi } from '../api/luxeeApi';
 import Sidebar from '../components/Sidebar';
 import ChatWindow from '../components/ChatWindow';
 import Header from '../components/layout/Header';
 import useChatStore from '../stores/chatStore';
-import { useAiSync } from '../hooks/useAiSync';
 import { useAccountCreatedSync } from '../hooks/useAccountCreatedSync';
 
 const Dashboard = () => {
@@ -13,8 +11,8 @@ const Dashboard = () => {
   const sidebarOpen = useChatStore((state) => state.sidebarOpen);
   const closeSidebar = useChatStore((state) => state.closeSidebar);
 
-  // Подключаем real-time синхронизацию AI статусов
-  const { isSyncing } = useAiSync();
+  // Real-time синхронизация AI статусов смонтирована глобально (AiSyncMount в App),
+  // здесь не дублируем — иначе двойные подписки и двойные обновления стора.
 
   // Подключаем real-time синхронизацию создания/удаления Luxee аккаунтов
   useAccountCreatedSync();

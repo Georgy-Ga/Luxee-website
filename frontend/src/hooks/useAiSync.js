@@ -3,9 +3,10 @@
  * Слушает события от сервера и обновляет локальное состояние в aiStateStore
  */
 
-import { useEffect, useCallback } from 'react';
+import { useEffect, useCallback, useRef } from 'react';
 import { useSocket } from '../contexts/SocketContext';
 import useAiStateStore from '../stores/aiStateStore';
+import useAuthStore from '../stores/authStore';
 
 /**
  * Hook для синхронизации AI статусов в реальном времени
@@ -35,6 +36,12 @@ export const useAiSync = () => {
   );
   const startBulkOperation = useAiStateStore((state) => state.startBulkOperation);
   const endBulkOperation = useAiStateStore((state) => state.endBulkOperation);
+  const loadUserAiData = useAiStateStore((state) => state.loadUserAiData);
+  const loadAllUsersAiData = useAiStateStore(
+    (state) => state.loadAllUsersAiData
+  );
+  const userRole = useAuthStore((state) => state.user?.role);
+  const wasConnected = useRef(false);
 
   /**
    * Обработчик события изменения AI статуса
@@ -144,6 +151,7 @@ export const useAiSync = () => {
    */
   useEffect(() => {
     if (!socket || !isConnected) {
+      wasConnected.current = false;
       console.log('[AI Sync] Socket not connected, skipping event subscription');
       return;
     }
@@ -159,6 +167,28 @@ export const useAiSync = () => {
       socket.off('ai:status:changed', handleAiStatusChanged);
     };
   }, [socket, isConnected, handleAiStatusChanged]);
+
+  /**
+   * Сверка с сервером при (пере)подключении.
+   * События, пропущенные за время дисконнекта (протухший jwt, обрыв сети,
+   * рестарт бэкенда), иначе остаются дырой навсегда — кнопка врёт до
+   * ручного обновления. Поэтому при каждом новом соединении подтягиваем
+   * свежее состояние из API (идемпотентно, стор просто перезаписывается).
+   */
+  useEffect(() => {
+    if (!isConnected) {
+      wasConnected.current = false;
+      return;
+    }
+    if (wasConnected.current) return; // уже сверялись на этом соединении
+    wasConnected.current = true;
+
+    console.log('[AI Sync] 🔄 (Re)connected — reconciling AI state with server');
+    loadUserAiData();
+    if (userRole === 'admin') {
+      loadAllUsersAiData();
+    }
+  }, [isConnected, userRole, loadUserAiData, loadAllUsersAiData]);
 
   return {
     isConnected,

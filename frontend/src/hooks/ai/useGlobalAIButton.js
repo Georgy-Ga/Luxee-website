@@ -17,24 +17,26 @@ export const useGlobalAIButton = () => {
   const endBulkOperation = useAiStateStore((state) => state.endBulkOperation);
   const loadUserAiData = useAiStateStore((state) => state.loadUserAiData);
 
-  // Вычисляем актуальный статус (реактивно обновляется при изменении userAccounts)
+  // Вычисляем актуальный статус (реактивно обновляется при изменении userAccounts).
+  // 'on' — только если включены ВСЕ; иначе 'off' (включая смешанное).
+  // Кнопка кликабельна всегда (кроме идущей операции): при смешанном
+  // состоянии клик включает доступные (бэкенд: toggleAllMyAccountsAi),
+  // при полном ON — выключает все. Ловушки "серое и некликабельно" нет.
   const status = useMemo(() => {
     if (userAccounts.size === 0) return 'off';
-    
+
     let enabledCount = 0;
     userAccounts.forEach((acc) => {
       if (acc.aiEnabled) enabledCount++;
     });
-    
+
     return enabledCount === userAccounts.size ? 'on' : 'off';
   }, [userAccounts]);
 
-  const isDisabled = status === 'off';
-
   // Обработчик клика
   const handleToggle = useCallback(async () => {
-    if (isLoading || isDisabled || processingBulk || processingAccounts.size > 0) {
-      return { success: false, error: 'Operation in progress or disabled' };
+    if (isLoading || processingBulk || processingAccounts.size > 0) {
+      return { success: false, error: 'Operation in progress' };
     }
     
     setIsLoading(true);
@@ -54,7 +56,6 @@ export const useGlobalAIButton = () => {
     }
   }, [
     isLoading,
-    isDisabled,
     processingBulk,
     processingAccounts.size,
     startBulkOperation,
@@ -62,13 +63,13 @@ export const useGlobalAIButton = () => {
     loadUserAiData,
   ]);
 
-  // Кнопка заблокирована если идёт операция
+  // Кнопка заблокирована только если идёт операция (состояние off/mixed —
+  // НЕ повод блокировать: клик всегда ведёт к осмысленному действию).
   const isButtonDisabled = isLoading || processingBulk || processingAccounts.size > 0;
 
   return {
     status,
     isEnabled: status === 'on',
-    isDisabled,
     isLoading,
     isButtonDisabled,
     handleToggle,

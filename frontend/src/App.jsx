@@ -7,6 +7,7 @@ import useThemeStore from './stores/themeStore';
 import useChatStore from './stores/chatStore';
 import useAiStateStore from './stores/aiStateStore';
 import { SocketProvider } from './contexts/SocketContext';
+import { useAiSync } from './hooks/useAiSync';
 import Login from './pages/Login';
 import Dashboard from './pages/Dashboard';
 import AiTest from './pages/AiTest';
@@ -35,6 +36,14 @@ const ProtectedRoute = ({ children }) => {
   }
 
   return isAuthenticated ? children : <Navigate to="/login" replace />;
+};
+
+// Глобальный маунт real-time синхронизации AI.
+// Раньше useAiSync жил только в Dashboard → на /spambot и /ai-test кнопки
+// не обновлялись живьём. Один инстанс на всё приложение (внутри SocketProvider).
+const AiSyncMount = () => {
+  useAiSync();
+  return null;
 };
 
 function App() {
@@ -71,6 +80,7 @@ function App() {
   return (
     <QueryClientProvider client={queryClient}>
       <SocketProvider>
+        <AiSyncMount />
         <BrowserRouter>
           <Routes>
             <Route path="/login" element={<Login />} />

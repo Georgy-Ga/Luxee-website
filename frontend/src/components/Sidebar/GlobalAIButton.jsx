@@ -7,8 +7,6 @@ import { useGlobalAIButton } from '../../hooks/ai/useGlobalAIButton';
 const GlobalAIButton = ({ onSuccess, onError }) => {
   const { 
     status, 
-    isEnabled,
-    isDisabled,
     isLoading, 
     isButtonDisabled, 
     handleToggle 
@@ -35,7 +33,7 @@ const GlobalAIButton = ({ onSuccess, onError }) => {
   const config = getButtonConfig();
 
   const handleClick = async () => {
-    if (isButtonDisabled || isDisabled) return;
+    if (isButtonDisabled) return;
     
     const result = await handleToggle();
     
