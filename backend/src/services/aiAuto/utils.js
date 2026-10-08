@@ -126,6 +126,86 @@ const randomDelay = async (min, max) => {
  * @param {number} maxRetries - Максимум попыток (default: 3)
  * @returns {Promise<Object|null>}
  */
+/**
+ * Счётчик подряд проваленных getActiveProfile (нет modelsChat) на аккаунт.
+ * Лечит класс "страница зависла на корне/логине": recovery внутри попыток
+ * только перезагружает, а здесь после N подряд проваленных ВЫЗОВОВ
+ * (не попыток!) дёргаем restoreSession. Сброс при первом успехе.
+ */
+const NO_API_STREAK_TRIGGER = 3;
+const RELOGIN_COOLDOWN_MS = 5 * 60 * 1000;
+const noApiStreak = new Map(); // accountId -> { fails, lastReloginAt }
+
+/**
+ * Попытка оживления зависшей страницы: restoreSession (verify → fresh login).
+ * Никогда не бросает наружу. Следующий цикл сам подхватит свежий контекст:
+ * page в цикле берётся заново каждый тик (getAiContext → getOrCreatePage).
+ * Импорты динамические (стиль файла) — статических циклов не добавляем.
+ */
+const tryReloginForStuckPage = async (accountId, fails) => {
+	try {
+		const { default: LuxeeAccountModel } = await import(
+			'../../models/LuxeeAccountModel.js'
+		);
+		const acc = await LuxeeAccountModel.findById(accountId)
+			.select('user luxeeEmail')
+			.lean();
+		if (!acc) {
+			logError(
+				'AI Auto',
+				`🆘 ACCOUNT ATTENTION ${accountId}: no modelsChat ${fails} cycles in a row, account not found in DB`,
+			);
+			return;
+		}
+		const { restoreSession } = await import(
+			'../luxeeApi/luxeeAuthService/sessionService.js'
+		);
+		log(
+			'AI Auto',
+			`🔑 No modelsChat ${fails} cycles in a row — restoring session for ${acc.luxeeEmail}...`,
+		);
+		await restoreSession({ userId: String(acc.user), accountId });
+		log(
+			'AI Auto',
+			`✅ Session restore finished for ${acc.luxeeEmail} — next cycle picks fresh page`,
+		);
+	} catch (e) {
+		// Громкий алерт вместо тихих циклов вхолостую. Цикл не роняем.
+		const msg = (e && e.message) || String(e);
+		logError(
+			'AI Auto',
+			`🆘 ACCOUNT ATTENTION ${accountId}: session restore failed (${msg}) — manual relogin needed`,
+		);
+		try {
+			const { default: cycleLogger } = await import('./cycleLogger.js');
+			cycleLogger.logEvent(accountId, 'session', 'restore_failed', {
+				reason: msg.slice(0, 200),
+			});
+		} catch {}
+		try {
+			const { default: socketService } = await import('../socketService.js');
+			const acc2 = await (
+				await import('../../models/LuxeeAccountModel.js')
+			).default
+				.findById(accountId)
+				.select('user')
+				.lean()
+				.catch(() => null);
+			if (acc2 && socketService.emitToUserAndAdmins) {
+				socketService.emitToUserAndAdmins(
+					String(acc2.user),
+					'ai:account:attention',
+					{
+						accountId: String(accountId),
+						reason: 'session_restore_failed',
+						message: msg.slice(0, 200),
+					},
+				);
+			}
+		} catch {}
+	}
+};
+
 const getActiveProfile = async (page, accountId, maxRetries = 3) => {
 	let attempt = 0;
 
@@ -161,9 +241,11 @@ const getActiveProfile = async (page, accountId, maxRetries = 3) => {
 				};
 			});
 
-			// Успех! Получили базовые данные
-			if (basicProfile) {
-				if (attempt > 0) {
+		// Успех! Получили базовые данные
+		if (basicProfile) {
+			// modelsChat жив — сбрасываем счётчик зависших циклов
+			if (noApiStreak.has(accountId)) noApiStreak.delete(accountId);
+			if (attempt > 0) {
 					log(
 						'AI Auto',
 						`✅ Active profile found after ${attempt + 1} attempt(s)`,
@@ -330,38 +412,55 @@ const getActiveProfile = async (page, accountId, maxRetries = 3) => {
 					`⚠️  modelsChat API not available (attempt ${attempt + 1}/${maxRetries})`,
 				);
 
-				if (attempt < maxRetries - 1) {
-					// Получаем текущий URL перед reload
-					const currentUrl = page.url();
-					log('AI Auto', `🔄 Reloading page: ${currentUrl}`);
+			if (attempt < maxRetries - 1) {
+				// Получаем текущий URL: корень сайта (логин/лендинг после
+				// протухшей сессии) перезагружать БЕССМЫСЛЕННО — modelsChat там
+				// не появится никогда. Ведём на стабильный /chats/ (там API
+				// живёт, если сессия жива); reload — только если уже на /chats/.
+				const currentUrl = page.url();
+				const onChats = currentUrl.includes('/chats/');
+				log(
+					'AI Auto',
+					onChats
+						? `🔄 Reloading page: ${currentUrl}`
+						: `🔄 No modelsChat and not on /chats/ — navigating to stable /chats/: ${currentUrl}`,
+				);
 
-					try {
+				try {
+					if (onChats) {
 						// Reload страницы
 						await page.reload({
 							waitUntil: 'domcontentloaded',
 							timeout: 30000,
 						});
-						log('AI Auto', '✅ Page reloaded successfully');
+					} else {
+						await page.goto('https://luxee.io/chats/', {
+							waitUntil: 'domcontentloaded',
+							timeout: 30000,
+						});
+					}
+					log('AI Auto', '✅ Page reloaded successfully');
 
-						// Ждём загрузки API (2 секунды)
+					// Ждём загрузки API (2 секунды)
+					await sleep(2000);
+				} catch (reloadError) {
+					logError('AI Auto', `❌ Failed to reload page:`, reloadError);
+
+					// Если reload не сработал, пробуем navigate на /chats/
+					// (а не на битый текущий URL — корень нам не поможет).
+					try {
+						log('AI Auto', `🔄 Trying navigation to: https://luxee.io/chats/`);
+						await page.goto('https://luxee.io/chats/', {
+							waitUntil: 'domcontentloaded',
+							timeout: 30000,
+						});
 						await sleep(2000);
-					} catch (reloadError) {
-						logError('AI Auto', `❌ Failed to reload page:`, reloadError);
-
-						// Если reload не сработал, пробуем navigate
-						try {
-							log('AI Auto', `🔄 Trying navigation to: ${currentUrl}`);
-							await page.goto(currentUrl, {
-								waitUntil: 'domcontentloaded',
-								timeout: 30000,
-							});
-							await sleep(2000);
-							log('AI Auto', '✅ Navigation successful');
-						} catch (navError) {
-							logError('AI Auto', `❌ Failed to navigate:`, navError);
-						}
+						log('AI Auto', '✅ Navigation successful');
+					} catch (navError) {
+						logError('AI Auto', `❌ Failed to navigate:`, navError);
 					}
 				}
+			}
 			} else {
 				// Другая ошибка
 				logError(
@@ -385,6 +484,21 @@ const getActiveProfile = async (page, accountId, maxRetries = 3) => {
 		'AI Auto',
 		`❌ Failed to get active profile after ${maxRetries} attempts`,
 	);
+
+	// Подряд проваленные вызовы (а не попытки внутри одного!): страница,
+	// видимо, зависла вне /chats/ или сессия мертва. После N подряд —
+	// relogin (не чаще раза в 5 мин), иначе тихий вечный цикл вхолостую.
+	const st = noApiStreak.get(accountId) || { fails: 0, lastReloginAt: 0 };
+	st.fails += 1;
+	noApiStreak.set(accountId, st);
+	if (
+		st.fails >= NO_API_STREAK_TRIGGER &&
+		Date.now() - st.lastReloginAt > RELOGIN_COOLDOWN_MS
+	) {
+		st.lastReloginAt = Date.now();
+		await tryReloginForStuckPage(accountId, st.fails).catch(() => {});
+	}
+
 	return null;
 };
 

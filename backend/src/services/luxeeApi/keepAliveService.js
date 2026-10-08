@@ -1,11 +1,8 @@
 // Keep-Alive сервис для поддержания активности контекстов
 // Проверяет alert окна и закрывает их нажатием OK
 
-import LuxeeAccount from '../../models/LuxeeAccountModel.js';
 import { vlog } from '../verbose.js';
 import aiAuto from '../aiAuto/index.js';
-
-const MANUAL_ACTIVITY_TIMEOUT = 15 * 60 * 1000; // 15 минут
 
 const keepAliveIntervals = new Map(); // accountId -> intervalId
 const keepAliveQueue = []; // Очередь для последовательной обработки
@@ -112,29 +109,15 @@ const keepAliveService = {
 								`[Keep-Alive] 🔔 "You're inactive" popup detected for account ${accountId}`,
 							);
 
-							// 🎯 ПРОВЕРКА РУЧНОЙ АКТИВНОСТИ: Если прошло 15+ минут - НЕ кликаем
-							try {
-								const account = await LuxeeAccount.findById(accountId);
-								if (account && account.manualLastActivity) {
-									const timeSinceActivity =
-										Date.now() - account.manualLastActivity.getTime();
-									if (timeSinceActivity >= MANUAL_ACTIVITY_TIMEOUT) {
-										console.log(
-											`[Keep-Alive] ⏰ Manual activity timeout (${Math.floor(timeSinceActivity / 60000)} min) - NOT clicking "I am online" for ${accountId}`,
-										);
-										continue; // НЕ кликаем, пропускаем
-									}
-									console.log(
-										`[Keep-Alive] ✅ Recent manual activity (${Math.floor(timeSinceActivity / 60000)} min ago) - closing popup for ${accountId}`,
-									);
-								}
-							} catch (activityCheckError) {
-								console.error(
-									`[Keep-Alive] ⚠️ Error checking manual activity for ${accountId}:`,
-									activityCheckError.message,
-								);
-								// В случае ошибки проверяем AI Auto и продолжаем
-							}
+						// Кнопка присутствия: кликаем ВСЕГДА, когда popup видим.
+						// Раньше стоял gate ручной активности (не кликать, если оператора
+						// давно не было) — из-за него сессии умирали от простоя сутками,
+						// а onlineKeeper при этом держал анкеты "онлайн": сайт видел
+						// "онлайн, но мёртвый" и выкидывал. Клик — штатная кнопка сайта,
+						// живой оператор нажал бы так же. Lock-гарды ниже — святое.
+						console.log(
+							`[Keep-Alive] ✅ Clicking "I am online" for account ${accountId}`,
+						);
 
 						// 🛡️ БЕЗОПАСНОСТЬ: Проверка #1 - AI Auto не работает?
 						// Лок висит на accountId (без суффикса _ai): для AI-контекста

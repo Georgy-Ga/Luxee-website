@@ -2,7 +2,7 @@
 // Механика: отдельный временный контекст → /profile/ → select Set online (All) →
 // проверка → контекст закрывается. Chats и AI-контексты не трогаем.
 //
-// Расписание: каждые ~5 мин на аккаунт. Стартовый сдвиг случайный (0–5 мин),
+// Расписание: каждые ~15 мин на аккаунт. Стартовый сдвиг случайный (0–5 мин),
 // чтобы N аккаунтов после рестарта не били по сайту одновременно.
 // Работает и в Docker, и под npm run dev: отдельный запуск браузера НЕ нужен,
 // используется общий browserService (он уже знает про DOCKER executablePath).
@@ -19,7 +19,7 @@ import {
 	setAllOnlineViaNewContext,
 } from './luxeeApi/onlineRecoveryService.js';
 
-const KEEPER_INTERVAL_MS = 5 * 60 * 1000; // ~5 мин между прогонами
+const KEEPER_INTERVAL_MS = 15 * 60 * 1000; // ~15 мин между прогонами
 const START_JITTER_MS = 5 * 60 * 1000; // случайный сдвиг старта 0–5 мин
 
 const timers = new Map(); // accountId -> { timeoutId, intervalId }
@@ -45,7 +45,7 @@ const runOnce = async accountId => {
 		if (!account.sessionData) return;
 		const ok = await setAllOnlineViaNewContext(accountId).catch(() => false);
 		if (!ok) {
-			console.log(`[Online Keeper] ⚠️  keep-online failed for ${accountId}, retry in 5 min`);
+			console.log(`[Online Keeper] ⚠️  keep-online failed for ${accountId}, retry in 15 min`);
 		}
 	} finally {
 		running.delete(accountId);
@@ -63,7 +63,7 @@ const onlineKeeperService = {
 		const { immediate = true } = opts;
 		if (!accountId) return;
 		if (timers.has(accountId)) return; // уже запущен
-		console.log(`[Online Keeper] ▶️  Started for account ${accountId} (every ~5 min)`);
+		console.log(`[Online Keeper] ▶️  Started for account ${accountId} (every ~15 min)`);
 
 		const scheduleInterval = () => {
 			const existing = timers.get(accountId);
