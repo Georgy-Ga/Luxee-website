@@ -1,6 +1,7 @@
 // Контроллер управления AI для пользователей
 
 import aiManagementService from '../../services/aiManagementService/index.js';
+import auditService from '../../services/auditService.js';
 import User from '../../models/UserModel.js';
 import { sanitizeExcludedList } from '../../services/aiAuto/excludedProfilesService.js';
 
@@ -91,6 +92,13 @@ export const toggleMyAi = async (req, res) => {
 		const result = enabled !== undefined 
 			? await aiManagementService.setUserAiState(req.user.id, enabled)
 			: await aiManagementService.toggleUserAi(req.user.id);
+
+		await auditService.log({
+			userId: req.user.id,
+			action: result.aiEnabled ? 'ai.enabled' : 'ai.disabled',
+			detail: `AI ${result.aiEnabled ? 'включён' : 'выключен'} (мой)`,
+			req,
+		});
 			
 		res.json({ success: true, aiEnabled: result.aiEnabled, aiEnabledByAdmin: result.aiEnabledByAdmin });
 	} catch (error) {
@@ -104,6 +112,12 @@ export const setUserAiByAdmin = async (req, res) => {
 		const { userId } = req.params;
 		const { aiEnabledByAdmin } = req.body;
 		await aiManagementService.setUserAiByAdmin(userId, aiEnabledByAdmin, req.user.id);
+		await auditService.log({
+			userId,
+			action: aiEnabledByAdmin ? 'ai.enabled' : 'ai.disabled',
+			detail: `AI ${aiEnabledByAdmin ? 'разрешён админом' : 'запрещён админом'}`,
+			req,
+		});
 		res.json({ success: true, message: 'User AI status updated by admin' });
 	} catch (error) {
 		console.error('[AI Management Controller] Error setting user AI by admin:', error);
@@ -116,6 +130,12 @@ export const setAllUserAccountsAiByAdmin = async (req, res) => {
 		const { userId } = req.params;
 		const { aiEnabledByAdmin } = req.body;
 		await aiManagementService.setAllUserAccountsAiByAdmin(userId, aiEnabledByAdmin, req.user.id);
+		await auditService.log({
+			userId,
+			action: aiEnabledByAdmin ? 'ai.enabled' : 'ai.disabled',
+			detail: `AI ${aiEnabledByAdmin ? 'включён' : 'выключен'} на всех аккаунтах (админ)`,
+			req,
+		});
 		res.json({ success: true, message: 'All user accounts AI status updated by admin' });
 	} catch (error) {
 		console.error('[AI Management Controller] Error setting all user accounts AI by admin:', error);

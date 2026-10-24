@@ -89,7 +89,9 @@ app.use(
 		},
 		credentials: true, // Разрешаем отправку cookies
 		methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-		allowedHeaders: ['Content-Type', 'Authorization'],
+		// x-device-id / x-device-name — мультисессии (один userId = много браузеров).
+		// Без них preflight режет login/refresh с фронта :5173.
+		allowedHeaders: ['Content-Type', 'Authorization', 'x-device-id', 'x-device-name'],
 	}),
 );
 app.use('/api', router);

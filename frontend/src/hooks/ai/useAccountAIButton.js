@@ -37,9 +37,18 @@ export const useAccountAIButton = (accountId) => {
 
     setIsLoading(true);
     startAccountProcessing(accountId);
+
+    // Страховка от вечного спиннера: если бэкенд зависнет на teardown
+    // Playwright, через 30с снимаем загрузку и подтягиваем правду с сервера.
+    // (Штатно бэкенд отвечает сразу по факту БД, таймаут не срабатывает.)
+    const timeoutMs = 30000;
+    const withTimeout = (p) => Promise.race([
+      p,
+      new Promise((_, reject) => setTimeout(() => reject(new Error('toggle_timeout')), timeoutMs)),
+    ]);
     
     try {
-      await aiApi.toggleMyAccountAi(accountId);
+      await withTimeout(aiApi.toggleMyAccountAi(accountId));
       
       // ✅ FIX: Сразу обновляем локальное состояние (не ждем WebSocket)
       // WebSocket может быть отключен или задержаться
@@ -53,7 +62,17 @@ export const useAccountAIButton = (accountId) => {
       // Данные также обновятся через WebSocket (useAiSync) если подключен
       return { success: true };
     } catch (error) {
-      const errorMessage = error.response?.data?.error || 'Ошибка при переключении AI';
+      // При любой ошибке (включая таймаут) подтягиваем правду с сервера,
+      // чтобы кнопка показала факт из БД, а не залипшее состояние.
+      // БД уже выключена на сервере даже если ответ не дошёл.
+      try {
+        await useAiStateStore.getState().loadUserAiData();
+      } catch {
+        // игнорируем — ошибка загрузки не должна прятать исходную
+      }
+      const errorMessage = error?.message === 'toggle_timeout'
+        ? 'Сервер долго останавливает ИИ — состояние обновлено с сервера'
+        : error.response?.data?.error || 'Ошибка при переключении AI';
       return { success: false, error: errorMessage };
     } finally {
       setIsLoading(false);

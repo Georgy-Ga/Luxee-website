@@ -2,7 +2,10 @@
 
 ## MongoDB Collections
 
-Проект использует MongoDB с Mongoose ODM. Всего 5 коллекций.
+Проект использует MongoDB с Mongoose ODM. Всего 10 коллекций (см. `backend/src/models/`):
+`User`, `Token` (мультисессии: одна запись на устройство), `AuditLog` (кто/что нажал),
+`LuxeeAccount`, `LuxeeProfile`, `ProfilePrompt`, `AiRule`, `AnsweredChat`,
+`SpambotDistribution`, `SpambotTemplate`, (+ `AccountLock`).
 
 ---
 
@@ -16,8 +19,8 @@
   email: String (required, unique),
   password: String (required, hashed with bcrypt),
   role: String (enum: ['user', 'admin'], default: 'user'),
-  aiEnabled: Boolean (default: true),
-  aiEnabledByAdmin: Boolean (default: true)
+  aiEnabled: Boolean (default: false),
+  aiEnabledByAdmin: Boolean (default: false)
 }
 ```
 
@@ -32,7 +35,8 @@
 - `email` (unique)
 
 **Связи**:
-- `Token` (1:1) - Refresh token пользователя
+- `Token` (1:N) - Refresh токены пользователя (мультисессии: один документ на устройство/браузер)
+- `AuditLog` (1:N) - Лента действий («кто включил/выключил ИИ»)
 - `LuxeeAccount` (1:N) - Luxee аккаунты пользователя
 - `AiRule` (1:N) - AI правила созданные пользователем
 
@@ -69,7 +73,13 @@ aiEnabled=false, aiEnabledByAdmin=false → AI недоступен
 ```javascript
 {
   user: ObjectId (ref: 'User', required),
-  refreshToken: String (required)
+  refreshToken: String (required, unique),
+  deviceId: String (required, unique per user), // стабильный id браузера/устройства
+  deviceName: String,
+  ip: String,
+  userAgent: String,
+  createdAt: Date,
+  lastUsedAt: Date
 }
 ```
 
@@ -82,9 +92,11 @@ aiEnabled=false, aiEnabledByAdmin=false → AI недоступен
 - `refreshToken` (для валидации)
 
 **Особенности**:
-- Один токен на пользователя (при новом логине старый заменяется)
+- Мультисессии: один документ на устройство (второй логин НЕ выкидывает первый)
+- Ротация в пределах своей сессии при `GET /refresh`
+- `DELETE /sessions/:id` закрывает только свою сессию без остановки AI/браузеров; глобальный cleanup только в `POST /logout-all` и при удалении пользователя
 - Живёт 30 дней
-- Удаляется при logout
+- Удаляется при logout этой сессии
 
 **Пример документа**:
 ```json

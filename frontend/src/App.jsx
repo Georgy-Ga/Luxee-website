@@ -55,8 +55,8 @@ function App() {
   useEffect(() => {
     const checkAuth = async () => {
       try {
-        const { user } = await authApi.getCurrentUser();
-        setUser(user);
+        const { user, sessionId, deviceId } = await authApi.getCurrentUser();
+        setUser(user, { sessionId, deviceId });
         
         // Загружаем AI статусы всех аккаунтов пользователя
         if (user) {

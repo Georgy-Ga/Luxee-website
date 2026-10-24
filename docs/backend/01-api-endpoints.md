@@ -4,7 +4,7 @@
 
 ## Базовый URL
 ```
-http://localhost:5000/api
+http://localhost:5001/api (docker-хост) → внутри compose backend слушает :5000; через nginx same-origin `/api`
 ```
 
 ## Аутентификация
@@ -58,7 +58,7 @@ Authorization: Bearer <access_token>
 **Response**: Аналогично `/registration`
 
 ### 1.3 POST `/logout`
-**Описание**: Выход из системы (удаляет refresh token, отключает AI для всех аккаунтов)
+**Описание**: Выход из системы (удаляет refresh token ТЕКУЩЕЙ сессии; AI/браузеры НЕ останавливаются, чтобы не выкидывать коллег. Полный выход везде — `POST /logout-all`)
 
 **Response**:
 ```json
@@ -102,6 +102,33 @@ Authorization: Bearer <access_token>
   "message": "Пользователь удалён"
 }
 ```
+
+### 1.7 GET `/sessions`
+**Описание**: Активные сессии текущего пользователя (мультивход: второй логин не выкидывает первый)
+
+**Middleware**: `authMiddleware`
+
+**Response**:
+```json
+[
+  { "id": "...", "deviceName": "Chrome", "ip": "1.2.3.4", "lastUsedAt": "...", "isCurrent": true }
+]
+```
+
+### 1.8 DELETE `/sessions/:sessionId`
+**Описание**: Закрыть одну сессию (без остановки AI/браузеров)
+
+**Middleware**: `authMiddleware`
+
+### 1.9 POST `/logout-all`
+**Описание**: Выйти везде (удаляет все refresh токены пользователя; только здесь выполняется полный cleanup AI/браузеров)
+
+**Middleware**: `authMiddleware`
+
+### 1.10 GET `/audit?limit=50&accountId=`
+**Описание**: Лента действий («кто включил/выключил ИИ», blacklist, spambot). Socket-событие `audit:new` в room `user:{userId}`
+
+**Middleware**: `authMiddleware`
 
 ---
 

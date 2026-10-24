@@ -39,6 +39,33 @@ const processQueue = (error, token = null) => {
   failedQueue = [];
 };
 
+// Стабильный id браузера для мультисессий: один браузер = одна запись в Token.
+// Хранится в localStorage, отправляется заголовком x-device-id при каждом запросе.
+// Без него каждый логин всё равно создаёт ОТДЕЛЬНУЮ сессию (чужие не затираются).
+const getDeviceId = () => {
+  const KEY = 'luxee_device_id';
+  try {
+    let id = localStorage.getItem(KEY);
+    if (!id) {
+      id = (typeof crypto !== 'undefined' && crypto.randomUUID)
+        ? crypto.randomUUID()
+        : `dev-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+      localStorage.setItem(KEY, id);
+    }
+    return id;
+  } catch {
+    return null;
+  }
+};
+
+const getDeviceName = () => {
+  try {
+    return localStorage.getItem('luxee_device_name') || navigator?.userAgent?.slice(0, 120) || null;
+  } catch {
+    return null;
+  }
+};
+
 // Interceptor для добавления access token к запросам
 api.interceptors.request.use(
   (config) => {
@@ -46,6 +73,10 @@ api.interceptors.request.use(
     if (token) {
       config.headers.Authorization = `Bearer ${token}`;
     }
+    const deviceId = getDeviceId();
+    if (deviceId) config.headers['x-device-id'] = deviceId;
+    const deviceName = getDeviceName();
+    if (deviceName) config.headers['x-device-name'] = deviceName;
     return config;
   },
   (error) => Promise.reject(error)
@@ -85,6 +116,10 @@ api.interceptors.response.use(
         const refreshInstance = axios.create({
           baseURL: API_URL,
           withCredentials: true,
+          headers: {
+            ...(getDeviceId() ? { 'x-device-id': getDeviceId() } : {}),
+            ...(getDeviceName() ? { 'x-device-name': getDeviceName() } : {}),
+          },
         });
         const response = await refreshInstance.get('/refresh');
 

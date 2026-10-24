@@ -2,7 +2,8 @@
 
 ## ⚠️ КРИТИЧЕСКИ ВАЖНО
 
-Это **НЕ** локальная нейронная сеть. Система использует **внешний API OpenRouter** для доступа к различным LLM моделям (Claude, GPT и др.).
+Это **НЕ** локальная нейронная сеть. Система использует **внешние API DeepSeek / NVIDIA** (`AI_PROVIDER=deepseek|nvidia`, см. `backend/src/services/aiService/config.js` и `docs/AI_PROVIDER_SWITCH.md`).
+Старые упоминания OpenRouter/Claude 3.5 ниже устарели и оставлены только как история.
 
 ## Архитектура AI системы
 
@@ -47,10 +48,12 @@
          │                         │
          ▼                         ▼
 ┌──────────────────┐    ┌──────────────────────┐
-│ OpenRouter API   │    │ Отдельный браузерный │
-│ (Claude 3.5)     │    │ контекст Playwright  │
+│ DeepSeek / NVIDIA│    │ Отдельный браузерный │
+│ (см. config.js,  │    │ контекст Playwright  │
+│ aiService/)      │    │                      │
 └──────────────────┘    └──────────────────────┘
 ```
+> Актуальные модели/параметры: см. `backend/src/services/aiService/config.js` (`deepseek-v4-flash`, `nvidia/nemotron-3.5-lightning-30b-a3b`). Значения `openrouter.ai / claude-3.5-sonnet / temp 0.9 / maxTokens 500` ниже устарели.
 
 ## Компоненты AI системы
 

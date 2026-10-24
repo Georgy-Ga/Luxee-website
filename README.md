@@ -23,15 +23,16 @@
 - ✅ Тестовая среда для AI (страница /ai-test)
 - ✅ Управление AI правилами (админ-панель)
 - ✅ Система answered chats (сохранение отвеченных чатов)
+- ✅ Автоматические ответы через AI (aiAuto, расписания, blacklist-скипы)
+- ✅ Чёрный список пользователей (blacklist на аккаунте + категории newMessages/catchUp/activityCenter)
+- ✅ Массовая рассылка сообщений (spambot: Node `/spambot/*` + `backend-spambot` FastAPI :8001)
+- ✅ WebSocket синхронизация (Socket.io) + cycle-log/cycle-diagnostics
 - ✅ Админ-панель для управления пользователями
 - ✅ Docker контейнеризация
 
 ### В планах:
-- [ ] Автоматические ответы через AI
-- [ ] Чёрный список пользователей
 - [ ] Уведомления о новых сообщениях (push/email)
 - [ ] Статистика и аналитика
-- [ ] Массовая рассылка сообщений
 
 ## 🛠 Технологии
 
@@ -40,7 +41,7 @@
 - **База данных**: MongoDB, Mongoose
 - **Авторизация**: JWT (jsonwebtoken), bcrypt
 - **Автоматизация**: Playwright (Chromium)
-- **AI**: OpenAI API (GPT-4o-mini)
+- **AI**: DeepSeek / NVIDIA (конфиг `AI_PROVIDER`, `AI_API_KEY`, `NVIDIA_API_KEY`; `OPENAI_*` deprecated)
 - **Валидация**: express-validator
 - **Контейнеризация**: Docker, Docker Compose
 
@@ -68,7 +69,9 @@ nano .env  # или любой другой редактор
 **Обязательно измените:**
 - `JWT_ACCESS_SECRET` - случайная строка минимум 32 символа
 - `JWT_REFRESH_SECRET` - другая случайная строка минимум 32 символа
-- `OPENAI_API_KEY` - ваш ключ OpenAI API
+- `AI_PROVIDER` - `deepseek` или `nvidia`
+- `AI_API_KEY` - ваш ключ DeepSeek API
+- `NVIDIA_API_KEY` - ваш ключ NVIDIA API (если `AI_PROVIDER=nvidia`)
 - `MONGO_ROOT_PASSWORD` - пароль для MongoDB (измените с "admin")
 
 ### Шаг 3: Запустить все сервисы
@@ -79,8 +82,9 @@ docker compose up -d
 
 Это запустит:
 - **MongoDB** на порту 27017
-- **Backend** на порту 5000
-- **Frontend** на порту 80
+- **Backend** на порту 5001 (хост) → 5000 (контейнер)
+- **Backend-spambot** (FastAPI) на порту 8001
+- **Frontend** на порту 8080 (хост) → 80 (контейнер)
 
 ### Шаг 4: Создать администратора
 
@@ -150,6 +154,8 @@ docker compose down -v
 - `mongodb_config` - Конфигурация MongoDB
 - `browser_contexts` - Сессии браузера Luxee
 - `playwright_data` - Кэш Playwright
+- `spambot_logs` - Логи рассылок спамбота (`backend-spambot/logs`)
+- mount `./backend/prompts:/app/prompts` - Промпты AI
 
 **Данные удаляются только при:** `docker compose down -v`
 
@@ -169,8 +175,10 @@ PORT=5000
 MONGO_URL=mongodb://localhost:27017/luxee
 JWT_ACCESS_SECRET=your_secret_key_here
 JWT_REFRESH_SECRET=your_refresh_secret_key_here
-OPENAI_API_KEY=your_openai_key_here
-OPENAI_MODEL=gpt-4o-mini
+AI_PROVIDER=deepseek
+AI_API_KEY=your_deepseek_key_here
+AI_MODEL=deepseek-v4-flash
+SPAMBOT_SERVICE_URL=http://localhost:8001
 EOF
 
 # Запустить
@@ -217,8 +225,13 @@ node createAdmin.js
 - `GET /api/luxee/accounts` - Список аккаунтов Luxee
 - `DELETE /api/luxee/accounts/:id` - Удаление аккаунта
 - `POST /api/luxee/accounts/:id/restore` - Восстановление сессии
-- `GET /api/luxee/check-messages` - Проверка новых сообщений
-- `POST /api/luxee/send-message` - Отправка сообщения
+- `GET /api/luxee/messages/check-all` - Проверка новых сообщений (все аккаунты)
+- `GET /api/luxee/messages/check-account?accountId=` - Проверка сообщений аккаунта
+- `POST /api/luxee/messages/send` - Отправка сообщения
+- `GET /api/luxee/profile-chats` - Чаты профиля
+- `GET /api/luxee/chat/open` - Открытие чата
+- `GET /api/ai/auto-response/accounts/:accountId/cycle-log` - Лог цикла AI
+- `GET /api/ai/auto-response/accounts/:accountId/cycle-diagnostics` - Диагностика цикла
 
 **AI управление:**
 - `GET /api/ai/rules` - Получить AI правила
@@ -291,7 +304,7 @@ nano .env
 # Измените:
 # - Все секреты на случайные строки
 # - MONGO_ROOT_PASSWORD на надежный пароль
-# - OPENAI_API_KEY на ваш ключ
+# - AI_API_KEY / NVIDIA_API_KEY на ваши ключи
 # - ALLOWED_ORIGINS на ваш домен
 ```
 
@@ -323,7 +336,7 @@ server {
     }
 
     location /api {
-        proxy_pass http://localhost:5000;
+        proxy_pass http://localhost:5001;
         proxy_set_header Host $host;
         proxy_set_header X-Real-IP $remote_addr;
     }
@@ -399,35 +412,26 @@ docker compose up -d --build backend
 
 ### 🚀 Быстрый старт
 - **[QUICK_START.md](docs/QUICK_START.md)** - Запуск проекта локально для новичков
-- **[QUICK_DEPLOY.md](QUICK_DEPLOY.md)** - Быстрый деплой на production (5 минут)
+- **[QUICK_START_WINDOWS.md](docs/QUICK_START_WINDOWS.md)** - Запуск на Windows
 
 ### 🐳 Production деплой
-- **[PRODUCTION_DEPLOYMENT_GUIDE.md](PRODUCTION_DEPLOYMENT_GUIDE.md)** - ⭐ **ГЛАВНОЕ РУКОВОДСТВО**
-  - Полная инструкция по развёртыванию на сервере
-  - Настройка HTTPS с Let's Encrypt
-  - Автоматические бэкапы MongoDB
-  - Мониторинг и логи
-  - Troubleshooting всех проблем
-
-### 📚 Полный индекс документации
-- **[DOCUMENTATION_INDEX.md](DOCUMENTATION_INDEX.md)** - Индекс всей документации проекта
-
-### 🏗️ Архитектура
-- **[PROJECT_STRUCTURE_EXPLANATION.md](PROJECT_STRUCTURE_EXPLANATION.md)** - Подробное объяснение структуры
+- **[DOCKER_DEPLOYMENT.md](docs/DOCKER_DEPLOYMENT.md)** - Docker развертывание
+- **[DEPLOYMENT_SUMMARY.md](docs/DEPLOYMENT_SUMMARY.md)** - Сводка деплоя
 - **[DEVELOPMENT_ENVIRONMENTS.md](docs/DEVELOPMENT_ENVIRONMENTS.md)** - Настройка окружений
 
+### 🏗️ Архитектура
+- **[DEVELOPMENT_ENVIRONMENTS.md](docs/DEVELOPMENT_ENVIRONMENTS.md)** - Настройка окружений (дубль, см. выше)
+
 ### 🤖 AI функционал
-- **[ai_settings.md](docs/ai_settings.md)** - Настройка AI (DeepSeek/OpenAI)
-- **[AI_FIXES_SUMMARY.md](AI_FIXES_SUMMARY.md)** - Сводка исправлений AI
+- **[ai_settings.md](docs/ai_settings.md)** - Настройка AI (DeepSeek/NVIDIA)
+- **[AI_PROVIDER_SWITCH.md](docs/AI_PROVIDER_SWITCH.md)** - Переезд с OpenAI/OpenRouter на DeepSeek/NVIDIA
 
 ### 🔌 WebSocket
 - **[docs/WEBSOCKET_SYNC.md](docs/WEBSOCKET_SYNC.md)** - WebSocket синхронизация
-- **[WEBSOCKET_IMPLEMENTATION.md](WEBSOCKET_IMPLEMENTATION.md)** - Реализация
 
 ### 🐳 Docker
 - **[DOCKER_FILES_SUMMARY.md](docs/DOCKER_FILES_SUMMARY.md)** - Описание Docker файлов
 - **[DOCKER_DEPLOYMENT.md](docs/DOCKER_DEPLOYMENT.md)** - Docker развертывание
-- **[PLAYWRIGHT_DOCKER_FIX.md](PLAYWRIGHT_DOCKER_FIX.md)** - Fix Playwright в Docker
 
 ### 🔧 Backend API
 - **[docs/backend/01-api-endpoints.md](docs/backend/01-api-endpoints.md)** - API эндпоинты
@@ -460,4 +464,4 @@ GitHub: [@Georgy-Ga](https://github.com/Georgy-Ga)
 ---
 
 **Версия:** 1.0.0  
-**Дата обновления:** 30.05.2026
+**Дата обновления:** 16.10.2026 (актуализированы AI-провайдер, порты docker-compose, споты `check-messages/send-message`, удалены битые ссылки и устаревшие `ACTIVITY_CENTER_*` планы)

@@ -104,6 +104,16 @@ export const SocketProvider = ({ children }) => {
 			setConnectionError(error.message || 'Unknown error');
 		});
 
+		// Лента действий (мультивход): «кто включил/выключил ИИ» видно всем сессиям userId.
+		// Пробрасываем DOM-событием, чтобы ActivityFeed и другие панели обновлялись без переписывания App.
+		newSocket.on('audit:new', (payload) => {
+			try {
+				window.dispatchEvent(new CustomEvent('audit:new', { detail: payload }));
+			} catch (e) {
+				console.error('[Socket] audit:new dispatch failed:', e?.message);
+			}
+		});
+
 		socketRef.current = newSocket;
 		setSocket(newSocket);
 

@@ -1,6 +1,8 @@
 // Контроллер управления AI для аккаунтов
 
 import aiManagementService from '../../services/aiManagementService/index.js';
+import auditService from '../../services/auditService.js';
+import LuxeeAccountModel from '../../models/LuxeeAccountModel.js';
 
 export const getAccountAiStatus = async (req, res) => {
 	try {
@@ -71,6 +73,16 @@ export const setAccountAiByAdmin = async (req, res) => {
 		const { accountId } = req.params;
 		const { aiEnabledByAdmin } = req.body;
 		await aiManagementService.setAccountAiByAdmin(accountId, aiEnabledByAdmin, req.user.id);
+		try {
+			const acc = await LuxeeAccountModel.findById(accountId).select('user luxeeEmail').lean();
+			await auditService.log({
+				userId: acc?.user || req.user.id,
+				action: aiEnabledByAdmin ? 'ai.enabled' : 'ai.disabled',
+				accountId,
+				detail: `AI ${aiEnabledByAdmin ? 'включён' : 'выключен'} на ${acc?.luxeeEmail || accountId} (админ)`,
+				req,
+			});
+		} catch {}
 		res.json({ success: true, message: 'Account AI status updated by admin' });
 	} catch (error) {
 		console.error('[AI Management Controller] Error setting account AI by admin:', error);
@@ -82,6 +94,13 @@ export const toggleMyAccountAi = async (req, res) => {
 	try {
 		const { accountId } = req.params;
 		const result = await aiManagementService.toggleAccountAi(req.user.id, accountId);
+		await auditService.log({
+			userId: req.user.id,
+			action: result?.aiEnabled ? 'ai.enabled' : 'ai.disabled',
+			accountId,
+			detail: `AI ${result?.aiEnabled ? 'включён' : 'выключен'} на аккаунте`,
+			req,
+		});
 		res.json({ success: true, ...result });
 	} catch (error) {
 		console.error('[AI Management Controller] Error toggling my account AI:', error);
@@ -92,6 +111,12 @@ export const toggleMyAccountAi = async (req, res) => {
 export const toggleAllMyAccountsAi = async (req, res) => {
 	try {
 		const result = await aiManagementService.toggleAllMyAccountsAi(req.user.id);
+		await auditService.log({
+			userId: req.user.id,
+			action: 'ai.enabled',
+			detail: 'AI переключён на всех моих аккаунтах',
+			req,
+		});
 		res.json({ success: true, ...result });
 	} catch (error) {
 		console.error('[AI Management Controller] Error toggling all my accounts AI:', error);

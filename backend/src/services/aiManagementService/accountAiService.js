@@ -109,12 +109,22 @@ export const setAccountAiByAdmin = async (accountId, enabled) => {
 				console.error(`[AI Management Service] ✗ Failed to create AI context or start auto-response for account ${accountId}:`, error);
 			}
 		} else {
-			// Останавливаем автоответы и закрываем AI контекст при выключении
-			console.log(`[AI Management Service] Stopping AI for account ${accountId}...`);
-			await aiAutoResponseService.stop(accountId);
-			console.log(`[AI Management Service] ✓ Auto-response stopped for account ${accountId}`);
-			await aiBrowserContextService.closeAiContext(accountId);
-			console.log(`[AI Management Service] ✓ AI context closed for account ${accountId}`);
+			// Останавливаем автоответы и закрываем AI контекст при выключении.
+			// ВАЖНО: teardown Playwright (closeAiContext + offline-all через новый
+			// контекст) может висеть минутами — поэтому здесь тоже отвечаем СРАЗУ
+			// по факту БД, а остановка движка идёт в фоне (см. toggleAccountAi ниже).
+			console.log(`[AI Management Service] Stopping AI for account ${accountId} (background)...`);
+			const accountIdStr = accountId.toString();
+			void (async () => {
+				try {
+					await aiAutoResponseService.stop(accountIdStr);
+					console.log(`[AI Management Service] ✓ Auto-response stopped for account ${accountIdStr} (background)`);
+					await aiBrowserContextService.closeAiContext(accountIdStr);
+					console.log(`[AI Management Service] ✓ AI context closed for account ${accountIdStr} (background)`);
+				} catch (error) {
+					console.error(`[AI Management Service] ✗ Background stop failed for account ${accountIdStr}:`, error?.message);
+				}
+			})();
 		}
 
 		// Emit Socket.io событие для синхронизации — СТРОГО ПОСЛЕ действия:
@@ -178,13 +188,28 @@ export const toggleAccountAi = async (userId, accountId) => {
 				console.error(`[AI Management Service] ✗ Failed to start auto-response for account ${accountId}:`, error);
 			}
 		} else {
-			// Останавливаем автоответы если AI выключен
-			console.log(`[AI Management Service] Stopping auto-response for account ${accountId}...`);
-			await aiAutoResponseService.stop(accountId);
-			// Небольшая задержка перед закрытием контекста чтобы избежать race condition
-			await new Promise(resolve => setTimeout(resolve, 100));
-			await aiBrowserContextService.closeAiContext(accountId);
-			console.log(`[AI Management Service] ✓ Auto-response stopped for account ${accountId}`);
+			// Останавливаем автоответы если AI выключен.
+			// ВАЖНО: отвечаем HTTP СРАЗУ по факту БД (сохранено выше), а тяжёлый
+			// teardown Playwright идёт в фоне. Иначе запрос висит минутами:
+			// stop() внутри делает closeAiContext + offline-all через НОВЫЙ
+			// контекст браузера — фронт крутит спиннер вечно, а socket-эмит
+			// (ниже) не уходит второму браузеру того же userId.
+			// Безопасность фона: цикл AI каждые 5с перечитывает canAccountUseAi
+			// из БД и сам останавливается при aiEnabled=false; потерянный
+			// контекст пересоздаётся при следующем включении.
+			const accountIdStr = accountId.toString();
+			void (async () => {
+				try {
+					console.log(`[AI Management Service] Stopping auto-response for account ${accountIdStr} (background)...`);
+					await aiAutoResponseService.stop(accountIdStr);
+					// Небольшая задержка перед закрытием контекста чтобы избежать race condition
+					await new Promise(resolve => setTimeout(resolve, 100));
+					await aiBrowserContextService.closeAiContext(accountIdStr);
+					console.log(`[AI Management Service] ✓ Auto-response stopped for account ${accountIdStr} (background)`);
+				} catch (error) {
+					console.error(`[AI Management Service] ✗ Background stop failed for account ${accountIdStr}:`, error?.message);
+				}
+			})();
 		}
 
 		// Emit Socket.io событие для синхронизации — СТРОГО ПОСЛЕ действия,

@@ -65,6 +65,10 @@ export const SOCKET_EVENTS = {
 	
 	// Сервер -> Клиент (Онлайн статус аккаунтов)
 	ACCOUNTS_ONLINE_STATUS: 'luxee:accounts:online-status',
+
+	// Сервер -> Клиент (лента действий: кто включил/выключил ИИ, blacklist, spambot)
+	AUDIT_NEW: 'audit:new',
+	SESSIONS_CHANGED: 'sessions:changed',
 	
 	// Системные
 	ERROR: 'error',

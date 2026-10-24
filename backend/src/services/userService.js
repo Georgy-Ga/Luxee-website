@@ -14,7 +14,7 @@ import browserService from './browser/browserService.js';
 import ApiError from '../exceptions/apiError.js';
 
 const userService = {
-	registration: async (email, password) => {
+	registration: async (email, password, sessionMeta = {}) => {
 		const candidate = await UserModel.findOne({ email });
 		if (candidate) {
 			throw ApiError.BadRequest('User with this email already exists');
@@ -22,11 +22,11 @@ const userService = {
 		const hashPassword = await bcrypt.hash(password, 3);
 		const user = await UserModel.create({ email, password: hashPassword });
 		const userDto = UserDto(user);
-		const tokens = tokenService.generateTokens({ ...userDto });
-		await tokenService.saveToken(userDto.id, tokens.refreshToken);
-		return { ...tokens, user: userDto };
+		const tokens = tokenService.generateTokens({ ...userDto, sid: sessionMeta.deviceId || undefined });
+		const session = await tokenService.saveToken(userDto.id, tokens.refreshToken, sessionMeta);
+		return { ...tokens, user: userDto, sessionId: session._id.toString(), deviceId: session.deviceId };
 	},
-	login: async (email, password) => {
+	login: async (email, password, sessionMeta = {}) => {
 		const user = await UserModel.findOne({ email });
 		if (!user) {
 			throw ApiError.BadRequest('User with this email not found');
@@ -36,16 +36,28 @@ const userService = {
 			throw ApiError.BadRequest('Incorrect password');
 		}	
 		const userDto = UserDto(user);		
-		const tokens = tokenService.generateTokens({ ...userDto });
-		await tokenService.saveToken(userDto.id, tokens.refreshToken);
-		return { ...tokens, user: userDto };
+		const tokens = tokenService.generateTokens({ ...userDto, sid: sessionMeta.deviceId || undefined });
+		// Мультивход: создаём/ротируем ТОЛЬКО свою сессию, чужие refresh токены не трогаем.
+		const session = await tokenService.saveToken(userDto.id, tokens.refreshToken, sessionMeta);
+		return { ...tokens, user: userDto, sessionId: session._id.toString(), deviceId: session.deviceId };
 	},
-	logout: async (refreshToken, userId) => {
+	logout: async refreshToken => {
+		// Выход ОДНОЙ сессии: удаляем только свой refresh.
+		// AI/браузерные контексты НЕ трогаем — за этим же userId могут работать коллеги.
 		try {
-			console.log('[User Service] Logging out user:', userId);
-			
-			// Удаляем токен
 			const token = await tokenService.removeToken(refreshToken);
+			return token;
+		} catch (error) {
+			console.error('[User Service] Error during logout:', error);
+			throw error;
+		}
+	},
+	logoutAll: async userId => {
+		try {
+			console.log('[User Service] Logging out ALL sessions for user:', userId);
+
+			// Удаляем ВСЕ токены пользователя
+			const removed = await tokenService.removeAllByUserId(userId);
 			
 			// 🔥 ПОЛНЫЙ CLEANUP: Останавливаем ВСЁ для пользователя
 			if (userId) {
@@ -104,14 +116,14 @@ const userService = {
 				
 				console.log('[User Service] ✓ Full cleanup completed for user', userId);
 			}
-			
-			return token;
+
+			return removed;
 		} catch (error) {
 			console.error('[User Service] Error during logout:', error);
 			throw error;
 		}
 	},
-	refresh: async refreshToken => {
+	refresh: async (refreshToken, sessionMeta = {}) => {
 		if (!refreshToken) {
 			throw ApiError.UnauthorizedError();
 		}
@@ -121,13 +133,25 @@ const userService = {
 			throw ApiError.UnauthorizedError();
 		}
 		const user = await UserModel.findById(userData.id);
-		const userDto = UserDto(user);		
-		const tokens = tokenService.generateTokens({ ...userDto });
-		await tokenService.saveToken(userDto.id, tokens.refreshToken);
-		return { ...tokens, user: userDto };
+		if (!user) {
+			// Пользователь удалён, а refresh остался: чистим висячую сессию и отдаём 401, а не 500.
+			await tokenService.removeToken(refreshToken);
+			throw ApiError.UnauthorizedError();
+		}
+		const userDto = UserDto(user);
+		// Сохраняем привязку к сессии: sid из старого токена приоритетнее (устройство не меняется при refresh).
+		const sid = userData.sid || tokenFromDb.deviceId || sessionMeta.deviceId || undefined;
+		const tokens = tokenService.generateTokens({ ...userDto, sid });
+		// Ротация в пределах СВОЕЙ сессии: чужие сессии не трогаем.
+		const rotated = await tokenService.rotateToken(refreshToken, tokens.refreshToken, sessionMeta);
+		if (!rotated) {
+			throw ApiError.UnauthorizedError();
+		}
+		return { ...tokens, user: userDto, sessionId: rotated._id.toString(), deviceId: rotated.deviceId };
 	},
 	getAllUsers: async () => {
-		const users = await UserModel.find();
+		// Никогда не отдаём хеши паролей наружу (раньше GET /users сливал password всем админам).
+		const users = await UserModel.find().select('-password');
 		return users;
 	},
 	
@@ -211,8 +235,8 @@ const userService = {
 		await LuxeeAccountModel.deleteMany({ user: userId });
 		console.log(`[User Service] ✓ Deleted ${luxeeAccounts.length} Luxee accounts for user ${userId}`);
 		
-		// Удаляем токены пользователя
-		await tokenService.removeTokenByUserId(userId);
+		// Удаляем токены пользователя (все сессии)
+		await tokenService.removeAllByUserId(userId);
 		console.log(`[User Service] ✓ Tokens removed for user ${userId}`);
 		
 		// Удаляем пользователя

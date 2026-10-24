@@ -25,7 +25,13 @@ router.post(
 );
 router.post('/login', UserController.login);
 router.post('/logout', UserController.logout);
+router.post('/logout-all', authMiddleware, UserController.logoutAll);
 router.get('/refresh', UserController.refresh);
+// Мультивход: активные сессии + точечное закрытие (без остановки AI/браузеров коллег).
+router.get('/sessions', authMiddleware, UserController.getSessions);
+router.delete('/sessions/:sessionId', authMiddleware, UserController.revokeSession);
+// Лента действий: «кто включил/выключил ИИ» (+ socket-событие audit:new).
+router.get('/audit', authMiddleware, UserController.getAudit);
 router.get(
 	'/users',
 	authMiddleware,

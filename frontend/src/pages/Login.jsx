@@ -22,8 +22,8 @@ const Login = () => {
     setIsLoading(true);
 
     try {
-      const { user } = await authApi.login(email, password);
-      setUser(user);
+      const { user, sessionId, deviceId } = await authApi.login(email, password);
+      setUser(user, { sessionId, deviceId });
       navigate('/dashboard');
     } catch (err) {
       console.error('Login error:', err);
