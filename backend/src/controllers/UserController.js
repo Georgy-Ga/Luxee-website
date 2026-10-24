@@ -16,7 +16,9 @@ const getCookieOptions = () => ({
 	// Важно для мультивхода за одним userId: clearCookie обязан совпадать с setCookie,
 	// иначе logout в проде (HTTPS) не сотрёт куку.
 	sameSite: 'lax',
-	secure: process.env.NODE_ENV === 'production',
+	// secure только если явно включено через COOKIE_SECURE=true.
+	// На production по HTTP (без SSL-терминации nginx) secure:true отрежет куку и auth сломается.
+	secure: process.env.COOKIE_SECURE === 'true',
 	path: '/',
 });
 
