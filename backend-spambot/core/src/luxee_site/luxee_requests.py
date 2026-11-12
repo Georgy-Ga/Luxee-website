@@ -79,16 +79,13 @@ class LuxeeRequests:
         return result
 
     @retry_on_exception(exception_type=retry_exceptions, delay=10, retries=10)
-    def get_available_profiles(self, client_id: int) -> dict:
+    def get_available_profiles(self, client_id: int, client_hash: str = None) -> dict:
         params = {
-            "user_uid": client_id,
+            "hash": client_hash or str(client_id),
             "_": str(int(time.time() * 1000)),
         }
-        headers = {
-            "Token": self._clients_list_page_available_profiles_token,
-        }
         return self._requests.get(
-            "https://luxee.io/api/v2/communication/available-profiles", headers=headers, params=params
+            "https://luxee.io/clients/available-profiles", params=params
         )
 
     # ------------------------------------------------------------------
@@ -126,15 +123,12 @@ class LuxeeRequests:
                                                                                                 "available-profiles")
         return result
 
-    def get_available_profiles_once(self, client_id: int) -> dict:
+    def get_available_profiles_once(self, client_id: int, client_hash: str = None) -> dict:
         """Тот же available-profiles, но без тяжёлого ретрая (для сбора лимитов)."""
         params = {
-            "user_uid": client_id,
+            "hash": client_hash or str(client_id),
             "_": str(int(time.time() * 1000)),
         }
-        headers = {
-            "Token": self._clients_list_page_available_profiles_token,
-        }
         return self._requests.get(
-            "https://luxee.io/api/v2/communication/available-profiles", headers=headers, params=params
+            "https://luxee.io/clients/available-profiles", params=params
         )

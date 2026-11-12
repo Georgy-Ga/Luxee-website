@@ -21,12 +21,13 @@ class Profile:
 
 
 class Client:
-    def __init__(self, name: str, age: str, location: str, uid: str, app: str):
+    def __init__(self, name: str, age: str, location: str, uid: str, app: str, hash: str = None):
         self.name = name
         self.age = age
         self.location = location
         self.uid: int = int(uid)
         self.app = app
+        self.hash = hash
 
     def __str__(self):
         return f"{self.name} ({self.uid})"

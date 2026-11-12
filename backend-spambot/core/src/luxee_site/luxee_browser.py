@@ -244,7 +244,7 @@ class Luxee:
                 break
 
             try:
-                result = self.requests.get_available_profiles_once(client.uid)
+                result = self.requests.get_available_profiles_once(client.hash or str(client.uid))
                 data = (result or {}).get("data", []) if isinstance(result, dict) else []
             except Exception as e:
                 logger.warning(f"[Limits] Failed for client {client.uid} (non-fatal): {e}")
@@ -337,11 +337,17 @@ class Luxee:
                 location = client_wrapper.find("div", {"class": "location"}).text.strip()
                 uid = client_wrapper["data-key"].strip()
                 
+                # Извлекаем hash из кнопки отправки письма (data-hash атрибут)
+                hash_value = None
+                mail_btn = client_wrapper.find("a", {"class": "mail-user-start"})
+                if mail_btn and mail_btn.get("data-hash"):
+                    hash_value = mail_btn["data-hash"].strip()
+                
                 # app может отсутствовать, используем значение по умолчанию
                 app_element = client_wrapper.find("span", {"class": "application-wrap"})
                 app = app_element.text.strip() if app_element else "Unknown"
 
-                clients.append(Client(name, age, location, uid, app))
+                clients.append(Client(name, age, location, uid, app, hash_value))
             except (AttributeError, KeyError) as e:
                 logger.warning(f"Failed to extract client data: {e}")
                 continue
@@ -360,8 +366,8 @@ class Luxee:
         clients_html = self.requests.get_clients_list(purchased_enabled)
         return self.__extract_clients(clients_html)
 
-    def _is_profile_available_for_user(self, client_id: int, profile: Profile) -> bool:
-        result = self.requests.get_available_profiles(client_id)
+    def _is_profile_available_for_user(self, client_id: int, client_hash: str, profile: Profile) -> bool:
+        result = self.requests.get_available_profiles(client_id, client_hash)
         for profile_json in result["data"]:
             if profile_json["import_uid"] == profile.owner_uid:
                 profile.uid = profile_json["uid"]
@@ -743,7 +749,7 @@ class Luxee:
                     message_sent = False
                     for attempt in range(retry_attempts):
                         try:
-                            available = self._is_profile_available_for_user(client.uid, distribution.profile)
+                            available = self._is_profile_available_for_user(client.uid, client.hash, distribution.profile)
                             time.sleep(2)  # Wait for 1.5 seconds to avoid being blocked by the server
 
                             if not available:
@@ -857,7 +863,7 @@ class Luxee:
                     message_sent = False
                     for attempt in range(retry_attempts):
                         try:
-                            available = self._is_profile_available_for_user(client.uid, distribution.profile)
+                            available = self._is_profile_available_for_user(client.uid, client.hash, distribution.profile)
                             time.sleep(2)  # Wait for 1.5 seconds to avoid being blocked by the server
 
                             if not available:
