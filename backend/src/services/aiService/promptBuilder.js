@@ -67,6 +67,11 @@ export const buildMessages = async ({
 	profileName = '',
 	manName = '',
 	activityCenterData = null,
+	// 🆕 Новые флаги для корректного промпта (первое сообщение / продолжение / ответ мужчине)
+	isFirstContact = false,
+	isContinuationFromHer = false,
+	lastMessagesFromHerCount = 0,
+	lastMessageAuthor = 'unknown',
 }) => {
 	vlog('');
 	vlog('📝 [AI DEBUG] ===== BUILDING PROMPT FOR AI =====');
@@ -113,10 +118,25 @@ export const buildMessages = async ({
 		// Для Activity Center НЕ нужен возраст/город в явном виде, но имя анкеты —
 		// обязательно: без него ИИ не понимает, кто она.
 		// Свежую выборку примеров подставляем сюда (не в system) — разнообразие без ~1500 токенов за раз
+		// 🆕 Если это НЕ первое сообщение в этом чате (продолжение существующего диалога),
+		// ИИ не должна писать "первое сообщение" — она продолжает разговор.
+		let firstContactInstruction = '';
+		if (!isFirstContact) {
+			firstContactInstruction = `
+# ВАЖНО: Это НЕ первое сообщение в этом чате.
+Диалог с этим мужчиной уже начат. Не пишите как при первом контакте (не знакомьтесь, не спрашивайте "как дела" как незнакомка).
+Продолжайте разговор естественно, основываясь на контексте предыдущих сообщений выше.`;
+		} else {
+			firstContactInstruction = `
+# Это ПЕРВОЕ сообщение в этом чате.
+Пишите как при первом контакте: тепло, любопытно, просто. Не притворяйтесь, что вы уже знакомы с этим человеком.`;
+		}
+
 		const sampleExamples = getSampleActivityExamples(2);
 		const userMessage = `${profileContext}
 
-A man named ${manName || 'him'} just ${activityLine}.
+A man named ${manName || 'him'} just ${activityLine}.${firstContactInstruction}
+
 Write ONE engaging question to start a conversation with him. Make it unique, interesting, and thought-provoking. Keep it under 200 characters.
 
 FINAL REMINDER — reply with ONLY the question text. No greetings, no explanations, no commentary, no analysis, nothing else. Just the question.
@@ -187,7 +207,29 @@ Style examples (do NOT copy, vary the topic):\n${sampleExamples}`;
 
 	// ⭐ Определяем контекст для типа сообщения
 	let messageContext = '';
-	
+
+	// 🆕 НОВОЕ: Инструкции по типу контакта (первое сообщение / продолжение / ответ мужчине)
+	let contactContext = '';
+	if (isFirstContact) {
+		contactContext = `
+# ПЕРВОЕ СООБЩЕНИЕ
+Это ваше первое сообщение этому мужчине. Пишите как при первом контакте: тепло, любопытно, просто. 
+НЕ притворяйтесь, что вы уже знакомы с ним. Не упоминайте предыдущую переписку, которой не было.
+Будьте естественны и дружелюбны, как будто пишете незнакомому мужчине впервые.`;
+	} else if (isContinuationFromHer && lastMessagesFromHerCount >= 3) {
+		contactContext = `
+# ПРОДОЛЖЕНИЕ СВОЕЙ МЫСЛИ
+Последние сообщения в этом чате были от вас (профиля/девушки), а не от мужчины.
+Не отвечайте напрямую на её последнее сообщение, как будто она спросила что-то.
+Продолжайте СВОЮ мысль / свою тему, как будто это вы ведёте разговор дальше.
+Не задавайте ему вопросы в ответ на её сообщения — продолжайте свою линию.`;
+	} else if (lastMessageAuthor === 'man') {
+		contactContext = `
+# ОТВЕТ МУЖЧИНЕ
+Последнее сообщение в чате от этого мужчины. Ответьте ему конкретно, адресуя ваш ответ ему personally.
+Поддержите разговор, который он начал.`;
+	}
+
 	// НОВОЕ: Если есть typeInstructions - используем их
 	if (typeInstructions) {
 		messageContext = typeInstructions + '\n';
@@ -206,6 +248,9 @@ Style examples (do NOT copy, vary the topic):\n${sampleExamples}`;
 			vlog('  😊 Detected emoji message - added emoji context (fallback)');
 		}
 	}
+
+	// Добавляем contactContext в начало messageContext (высший приоритет)
+	messageContext = contactContext + messageContext;
 
 	// Страховка от неограниченного роста инструкций (catch-up дописывает NOTE)
 	if (messageContext.length > 800) {

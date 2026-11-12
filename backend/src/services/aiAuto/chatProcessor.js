@@ -458,6 +458,43 @@ const processSingleChat = async ({
 		return { sent: false, reason: 'history_extraction_failed' };
 	}
 
+	// ========== ОПРЕДЕЛЯЕМ АВТОРА ПОСЛЕДНЕГО СООБЩЕНИЯ И ТИП КОНТАКТА ==========
+	// Аналог shouldReplyToChat из chatMessagesExtractorService, но работает
+	// на извлечённой истории (уже есть поля isFromProfile/isFromMan в каждом сообщении).
+	let isFirstContact = false;
+	let isContinuationFromHer = false;
+	let lastMessagesFromHerCount = 0;
+	let lastMessageAuthor = 'unknown'; // 'man' | 'profile' | 'unknown' | 'none'
+
+	if (!history.lastMessage) {
+		// В чате вообще нет сообщений — это первый контакт
+		isFirstContact = true;
+		lastMessageAuthor = 'none';
+	} else {
+		// Считаем подряд идущие сообщения от профиля (девушки) в конце истории
+		let consecutiveHer = 0;
+		for (let i = history.messages.length - 1; i >= 0; i--) {
+			const m = history.messages[i];
+			if (m.isFromProfile) {
+				consecutiveHer++;
+			} else if (m.isFromMan) {
+				break;
+			} else {
+				break;
+			}
+		}
+		lastMessagesFromHerCount = consecutiveHer;
+
+		if (history.lastMessage.isFromProfile) {
+			lastMessageAuthor = 'profile';
+			isContinuationFromHer = true;
+		} else if (history.lastMessage.isFromMan) {
+			lastMessageAuthor = 'man';
+		} else {
+			lastMessageAuthor = 'unknown';
+		}
+	}
+
 	// ========== ОПРЕДЕЛЯЕМ ТИП ПРОМТА ==========
 	let typeInstructions = '';
 
@@ -688,6 +725,11 @@ const processSingleChat = async ({
 				manName: chat.manName || history.manName || 'there',
 				typeInstructions: typeInstructions,
 				messageType: messageType,
+				// 🆕 Новые флаги для корректного промпта (первое сообщение / продолжение / ответ мужчине)
+				isFirstContact,
+				isContinuationFromHer,
+				lastMessagesFromHerCount,
+				lastMessageAuthor,
 			});
 			replyText = genResult.response;
 			storePendingReply(chat.chatId, manKey, replyText);

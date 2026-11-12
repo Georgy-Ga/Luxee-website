@@ -9,6 +9,7 @@ import { isUserBlacklisted, shouldSkipDueToLoop } from './blacklistService.js';
 import { isProfileExcluded } from './excludedProfilesService.js';
 import catchUpScanner from './catchUpScanner.js';
 import chatProcessor from './chatProcessor.js';
+import chatMessagesExtractorService from '../luxeeApi/chatMessagesExtractorService.js';
 import cycleLogger from './cycleLogger.js';
 import profileScanner from './profileScanner.js';
 import utils from './utils.js';
@@ -1524,6 +1525,43 @@ const processAccountMessages = async (accountId, userId, page) => {
 						}
 					}
 
+					// ========== АКТИВИТИ СЕНТЕР: ИЗВЛЕКАЕМ ИСТОРИЮ ЧАТА ПОСЛЕ КЛИКА ==========
+					// Определяем, это первое сообщение в чате или продолжение существующего диалога.
+					let acIsFirstContact = true;
+					let acIsContinuationFromHer = false;
+					let acLastMessagesFromHerCount = 0;
+					let acLastMessageAuthor = 'none';
+					try {
+						const acHist = await chatMessagesExtractorService.getChatHistory(page, 6);
+						if (acHist && !acHist.error && acHist.lastMessage) {
+							acIsFirstContact = false;
+							let consecutiveHer = 0;
+							for (let i = acHist.messages.length - 1; i >= 0; i--) {
+								const m = acHist.messages[i];
+								if (m.isFromProfile) consecutiveHer++;
+								else if (m.isFromMan) break;
+								else break;
+							}
+							acLastMessagesFromHerCount = consecutiveHer;
+							if (acHist.lastMessage.isFromProfile) {
+								acLastMessageAuthor = 'profile';
+								acIsContinuationFromHer = true;
+							} else if (acHist.lastMessage.isFromMan) {
+								acLastMessageAuthor = 'man';
+							} else {
+								acLastMessageAuthor = 'unknown';
+							}
+							utils.log(
+								'AI Auto',
+								`💬 Activity Center chat history: lastAuthor=${acLastMessageAuthor}, consecutiveHer=${acLastMessagesFromHerCount}, isFirstContact=${acIsFirstContact}`,
+							);
+						} else {
+							utils.log('AI Auto', '💬 Activity Center chat: no history — first contact');
+						}
+					} catch (e) {
+						utils.log('AI Auto', `⚠️  Activity Center history extraction failed: ${e.message}`);
+					}
+
 					// ✅ Генерируем и отправляем сообщение через aiResponseService
 					utils.log('AI Auto', '🤖 Generating and sending first message...');
 
@@ -1561,8 +1599,13 @@ const processAccountMessages = async (accountId, userId, page) => {
 									manName: notification.manName,
 									activityCenterData: {
 										activityType: notification.activityType || 'unknown',
-										isFirstMessage: true,
+										isFirstMessage: acIsFirstContact,
 									},
+									// 🆕 Флаги для корректного промпта (первое сообщение vs продолжение)
+									isFirstContact: acIsFirstContact,
+									isContinuationFromHer: acIsContinuationFromHer,
+									lastMessagesFromHerCount: acLastMessagesFromHerCount,
+									lastMessageAuthor: acLastMessageAuthor,
 								});
 							} catch (genError) {
 								acGenError = genError;

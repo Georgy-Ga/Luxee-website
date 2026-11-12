@@ -87,6 +87,8 @@ class Luxee:
 
             self.requests.authorize(self.browser.get_cookies(as_dict=True))
             logger.info("Logged in successfully")
+            # Remove any clients-lock overlay that might block page interactions
+            self._remove_lock_overlay()
         except LuxeeLoginError as e:
             self.browser.close_browser()
             raise e
@@ -94,6 +96,57 @@ class Luxee:
             save_selenium_error(self.browser, e)
             self.browser.close_browser()
             raise e
+
+    def _remove_lock_overlay(self) -> None:
+        """Remove the 'Users page is locked' overlay (Catch Up block) from the browser DOM.
+
+        The lock overlay is rendered client-side by clients-lock.js when the account
+        has unfinished Catch Up tasks. It covers the page with pointer-events: auto
+        and z-index: 10, blocking all clicks on profile buttons.
+
+        This method:
+        - Removes #clients-lock-overlay from DOM
+        - Removes 'clients-locked' class from <body>
+        - Restores filter/pointer-events on .main-panel
+        - Neutralizes ClientsLock.isLocked() and ChatSimpleInstance.onTaskCount()
+          so the lock cannot be re-applied via socket events during this session.
+        """
+        try:
+            self.browser.driver.execute_script("""
+                // Remove overlay element
+                document.querySelectorAll('#clients-lock-overlay, .clients-lock-overlay').forEach(function(el) {
+                    if (el.parentNode) el.parentNode.removeChild(el);
+                });
+
+                // Remove lock class from body
+                try { document.body.classList.remove('clients-locked'); } catch(e) {}
+
+                // Restore panel styles (remove blur and pointer-events: none)
+                document.querySelectorAll('.main-panel, .x_panel.main-panel').forEach(function(el) {
+                    el.style.filter = 'none';
+                    el.style.pointerEvents = 'auto';
+                    el.style.opacity = '1';
+                });
+
+                // Neutralize ClientsLock so it cannot re-apply the lock
+                if (typeof ClientsLock !== 'undefined') {
+                    ClientsLock.isLocked = function() { return false; };
+                    ClientsLock.render = function() {};
+                }
+
+                // Neutralize ChatSimpleInstance.onTaskCount so socket events
+                // cannot re-trigger the lock render during this session
+                if (typeof ChatSimpleInstance !== 'undefined') {
+                    ChatSimpleInstance.onTaskCount = function() {};
+                }
+
+                // Restore scroll
+                document.body.style.overflow = 'auto';
+                document.documentElement.style.overflow = 'auto';
+            """)
+            logger.debug("Lock overlay removal attempted")
+        except Exception as e:
+            logger.warning(f"Could not remove lock overlay: {e}")
 
     def __extract_profiles(self, html_page: str) -> list[Profile]:
         soup = BeautifulSoup(html_page, "html.parser")
@@ -655,6 +708,9 @@ class Luxee:
         """Starts the distribution process."""
         start_time = time.time()
 
+        # Ensure the clients page lock overlay is removed before starting distribution
+        self._remove_lock_overlay()
+
         while distribution.sent_messages_count < distribution.limit:
             # Check if we should stop
             if should_stop_callback and should_stop_callback():
@@ -765,6 +821,9 @@ class Luxee:
     def start_mail_distribution(self, distribution: Distribution, should_stop_callback=None, status_updater=None):
         """Starts the distribution process."""
         start_time = time.time()
+
+        # Ensure the clients page lock overlay is removed before starting distribution
+        self._remove_lock_overlay()
 
         while distribution.sent_messages_count < distribution.limit:
             # Check if we should stop

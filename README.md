@@ -411,27 +411,27 @@ docker compose up -d --build backend
 ## 📖 Документация
 
 ### 🚀 Быстрый старт
-- **[QUICK_START.md](docs/QUICK_START.md)** - Запуск проекта локально для новичков
-- **[QUICK_START_WINDOWS.md](docs/QUICK_START_WINDOWS.md)** - Запуск на Windows
+- **[QUICK_START.md](docs/other/QUICK_START.md)** - Запуск проекта локально для новичков
+- **[QUICK_START_WINDOWS.md](docs/other/QUICK_START_WINDOWS.md)** - Запуск на Windows
 
 ### 🐳 Production деплой
-- **[DOCKER_DEPLOYMENT.md](docs/DOCKER_DEPLOYMENT.md)** - Docker развертывание
-- **[DEPLOYMENT_SUMMARY.md](docs/DEPLOYMENT_SUMMARY.md)** - Сводка деплоя
-- **[DEVELOPMENT_ENVIRONMENTS.md](docs/DEVELOPMENT_ENVIRONMENTS.md)** - Настройка окружений
+- **[DOCKER_DEPLOYMENT.md](docs/other/DOCKER_DEPLOYMENT.md)** - Docker развертывание
+- **[DEPLOYMENT_SUMMARY.md](docs/other/DEPLOYMENT_SUMMARY.md)** - Сводка деплоя
+- **[DEVELOPMENT_ENVIRONMENTS.md](docs/other/DEVELOPMENT_ENVIRONMENTS.md)** - Настройка окружений
 
 ### 🏗️ Архитектура
-- **[DEVELOPMENT_ENVIRONMENTS.md](docs/DEVELOPMENT_ENVIRONMENTS.md)** - Настройка окружений (дубль, см. выше)
+- **[DEVELOPMENT_ENVIRONMENTS.md](docs/other/DEVELOPMENT_ENVIRONMENTS.md)** - Настройка окружений (дубль, см. выше)
 
 ### 🤖 AI функционал
-- **[ai_settings.md](docs/ai_settings.md)** - Настройка AI (DeepSeek/NVIDIA)
-- **[AI_PROVIDER_SWITCH.md](docs/AI_PROVIDER_SWITCH.md)** - Переезд с OpenAI/OpenRouter на DeepSeek/NVIDIA
+- **[ai_settings.md](docs/other/ai_settings.md)** - Настройка AI (DeepSeek/NVIDIA)
+- **[AI_PROVIDER_SWITCH.md](docs/other/AI_PROVIDER_SWITCH.md)** - Переезд с OpenAI/OpenRouter на DeepSeek/NVIDIA
 
 ### 🔌 WebSocket
-- **[docs/WEBSOCKET_SYNC.md](docs/WEBSOCKET_SYNC.md)** - WebSocket синхронизация
+- **[docs/WEBSOCKET_SYNC.md](docs/other/WEBSOCKET_SYNC.md)** - WebSocket синхронизация
 
 ### 🐳 Docker
-- **[DOCKER_FILES_SUMMARY.md](docs/DOCKER_FILES_SUMMARY.md)** - Описание Docker файлов
-- **[DOCKER_DEPLOYMENT.md](docs/DOCKER_DEPLOYMENT.md)** - Docker развертывание
+- **[DOCKER_FILES_SUMMARY.md](docs/other/DOCKER_FILES_SUMMARY.md)** - Описание Docker файлов
+- **[DOCKER_DEPLOYMENT.md](docs/other/DOCKER_DEPLOYMENT.md)** - Docker развертывание
 
 ### 🔧 Backend API
 - **[docs/backend/01-api-endpoints.md](docs/backend/01-api-endpoints.md)** - API эндпоинты
