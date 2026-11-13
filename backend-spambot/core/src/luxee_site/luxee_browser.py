@@ -460,15 +460,35 @@ class Luxee:
         input_element = self.browser.find_element(locator)
 
         input_element.click()
-        actions = ActionChains(self.browser.driver)
+        self.browser.wait_until_element_is_visible(locator)
 
-        for char in text:
-            if char == '\n':
-                actions.key_down(Keys.SHIFT).send_keys(Keys.ENTER).key_up(Keys.SHIFT)
-            else:
-                actions.send_keys(char)
+        # Определяем тип элемента для корректной установки значения
+        tag_name = input_element.tag_name.lower()
+        is_input = tag_name == 'input'
+        is_contenteditable = input_element.get_attribute('contenteditable') == 'true'
 
-        actions.perform()
+        # Очищаем поле перед вставкой
+        if is_input:
+            self.browser.driver.execute_script("arguments[0].value = '';", input_element)
+        else:
+            self.browser.driver.execute_script("arguments[0].innerHTML = ''; arguments[0].textContent = '';", input_element)
+
+        # Устанавливаем текст через JS (надёжнее ActionChains для contenteditable)
+        if is_input:
+            self.browser.driver.execute_script("arguments[0].value = arguments[1];", input_element, text)
+        else:
+            self.browser.driver.execute_script("arguments[0].textContent = arguments[1];", input_element, text)
+
+        # Триггерим событие input, чтобы сайт зарегистрировал ввод
+        self.browser.driver.execute_script("""
+            const el = arguments[0];
+            el.dispatchEvent(new Event('input', { bubbles: true }));
+            el.dispatchEvent(new Event('change', { bubbles: true }));
+            el.dispatchEvent(new Event('keyup', { bubbles: true }));
+        """, input_element)
+
+        # Небольшая пауза, чтобы браузер обработал события
+        time.sleep(0.3)
 
     def _send_message(self, message_text: str):
         input_text_xpath = '//div[@id="type-main-wrap"]//*[@contenteditable]'
@@ -479,11 +499,26 @@ class Luxee:
                 "Input field for message is not available. Maybe user has blocked you. Cannot send messages."
             )
 
+        # Dismiss any pending alerts before typing
+        try:
+            self.browser.handle_alert()
+        except Exception:
+            pass
+
         # Send message
         self._type_naturally(input_text_xpath, message_text)
         if CONFIG.SKIP_SENDING_MESSAGE:
             logger.info(f"Skip Sending message in DEV_MODE.")
             return
+
+        # Dismiss any alerts that may have appeared during typing
+        try:
+            self.browser.handle_alert()
+        except Exception:
+            pass
+
+        # Переопределяем window.confirm, чтобы алерт "Are you sure?" не блокировал отправку
+        self.browser.driver.execute_script("window.confirm = () => true; window.alert = () => {};")
 
         self.browser.click_element_when_visible('//button[@id="send-button"]')
 
@@ -539,6 +574,12 @@ class Luxee:
                 "Input field for message is not available. Maybe user has blocked you. Cannot send messages."
             )
 
+        # Дismiss any pending alerts before typing
+        try:
+            self.browser.handle_alert()
+        except Exception:
+            pass
+
         # Type title
         self._type_naturally(input_mail_title_xpath, mail.title)
 
@@ -550,7 +591,22 @@ class Luxee:
             logger.info(f"Skip Sending mail in DEV_MODE.")
             return
 
+        # Дismiss any alerts that may have appeared during typing
+        try:
+            self.browser.handle_alert()
+        except Exception:
+            pass
+
+        # Переопределяем window.confirm, чтобы алерт "Are you sure?" не блокировал отправку
+        self.browser.driver.execute_script("window.confirm = () => true; window.alert = () => {};")
+
         self.browser.click_element_when_visible('//button[@id="send-button"]')
+
+        # Дismiss any remaining alerts after clicking send
+        try:
+            self.browser.handle_alert()
+        except Exception:
+            pass
 
         try:
             self.browser.wait_until_element_is_visible('//div[@role="alert"]/div', timeout=3)
