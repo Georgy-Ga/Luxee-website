@@ -614,15 +614,20 @@ class Luxee:
         except AssertionError:
             alert_message = ""
 
-        # Wait until message is sent
-        timeout = time.time() + 40
+        # Wait until message is sent (reduced timeout to 15s)
+        timeout = time.time() + 15
         last_mail_title = ""
         last_mail_text = ""
         while time.time() < timeout:
-            mails_text_and_title_xpath = '//div[@id="mailsContainer"]/ul/li//*[@class="message"]'
+            mails_text_and_title_xpath = '//div[@id="mailsContainer"]/ul/li//*[contains(@class, "message")]'
             try:
-                last_mail_title = self.browser.find_elements(mails_text_and_title_xpath)[-2].text
-                last_mail_text = self.browser.find_elements(mails_text_and_title_xpath)[-1].text
+                elements = self.browser.find_elements(mails_text_and_title_xpath)
+                if len(elements) >= 2:
+                    last_mail_title = elements[-2].text
+                    last_mail_text = elements[-1].text
+                else:
+                    last_mail_title = ""
+                    last_mail_text = ""
             except (StaleElementReferenceException, IndexError):
                 continue
             if compare_strings_ignore_symbols(last_mail_title, mail.title) and compare_strings_ignore_symbols(
