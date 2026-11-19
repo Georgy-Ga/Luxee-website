@@ -314,8 +314,11 @@ class SpambotPollingService {
 					sentMessagesCount: status.sentMessagesCount,
 					skippedClientsCount: status.skippedClientsCount,
 					currentClient: status.currentClient,
+					accountId: distribution.luxeeAccount?._id?.toString(),
 					accountEmail,
+					profileUid: distribution.config?.profileUid,
 					profileName: distribution.config?.profileName || 'N/A',
+					distributionType: distribution.config?.distributionType,
 					timestamp: new Date().toISOString()
 				};
 
@@ -379,7 +382,9 @@ class SpambotPollingService {
 							distributionId: distribution.distributionId,
 							id: distribution._id,
 							status: finalStatus.status,
+							accountId: distribution.luxeeAccount?._id?.toString(),
 							accountEmail,
+							profileUid: distribution.config?.profileUid,
 							profileName: distribution.config?.profileName || 'N/A',
 							distributionType: distribution.config?.distributionType || 'chat',
 							sentMessagesCount: finalStatus.sentMessagesCount || 0,

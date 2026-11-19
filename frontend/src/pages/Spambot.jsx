@@ -15,6 +15,142 @@ import Modal from '../components/ui/Modal';
 import { useSocket } from '../contexts/SocketContext';
 import useAuthStore from '../stores/authStore';
 
+// Ключ localStorage: лимиты анкет аккаунта нужно обновить (рассылка завершилась)
+const staleProfilesKey = accountId => `spambot_profiles_stale_${accountId}`;
+
+const markProfilesStale = (accountId, when = Date.now()) => {
+	if (!accountId) return;
+	try {
+		localStorage.setItem(staleProfilesKey(accountId), String(when));
+	} catch (error) {
+		console.error('[Spambot] Error marking profiles stale:', error);
+	}
+};
+
+const clearProfilesStale = accountId => {
+	if (!accountId) return;
+	try {
+		localStorage.removeItem(staleProfilesKey(accountId));
+	} catch (error) {
+		console.error('[Spambot] Error clearing profiles stale flag:', error);
+	}
+};
+
+const isProfilesStale = accountId => {
+	if (!accountId) return false;
+	try {
+		return !!localStorage.getItem(staleProfilesKey(accountId));
+	} catch {
+		return false;
+	}
+};
+
+// Ключ localStorage: последний учтённый sentMessagesCount по рассылке.
+// Храним в localStorage, а не в ref: переживает перезагрузку страницы
+// и не даёт двум вкладкам применить один и тот же прирост дважды.
+const mailAppliedKey = distributionId => `spambot_mail_applied_${distributionId}`;
+
+const getMailApplied = distributionId => {
+	if (!distributionId) return undefined;
+	try {
+		const raw = localStorage.getItem(mailAppliedKey(distributionId));
+		if (raw === null) return undefined;
+		const value = parseInt(raw, 10);
+		return Number.isNaN(value) ? undefined : value;
+	} catch (error) {
+		console.error('[Spambot] Error reading applied mail count:', error);
+		return undefined;
+	}
+};
+
+const setMailApplied = (distributionId, value) => {
+	if (!distributionId) return;
+	try {
+		localStorage.setItem(mailAppliedKey(distributionId), String(value));
+	} catch (error) {
+		console.error('[Spambot] Error saving applied mail count:', error);
+	}
+};
+
+const clearMailApplied = distributionId => {
+	if (!distributionId) return;
+	try {
+		localStorage.removeItem(mailAppliedKey(distributionId));
+	} catch (error) {
+		console.error('[Spambot] Error clearing applied mail count:', error);
+	}
+};
+
+// Есть ли у лимита реальные данные (max/count), а не метка "no information"
+const hasRealLimits = data => {
+	if (!data) return false;
+	const chat = data.chat;
+	const mail = data.mail;
+	return (
+		(chat && typeof chat.max === 'number') ||
+		(mail && typeof mail.max === 'number')
+	);
+};
+
+// Увеличивает израсходованный mail-лимит анкеты (в UI доступно = max - count).
+// Меняет ТОЛЬКО mail и ТОЛЬКО у анкеты с указанным uid.
+const adjustProfileMailUsed = (profile, profileUid, delta) => {
+	if (!profile || !profile.limits || delta <= 0) return profile;
+
+	const matchesUid =
+		String(profile.uid) === String(profileUid) ||
+		String(profile.owner_uid) === String(profileUid);
+	if (!matchesUid) return profile;
+
+	const mail = profile.limits.mail;
+	if (!mail || mail.no_information || typeof mail.count !== 'number') {
+		return profile;
+	}
+
+	const max = typeof mail.max === 'number' ? mail.max : null;
+	let count = mail.count + delta;
+	if (count < 0) count = 0;
+	if (max !== null && count > max) count = max;
+	if (count === mail.count) return profile;
+
+	return {
+		...profile,
+		limits: { ...profile.limits, mail: { ...mail, count } },
+	};
+};
+
+// По истории рассылок помечаем аккаунты, у которых кэш профилей старше
+// момента завершения рассылки (покрывает случай, когда страница была закрыта).
+const markStaleAccountsFromHistory = distributions => {
+	try {
+		for (const dist of distributions || []) {
+			if (!['completed', 'stopped', 'error'].includes(dist.status)) continue;
+
+			// Рассылка уже завершилась — накопленный счётчик больше не нужен
+			clearMailApplied(dist.distributionId);
+
+			if (!dist.accountId) continue;
+
+			const cacheTimestamp = parseInt(
+				localStorage.getItem(
+					`spambot_profiles_timestamp_${dist.accountId}`,
+				) || '0',
+				10,
+			);
+			if (!cacheTimestamp) continue;
+
+			const finishedAt = new Date(
+				dist.completedAt || dist.stoppedAt || dist.createdAt || 0,
+			).getTime();
+			if (finishedAt && finishedAt > cacheTimestamp) {
+				markProfilesStale(dist.accountId, finishedAt);
+			}
+		}
+	} catch (error) {
+		console.error('[Spambot] Error checking stale profiles from history:', error);
+	}
+};
+
 /**
  * Spambot Page - Массовые рассылки
  */
@@ -131,6 +267,18 @@ const Spambot = () => {
 							console.error('[Spambot] Error restoring selected profile:', e);
 						}
 
+						// Если по аккаунту завершилась рассылка — тихо обновляем ТОЛЬКО
+						// лимиты (анкеты не перезагружаем), но не во время активной рассылки.
+						if (
+							isProfilesStale(accountId) &&
+							!hasActiveDistributionForAccount(
+								accountId,
+								selectedAccount.luxeeEmail,
+							)
+						) {
+							refreshLimitsOnly(accountId);
+						}
+
 						return;
 					} else {
 						console.log('[Spambot] ⏰ Cache expired, reloading...');
@@ -163,6 +311,8 @@ const Spambot = () => {
 					`spambot_profiles_timestamp_${accountId}`,
 					Date.now().toString(),
 				);
+				// Полная загрузка с сервера уже содержит свежие лимиты
+				clearProfilesStale(accountId);
 				console.log('[Spambot] ✅ Profiles cached');
 			} catch (error) {
 				console.error('[Spambot] Error caching profiles:', error);
@@ -184,6 +334,7 @@ const Spambot = () => {
 		localStorage.removeItem(`spambot_profiles_${accountId}`);
 		localStorage.removeItem(`spambot_profiles_timestamp_${accountId}`);
 		localStorage.removeItem(`spambot_selected_profile_${accountId}`);
+		clearProfilesStale(accountId);
 
 		// Очистить состояние
 		setProfiles([]);
@@ -210,6 +361,23 @@ const Spambot = () => {
 				);
 			}
 			setDistributionHistory(data);
+			markStaleAccountsFromHistory(data);
+
+			// Если выбранный аккаунт уже помечен как «нужно обновить лимиты»
+			// (например, рассылка завершилась при закрытой странице) — тихо
+			// обновляем только лимиты, но не во время активной рассылки.
+			const selectedId = selectedAccount?._id;
+			if (selectedId && isProfilesStale(selectedId)) {
+				const hasActive = (data || []).some(
+					dist =>
+						(dist.status === 'running' || dist.status === 'queued') &&
+						((dist.accountId &&
+							String(dist.accountId) === String(selectedId)) ||
+							(dist.accountEmail &&
+								dist.accountEmail === selectedAccount.luxeeEmail)),
+				);
+				if (!hasActive) refreshLimitsOnly(selectedId);
+			}
 		} catch (error) {
 			console.error('[Spambot] ❌ Error loading history:', error);
 		} finally {
@@ -363,67 +531,176 @@ const Spambot = () => {
 		}
 	};
 
-	// WebSocket - Real-time обновление статуса рассылки
-	useEffect(() => {
-		if (!socket || !isConnected) return;
+	// Определить id аккаунта по данным события (accountId или email как fallback)
+	const resolveEventAccountId = data => {
+		if (!data) return null;
+		if (data.accountId) return String(data.accountId);
+		const email = data.accountEmail;
+		if (!email) return null;
 
-		// Обновление ТОЛЬКО лимитов анкет выбранного аккаунта (без перезагрузки всего списка).
-		// Используется после завершения/остановки рассылки, чтобы не дёргать полную загрузку профилей.
-		const refreshProfilesLimits = async () => {
-			if (!selectedAccount) return;
+		const flatAccounts = isAdmin
+			? accounts.flatMap(group => group.accounts || [])
+			: accounts;
+		const found = (flatAccounts || []).find(a => a.luxeeEmail === email);
+		return found?._id ? String(found._id) : null;
+	};
 
-			try {
-				const limits = isAdmin
-					? await spambotApi.getAdminProfileLimits(selectedAccount._id)
-					: await spambotApi.getProfileLimits(selectedAccount._id);
+	// Есть ли по аккаунту активная рассылка (running/queued).
+	// Пока рассылка идёт — лимиты не обновляем, работаем с локальными значениями.
+	const hasActiveDistributionForAccount = (accountId, accountEmail) =>
+		distributionHistory.some(dist => {
+			if (!dist || (dist.status !== 'running' && dist.status !== 'queued')) {
+				return false;
+			}
+			if (dist.accountId && accountId) {
+				return String(dist.accountId) === String(accountId);
+			}
+			return !!(
+				dist.accountEmail &&
+				accountEmail &&
+				dist.accountEmail === accountEmail
+			);
+		});
 
-				if (!limits) return;
+	// Обновление ТОЛЬКО лимитов анкет аккаунта (без перезагрузки всего списка).
+	const refreshLimitsOnly = async accountId => {
+		if (!accountId) return false;
 
-				// Вспомогательная проверка: есть ли у лимита реальные данные (max/count).
-				const hasRealLimits = data => {
-					if (!data) return false;
-					const chat = data.chat;
-					const mail = data.mail;
-					return (
-						(chat && typeof chat.max === 'number') ||
-						(mail && typeof mail.max === 'number')
-					);
-				};
+		try {
+			const limits = isAdmin
+				? await spambotApi.getAdminProfileLimits(accountId)
+				: await spambotApi.getProfileLimits(accountId);
 
+			if (!limits) return false;
+
+			const updatedAny = Object.values(limits).some(hasRealLimits);
+
+			if (
+				selectedAccount &&
+				String(selectedAccount._id) === String(accountId)
+			) {
 				setProfiles(prev =>
 					prev.map(p => {
 						const l = limits[p.owner_uid];
-						// Обновляем только если сервер вернул реальные данные (есть max/count).
-						// Пустой {} или "no information" НЕ затирают уже имеющиеся лимиты анкеты.
+						// Пустой {} или "no information" НЕ затирают уже имеющиеся лимиты
 						if (!hasRealLimits(l)) return p;
 						return { ...p, limits: l };
 					}),
 				);
-
-				// Обновить лимиты в кэше localStorage, не трогая остальные поля анкет
-				try {
-					const cacheKey = `spambot_profiles_${selectedAccount._id}`;
-					const cached = localStorage.getItem(cacheKey);
-					if (cached) {
-						const updated = JSON.parse(cached).map(p => {
-							const l = limits[p.owner_uid];
-							// Аналогично: пустой {} или "no information" не затирают кэш
-							return hasRealLimits(l) ? { ...p, limits: l } : p;
-						});
-						localStorage.setItem(cacheKey, JSON.stringify(updated));
-					}
-				} catch (e) {
-					console.error('[Spambot] Error caching limits:', e);
-				}
-
-				console.log('[Spambot] ✅ Profiles limits refreshed');
-			} catch (error) {
-				console.error('[Spambot] ❌ Error refreshing profiles limits:', error);
 			}
-		};
+
+			// Обновить лимиты в кэше localStorage, не трогая остальные поля анкет
+			try {
+				const cacheKey = `spambot_profiles_${accountId}`;
+				const cached = localStorage.getItem(cacheKey);
+				if (cached) {
+					const updated = JSON.parse(cached).map(p => {
+						const l = limits[p.owner_uid];
+						return hasRealLimits(l) ? { ...p, limits: l } : p;
+					});
+					localStorage.setItem(cacheKey, JSON.stringify(updated));
+				}
+			} catch (e) {
+				console.error('[Spambot] Error caching limits:', e);
+			}
+
+			// Снимаем метку только если сервер реально вернул данные лимитов,
+			// иначе попробуем обновить при следующем выборе аккаунта.
+			if (updatedAny) {
+				clearProfilesStale(accountId);
+				console.log('[Spambot] ✅ Profiles limits refreshed');
+			}
+			return updatedAny;
+		} catch (error) {
+			console.error('[Spambot] ❌ Error refreshing profiles limits:', error);
+			return false;
+		}
+	};
+
+	// Локально увеличить израсходованный mail-лимит нужной анкеты (state + кэш)
+	const applyMailUsedDelta = (accountId, profileUid, delta) => {
+		if (!accountId || !profileUid || delta <= 0) return;
+
+		const isCurrent =
+			selectedAccount && String(selectedAccount._id) === String(accountId);
+		if (isCurrent) {
+			setProfiles(prev =>
+				prev.map(p => adjustProfileMailUsed(p, profileUid, delta)),
+			);
+			setSelectedProfile(prev =>
+				prev ? adjustProfileMailUsed(prev, profileUid, delta) : prev,
+			);
+		}
+
+		try {
+			const cacheKey = `spambot_profiles_${accountId}`;
+			const cached = localStorage.getItem(cacheKey);
+			if (!cached) return;
+			const parsed = JSON.parse(cached);
+			if (!Array.isArray(parsed)) return;
+			const updated = parsed.map(p =>
+				adjustProfileMailUsed(p, profileUid, delta),
+			);
+			localStorage.setItem(cacheKey, JSON.stringify(updated));
+		} catch (e) {
+			console.error('[Spambot] Error caching mail limit delta:', e);
+		}
+	};
+
+	// Применить разницу sentMessagesCount к mail-лимиту анкеты рассылки.
+	// Один пришедший в рассылке mail = -1 доступный лимит (count + 1).
+	const applySentDelta = data => {
+		const distributionId = data?.distributionId;
+		if (!distributionId) return;
+
+		const sent = Number(data.sentMessagesCount) || 0;
+		const applied = getMailApplied(distributionId);
+
+		if (applied === undefined) {
+			// Первое событие по рассылке в этой сессии/вкладке: запоминаем,
+			// но не применяем, чтобы не задвоить уже сохранённые значения.
+			setMailApplied(distributionId, sent);
+			return;
+		}
+
+		const delta = sent - applied;
+		if (delta <= 0) return;
+
+		// Сначала фиксируем новый счётчик, затем меняем лимит,
+		// чтобы событие не применилось повторно.
+		setMailApplied(distributionId, sent);
+
+		if (data.distributionType !== 'mail') return;
+
+		const accountId = resolveEventAccountId(data);
+		applyMailUsedDelta(accountId, data.profileUid, delta);
+	};
+
+	// После завершения рассылки: обновить только лимиты выбранного аккаунта,
+	// либо пометить другой аккаунт как нуждающийся в обновлении при следующем выборе.
+	const refreshLimitsAfterFinish = async data => {
+		const accountId = resolveEventAccountId(data);
+		if (!accountId) return;
+
+		const isCurrent =
+			selectedAccount && String(selectedAccount._id) === String(accountId);
+		if (!isCurrent) {
+			markProfilesStale(accountId);
+			return;
+		}
+
+		const ok = await refreshLimitsOnly(accountId);
+		if (!ok) markProfilesStale(accountId);
+	};
+
+	// WebSocket - Real-time обновление статуса рассылки
+	useEffect(() => {
+		if (!socket || !isConnected) return;
 
 		const handleDistributionStatus = data => {
 			console.log('[Spambot] Distribution status update:', data);
+			applySentDelta(data);
+
 
 			// Обновить активную рассылку
 			if (
@@ -446,6 +723,18 @@ const Spambot = () => {
 		const handleDistributionStarted = data => {
 			console.log('[Spambot] Distribution started:', data);
 			setActiveDistribution(data);
+
+			// Начало рассылки: запоминаем стартовый счётчик для локального
+			// уменьшения mail-лимита по каждому следующему событию статуса.
+			if (
+				data.distributionId &&
+				getMailApplied(data.distributionId) === undefined
+			) {
+				setMailApplied(
+					data.distributionId,
+					Number(data.sentMessagesCount) || 0,
+				);
+			}
 
 			// ✅ FIX: Поиск по нескольким критериям для связи записей
 			// 1. По distributionId (новый UUID от Python)
@@ -496,7 +785,9 @@ const Spambot = () => {
 			);
 
 			// Лимиты расходуются рассылкой - обновляем только лимиты без полной перезагрузки
-			refreshProfilesLimits();
+			applySentDelta(data);
+			clearMailApplied(data.distributionId);
+			refreshLimitsAfterFinish(data);
 		};
 
 		const handleDistributionStopped = data => {
@@ -520,7 +811,9 @@ const Spambot = () => {
 			);
 
 			// При остановке лимиты могли сдвинуться - обновляем только лимиты
-			refreshProfilesLimits();
+			applySentDelta(data);
+			clearMailApplied(data.distributionId);
+			refreshLimitsAfterFinish(data);
 		};
 
 		const handleDistributionError = data => {
@@ -548,7 +841,9 @@ const Spambot = () => {
 			);
 
 			// При ошибке лимиты могли не измениться, но подстрахуемся свежими данными
-			refreshProfilesLimits();
+			applySentDelta(data);
+			clearMailApplied(data.distributionId);
+			refreshLimitsAfterFinish(data);
 		};
 
 		// ✅ NEW: Обработчик добавления в очередь
@@ -604,7 +899,7 @@ const Spambot = () => {
 			socket.off('spambot:distribution:queued', handleDistributionQueued);
 			socket.off('spambot:distribution:removed', handleDistributionRemoved);
 		};
-	}, [socket, isConnected, activeDistribution, selectedAccount]);
+	}, [socket, isConnected, activeDistribution, selectedAccount, accounts]);
 
 	// WebSocket - Обновление списка аккаунтов при создании нового (для админа)
 	useEffect(() => {

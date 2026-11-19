@@ -294,7 +294,9 @@ class SpambotQueueService {
 				oldDistributionId: oldDistributionId, // ✅ Связь с временным ID!
 				id: next._id,
 				status: 'running',
+				accountId: account._id?.toString(),
 				accountEmail: account.luxeeEmail,
+				profileUid: config.profileUid,
 				profileName: config.profileName || 'N/A',
 				distributionType: config.distributionType || 'chat',
 				sentMessagesCount: 0,
@@ -322,7 +324,11 @@ class SpambotQueueService {
 				id: next._id,
 				status: 'error',
 				errorMessage: next.errorMessage,
+				accountId:
+					next.luxeeAccount?._id?.toString() ||
+					next.luxeeAccount?.toString(),
 				accountEmail: next.luxeeAccount?.luxeeEmail || next.accountEmail || 'Unknown',
+				profileUid: next.config?.profileUid,
 				profileName: next.config?.profileName || 'N/A',
 				distributionType: next.config?.distributionType || 'chat',
 			});
